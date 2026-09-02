@@ -4,8 +4,16 @@ from cane.config.settings import (
     RiskConfig,
     Settings,
     SymbolConfig,
+    cross_checks,
 )
-from cane.config.validate import ConfigError, Problem, load_profile
+from cane.config.validate import (
+    ConfigError,
+    Problem,
+    load_profile,
+    load_toml,
+    render_loc,
+    validate_settings,
+)
 
 __all__ = [
     "BrokerConfig",
@@ -15,5 +23,9 @@ __all__ = [
     "RiskConfig",
     "Settings",
     "SymbolConfig",
+    "cross_checks",
     "load_profile",
+    "load_toml",
+    "render_loc",
+    "validate_settings",
 ]

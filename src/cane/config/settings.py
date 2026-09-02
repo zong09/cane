@@ -9,23 +9,60 @@ risk limit ทุกตัว **ไม่มีค่าตั้งต้น** 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Literal
+from decimal import Decimal, InvalidOperation
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 STRICT = ConfigDict(extra="forbid")
 
 Loc = tuple[str | int, ...]
+
+#: ทศนิยมที่เก็บได้จริงของแต่ละชนิดค่า — ตรงกับ `NUMERIC(9,4)` และ `NUMERIC(24,8)`
+#: ในตาราง config (ดู `db/schema.py`)
+PCT_PLACES = 4
+MONEY_PLACES = 8
+
+
+def _no_more_places_than(places: int):
+    """ปฏิเสธค่าที่ละเอียดกว่าที่เก็บได้ **ไม่ใช่ปัดให้เงียบๆ**
+
+    ที่เก็บถือ `base_pct` ไว้ 4 ตำแหน่ง ถ้ารับ `10.00001` เข้ามาแล้วปัดเป็น `10.0000`
+    ระบบจะเทรดด้วยค่าที่ไม่ใช่ค่าที่คนกรอก ซึ่งเป็นความล้มเหลวแบบเดียวกับที่
+    [decisions #18](../../../docs/decisions.md) ปิดประตูไว้ ("ค่าที่ระบบใช้ต้องไม่ต่าง
+    จากค่าที่คนเห็น") · การปัดที่ไม่มีใครเห็นแย่กว่าการปฏิเสธที่คนเห็น
+
+    ผลพลอยได้ที่ต้องการด้วย: `cane db seed` เทียบค่าเดิมกับค่าใหม่เพื่อไม่สร้าง
+    เวอร์ชันซ้ำ ค่าที่ถูกปัดตอนเก็บจะเทียบไม่เท่ากับที่อ่านกลับมาเสมอ แล้วการรัน
+    seed ทุกครั้งจะสร้างเวอร์ชันใหม่ที่ไม่มีอะไรต่างกัน
+    """
+
+    def check(value: float) -> float:
+        try:
+            exponent = Decimal(str(value)).as_tuple().exponent
+        except InvalidOperation:  # pragma: no cover - pydantic กรอง nan/inf ไปก่อน
+            raise ValueError("ไม่ใช่ตัวเลขที่เก็บได้") from None
+        if isinstance(exponent, int) and -exponent > places:
+            raise ValueError(f"ทศนิยมได้ไม่เกิน {places} ตำแหน่ง (ที่เก็บถือได้เท่านี้)")
+        return value
+
+    return check
+
+
+#: เปอร์เซ็นต์และตัวคูณ — 4 ทศนิยม
+Pct = Annotated[float, AfterValidator(_no_more_places_than(PCT_PLACES))]
+#: จำนวนเงิน — 8 ทศนิยม
+Money = Annotated[float, AfterValidator(_no_more_places_than(MONEY_PLACES))]
 
 
 class SymbolConfig(BaseModel):
     model_config = STRICT
 
     symbol: str
-    bucket_quote_long: float = Field(gt=0)
+    bucket_quote_long: Money = Field(gt=0)
     # เว้นได้ = เทรดฝั่ง long อย่างเดียว
-    bucket_quote_short: float | None = Field(default=None, gt=0)
-    leverage: float = Field(gt=0)
+    bucket_quote_short: Money | None = Field(default=None, gt=0)
+    leverage: Pct = Field(gt=0)
     allow_short: bool = False
     # false = พักไว้ คงบล็อกไว้แต่ข้ามในรอบคำนวณ
     enabled: bool = True
@@ -34,11 +71,11 @@ class SymbolConfig(BaseModel):
 class RiskConfig(BaseModel):
     model_config = STRICT
 
-    max_position_pct_long: float = Field(gt=0, le=100)
-    max_position_pct_short: float = Field(gt=0, le=100)
-    max_leverage: float = Field(gt=0)
-    min_liq_buffer_pct: float = Field(gt=0, lt=100)
-    max_daily_loss_pct: float = Field(gt=0, le=100)
+    max_position_pct_long: Pct = Field(gt=0, le=100)
+    max_position_pct_short: Pct = Field(gt=0, le=100)
+    max_leverage: Pct = Field(gt=0)
+    min_liq_buffer_pct: Pct = Field(gt=0, lt=100)
+    max_daily_loss_pct: Pct = Field(gt=0, le=100)
     consecutive_loss_breaker: int = Field(gt=0)
 
 
@@ -51,7 +88,7 @@ class BrokerConfig(BaseModel):
     # one-way เป็นข้อบังคับของระบบ ไม่ใช่ตัวเลือก — hedge ทำให้ถือสวนกันได้
     # ซึ่งละเมิดหลัก "หนึ่งฝั่งต่อเหรียญเสมอ" (spec/03)
     position_mode: Literal["one_way"] = "one_way"
-    seed_quote: float | None = Field(default=None, gt=0)
+    seed_quote: Money | None = Field(default=None, gt=0)
 
 
 class DataConfig(BaseModel):
@@ -68,7 +105,7 @@ class Settings(BaseModel):
     market: Literal["usdtm_perp"]
     # ไม่ระบุ = ไม่เข้าเส้นทาง cold start เลย (fail-closed, spec/03)
     cold_start: Literal["wait_1h", "trailing", "skip"] | None = None
-    base_pct: float = Field(ge=5, le=20)
+    base_pct: Pct = Field(ge=5, le=20)
     dry_run: bool = True
     # สวิตช์ระดับระบบ — ผลจริงของแต่ละเหรียญคือ AND กับ SymbolConfig.allow_short
     allow_short: bool = True
