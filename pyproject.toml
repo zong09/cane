@@ -1,0 +1,25 @@
+[project]
+name = "cane"
+version = "0.1.0"
+description = "บอทเทรด CDC Action Zone บน USDT-M perp"
+requires-python = ">=3.11"
+dependencies = [
+    "ccxt>=4.5.77",
+    "pydantic>=2.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cane"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

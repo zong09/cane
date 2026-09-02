@@ -1,0 +1,20 @@
+# credential — ห้ามหลุดเข้า git เด็ดขาด
+.env
+.env.*
+!.env.example
+
+# state / บันทึก / cache ที่ระบบสร้างเอง
+var/
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# macos
+.DS_Store
+
+docs/design_handoff

@@ -1,0 +1,32 @@
+profile    = "live"
+timeframe  = "1d"
+market     = "usdtm_perp"
+cold_start = "wait_1h"
+base_pct   = 5.0
+dry_run    = true
+allow_short = true
+
+[[symbols]]
+symbol             = "BTC/USDT"
+bucket_quote_long  = 100.0
+bucket_quote_short = 60.0
+leverage           = 2.0
+allow_short        = true
+enabled            = true
+
+[risk]
+max_position_pct_long    = 50.0
+max_position_pct_short   = 40.0
+max_leverage             = 3.0
+min_liq_buffer_pct       = 25.0
+max_daily_loss_pct       = 3.0
+consecutive_loss_breaker = 2
+
+[broker]
+kind          = "ccxt"
+exchange      = "binance"
+margin_mode   = "isolated"
+position_mode = "one_way"
+
+[data]
+exchange = "binance"
