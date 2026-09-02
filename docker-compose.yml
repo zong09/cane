@@ -1,0 +1,31 @@
+# Postgres สำหรับ dev และเทสต์ — ยกค้างไว้ตัวเดียว ไม่ใช่ยกใหม่ต่อรอบเทสต์
+#
+# **host port 5436 ไม่ใช่ 5432** — เครื่อง dev มี postgres ตัวอื่นจองไว้แล้ว
+# (5432 และ 5435) พอร์ตชนกันจะขึ้นเป็น "ยก container ไม่ได้" ซึ่งหน้าตาเหมือน DB พัง
+# ทั้งที่เป็นแค่พอร์ตซ้ำ — เสียเวลาไล่หาผิดทางได้ง่ายมาก
+#
+# ตรึง image ไว้ที่ postgres:16-alpine ตัวเดียวกับที่โปรเจกต์อื่นในเครื่องใช้อยู่ เพราะ
+# เน็ตองค์กรมี Zscaler ดักกลาง (ดู docs/) การดึง image ใหม่เป็นความเสี่ยงที่เลี่ยงได้ฟรี
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: cane_db
+    restart: unless-stopped
+    environment:
+      # รหัสผ่านชุดนี้เป็นของ dev ในเครื่องเท่านั้น ไม่ใช่ความลับ — ของจริงอยู่ใน .env
+      POSTGRES_USER: cane
+      POSTGRES_PASSWORD: cane
+      POSTGRES_DB: cane
+    ports:
+      - "5436:5432"
+    volumes:
+      - cane_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # ระบุ -U/-d ให้ครบ ไม่งั้น pg_isready เช็คด้วย user ตั้งต้นแล้วผ่านทั้งที่ยัง initdb ไม่จบ
+      test: ["CMD-SHELL", "pg_isready -U cane -d cane"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  cane_pgdata:

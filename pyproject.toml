@@ -4,8 +4,11 @@ version = "0.1.0"
 description = "บอทเทรด CDC Action Zone บน USDT-M perp"
 requires-python = ">=3.11"
 dependencies = [
+    "alembic>=1.19.1",
     "ccxt>=4.5.77",
+    "psycopg[binary]>=3.3.5",
     "pydantic>=2.9",
+    "sqlalchemy>=2.0.52",
 ]
 
 [project.optional-dependencies]
@@ -23,3 +26,8 @@ packages = ["src/cane"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+# เทสต์ที่แตะ Postgres ติด marker นี้ · ชุดที่ไม่แตะต้องรันได้โดยไม่มี DB
+#   uv run --extra dev pytest -q -m "not db"
+markers = [
+    "db: ต้องมี Postgres ที่ migrate แล้ว (docker compose up -d db)",
+]

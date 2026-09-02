@@ -17,4 +17,7 @@ __pycache__/
 # macos
 .DS_Store
 
+# ตั้งค่าเฉพาะเครื่องของบรรณาธิการ
+.vscode/
+
 docs/design_handoff
