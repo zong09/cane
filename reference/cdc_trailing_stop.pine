@@ -1,0 +1,58 @@
+//@version=2
+study("CDC ATR Trailing Stop V2.1 (2013)", overlay=true)
+
+/////////notes////////////////////////////////////////
+// This is based on the ATR trailing stop indicator //
+// width addition of two levels of stops and        //
+// different interpretation.                        //
+// This is a fast-reacting system and is better     //
+// suited for higher volatility markets             //
+//////////////////////////////////////////////////////
+
+SC = input(close,"data array",source) // data array
+
+// Fast Trail //
+AP1 = input(5,"fast ATR period",integer) // ATR Period
+AF1 = input(0.5,"fast ATR multiplier",float) // ATR Factor
+SL1 = AF1*atr(AP1) // Stop Loss
+Trail1 = iff(SC>nz(Trail1[1],0) and SC[1]>nz(Trail1[1],0),max(nz(Trail1[1],0),SC-SL1),iff(SC<nz(Trail1[1],0) and SC[1]<nz(Trail1[1],0),min(nz(Trail1[1],0),SC+SL1),iff(SC>nz(Trail1[1],0),SC-SL1,SC+SL1)))
+
+// Slow Trail //
+AP2 = input(10,"slow ATR perod",integer) // ATR Period
+AF2 = input(2,"slow ATR multiplier",float) // ATR Factor
+SL2 = AF2*atr(AP2) // Stop Loss
+Trail2 = iff(SC>nz(Trail2[1],0) and SC[1]>nz(Trail2[1],0),max(nz(Trail2[1],0),SC-SL2),iff(SC<nz(Trail2[1],0) and SC[1]<nz(Trail2[1],0),min(nz(Trail2[1],0),SC+SL2),iff(SC>nz(Trail2[1],0),SC-SL2,SC+SL2)))
+
+// ATRCD Histogram //
+// to plot these, uncomment the code in the plot section below and change indicator overlay to false, also comment out the other plots //
+Hst = Trail1-Trail2
+Sig = ema(Hst,9)
+
+
+// Bar color for trade signal //
+Blue = Hst<0 and Hst>Sig
+Green = Hst>0 and Hst>Sig
+Gray = Hst>0 and Hst<Sig
+Red = Hst<0 and Hst<Sig
+
+// Signals //
+Bull = barssince(Green)<barssince(Red)
+Bear = barssince(Red)<barssince(Green)
+
+Buy = Green and Bear[1]
+Sell = Red and Bull[1]
+
+alertcondition(Buy,"Buy Signal","ATR Trailing Stop 2.1 Buy signal")
+alertcondition(Sell,"Sell Signal","ATR Trailing Stop 2.1 Sell signal")
+
+TS1 = plot(Trail1,"Fast Trail", style = circles)
+TS2 = plot(Trail2,"Slow Trail", style = line, color=SC>Trail2? green : red, linewidth=2)
+fill(TS1,TS2,Bull ? green : red,transp = 90)
+
+plotcolor = input(false,"Paint color on chart",bool)
+plotbuysell = input(false,"Plot Buy/Sell arrows",bool)
+
+bcl = iff(plotcolor == 1,Blue ? blue : Green ? lime : Gray ? gray : Red ? red : white,na)
+barcolor(bcl)
+plotshape(Buy[1] and plotbuysell==1,"Buy",shape.arrowup,location.belowbar,green,text="buy")
+plotshape(Sell[1] and plotbuysell==1,"Sell",shape.arrowdown,location.abovebar,red,text="sell")
