@@ -25,8 +25,13 @@ PRICE_SCALE = 8
 #: (ระดับ 0.0001) การปัดที่ 8 ตำแหน่งจะกินนัยสำคัญของมันไปเลย
 RATE_SCALE = 10
 
+#: ทศนิยมของเปอร์เซ็นต์และตัวคูณใน config — ตรงกับ NUMERIC(9,4)
+#: สี่ตำแหน่งพอสำหรับค่าที่คนกรอกในฟอร์ม (`base_pct = 10`, `leverage = 2.5`)
+PCT_SCALE = 4
+
 _PRICE_QUANT = Decimal(1).scaleb(-PRICE_SCALE)
 _RATE_QUANT = Decimal(1).scaleb(-RATE_SCALE)
+_PCT_QUANT = Decimal(1).scaleb(-PCT_SCALE)
 
 
 def now_ms() -> int:
@@ -67,6 +72,20 @@ def rate_to_db(value: float | int | Decimal) -> Decimal:
 
 
 def rate_from_db(value: Decimal | float | int) -> float:
+    return float(value)
+
+
+def pct_to_db(value: float | int | Decimal) -> Decimal:
+    """เปอร์เซ็นต์/ตัวคูณของ config → `NUMERIC(9,4)`"""
+    return _to_numeric(value, _PCT_QUANT)
+
+
+def pct_from_db(value: Decimal | float | int) -> float:
+    """`NUMERIC(9,4)` → `float`
+
+    ค่าใน config เป็น `float` ทั้งชุดเพราะมันไปเข้าสูตรคิดขนาดไม้ ไม่ใช่ยอดเงินที่
+    ต้องบวกกันให้ตรงใบแจ้งของ venue — ยอดเงินจริงอยู่ใน ledger และเป็น `Decimal`
+    """
     return float(value)
 
 

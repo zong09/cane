@@ -29,7 +29,7 @@ Specs and ADRs are complete. The code is being built out in the order laid out b
 
 | Component | Status |
 | --- | --- |
-| `config/` — fail-closed TOML loader, every problem reported with its line number | ✅ |
+| `config/` — fail-closed validation, every problem reported with its field path | ✅ |
 | `log.py` — strips credentials from log output on the way out | ✅ |
 | `data/` — closed-bar OHLCV (live and replay share one `as_of` axis), funding rate, disk cache, ccxt client | ✅ |
 | `db/` — PostgreSQL foundation: schema, migrations, repositories, append-only enforced by grants | ✅ |
@@ -50,13 +50,13 @@ Requires Python 3.11+ (for stdlib `tomllib`) and [uv](https://docs.astral.sh/uv/
 
 ```bash
 uv sync --extra dev                          # install dependencies + pytest
-uv run --extra dev pytest -q -m "not db"     # 57 passing, no services needed
+uv run --extra dev pytest -q -m "not db"     # 70 passing, no services needed
 ```
 
 `pytest` is an optional dependency — skipping `uv sync --extra dev` and running a bare
 `uv run pytest` will fail.
 
-The full suite (96 tests) needs PostgreSQL; see [Database](#database) below. Tests that touch
+The full suite (153 tests) needs PostgreSQL; see [Database](#database) below. Tests that touch
 persistence carry the `db` marker so the rest still runs anywhere.
 
 The test suite never touches the network: the exchange client is injected everywhere, never
@@ -72,7 +72,7 @@ there is no ORM.
 docker compose up -d db                                   # postgres:16-alpine on host port 5436
 cp .env.example .env                                      # CANE_DB_DSN lives here
 uv run --env-file .env alembic upgrade head
-uv run --env-file .env --extra dev pytest -q              # 96 passing
+uv run --env-file .env --extra dev pytest -q              # 153 passing
 ```
 
 Host port **5436**, not 5432 — the dev machine already has other Postgres containers on 5432 and
@@ -86,26 +86,59 @@ constraint nobody knows is live.
 
 ## Config
 
-`paper` and `live` are separate files that run the exact same code path
-([ADR 9](docs/decisions.md)).
+**The database is the source of truth** ([ADR 18](docs/decisions.md)). The TOML files are the way
+in, once:
 
-| File | Purpose |
+```bash
+uv run --env-file .env cane db seed --profile paper --from config/paper.toml
+uv run --env-file .env cane db seed --profile live  --from config/live.toml
+```
+
+`paper` and `live` are separate profiles running the exact same code path
+([ADR 9](docs/decisions.md)) — separate sets of rows, not separate files.
+
+| Profile | Purpose |
 | --- | --- |
 | [`config/paper.toml`](config/paper.toml) | Simulated broker with a `seed_quote`; sends no real orders and never reads `.env` |
-| [`config/live.toml`](config/live.toml) | ccxt broker against Binance — both files currently set `dry_run = true` |
+| [`config/live.toml`](config/live.toml) | ccxt broker against Binance — both profiles currently set `dry_run = true` |
 
-Every model is deliberately `extra="forbid"`: a mistyped key fails the load instead of vanishing
-quietly and leaving the system running on a default nobody chose. No risk limit has a default value.
+Every change writes a **new version**; none overwrites the last one, and every old version stays
+readable. `is_active` is a pointer, not a value: the console may `UPDATE` that one column and
+nothing else, so the content of a saved version cannot be rewritten even by the console. Seeding
+values that match the active version creates nothing — running `cane db seed` twice is a no-op, so
+setup is repeatable without filling the history with identical versions.
+
+The point of versioning is a question the old file-based config could not answer: *which `base_pct`
+decided this bar?* A decision row carries `config_version_id`, so the answer is a foreign key rather
+than a guess from `git log`.
+
+Validation is fail-closed and reports **every** problem at once, each carrying the field path the
+console form uses for its inputs:
 
 ```python
-from cane.config import load_profile, ConfigError
+from cane.config import validate_settings, ConfigError
 
 try:
-    settings = load_profile("config/paper.toml")
+    settings = validate_settings(values_from_the_form, source="console")
 except ConfigError as exc:
     for problem in exc.problems:
-        print(problem)   # each carries the line number
+        print(problem.field_path, problem.message)   # symbols[0].leverage, ...
 ```
+
+A value finer than the store can hold is refused rather than rounded: percentages and multipliers
+keep four decimals, money keeps eight. Rounding `base_pct = 10.00001` down to `10.0000` would have
+the system trade on a number nobody typed, which is the failure ADR 18 exists to prevent.
+
+Every model is deliberately `extra="forbid"`: a mistyped key fails validation instead of vanishing
+quietly and leaving the system running on a default nobody chose. No risk limit has a default value,
+in the schema either — those columns are `NOT NULL`, so an incomplete set of limits cannot be stored,
+which means there is no version to activate, which means no trading.
+
+The database repeats most of these rules as `CHECK` constraints, and that duplication is deliberate:
+a `CHECK` is the last word and cannot be bypassed, but it fails on the first violation it meets. The
+validator exists to list all of them in one pass. One rule lives only in the validator — a symbol's
+`leverage` against the profile's `max_leverage` — because it spans two tables and SQL cannot express
+it as a `CHECK`.
 
 ### Credentials
 
@@ -126,6 +159,7 @@ src/cane/
   db/           engine (role per connection), schema, type boundary
     repo/       one module per domain; returns the project's frozen dataclasses
   log.py        credential redaction for logs
+  cli.py        the `cane` command; today it only carries `cane db seed`
 alembic/        migrations, one per domain; the DSN comes from the environment
 docker-compose.yml  PostgreSQL for dev and tests
 config/         paper / live profiles

@@ -17,7 +17,8 @@
 | [decisions.md](decisions.md) | การตัดสินใจเชิงสถาปัตยกรรมและเหตุผล |
 
 **ที่เก็บข้อมูล** ยังไม่มีไฟล์สเปกของตัวเอง — ข้อตกลงของ schema, กฎ append-only ด้วยสิทธิ์ของ DB,
-และนโยบายความลับอยู่ใน [decisions.md](decisions.md) ข้อ 22–25 ส่วนรูปร่างตารางจริงอ่านได้จาก
+และนโยบายความลับอยู่ใน [decisions.md](decisions.md) ข้อ 22–25 · ส่วน config ที่ย้ายจากไฟล์ TOML
+มาเป็นเวอร์ชันในตาราง อยู่ในข้อ 18 ที่เขียนใหม่ทั้งข้อ · รูปร่างตารางจริงอ่านได้จาก
 `../src/cane/db/schema.py` (ตัวประกาศ) และ `../alembic/versions/` (ลำดับการเปลี่ยน)
 
 **ที่มา:** `../reference/uncle-chaloke-trading-skill.md` (หลักการเทรด), `../reference/cdc_action_zone.pine` (สูตรอินดิเคเตอร์) และ `../reference/cdc_trailing_stop.pine` (เส้น trailing stop ของ cold start ทางที่ 2)

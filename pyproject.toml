@@ -11,6 +11,10 @@ dependencies = [
     "sqlalchemy>=2.0.52",
 ]
 
+[project.scripts]
+# ยังไม่ใช่ทางเข้าของตัวบอท — มีแค่งานฐานข้อมูล (`cane db seed`)
+cane = "cane.cli:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",

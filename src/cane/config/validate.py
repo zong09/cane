@@ -1,145 +1,116 @@
-"""โหลด config profile แบบ fail-closed พร้อมเลขบรรทัดของทุกข้อผิดพลาด
+"""ตรวจ config แบบ fail-closed พร้อมชี้ **ฟิลด์** ที่ต้องแก้
 
-เลขบรรทัดไม่ใช่ของแถม — คอนโซลเอาไปแสดงเป็น badge `L4 / L19` ข้างรายการที่ต้องแก้
-`tomllib` ไม่คืนตำแหน่งของคีย์ให้ และ pydantic รู้แค่ path ของ field
-โมดูลนี้จึงสแกนตัวอักษรดิบของไฟล์เองเพื่อทำแผนที่ path → บรรทัด แล้วเอามาต่อกับ
-error ของ pydantic
+เดิมไฟล์นี้ทำแผนที่ path → เลขบรรทัดจากตัวอักษรดิบของไฟล์ TOML เพื่อให้คอนโซล
+แสดง badge `L4 / L19` ข้างรายการที่ต้องแก้ · ตอนที่ config ย้ายไปเป็นตารางใน DB
+(`decisions.md` ข้อ 22) **ไม่มีไฟล์ ก็ไม่มีบรรทัดให้ชี้** สิ่งที่แทนได้และตรงกว่าคือ
+**path ของฟิลด์** เพราะหน้าตั้งค่ากลายเป็นฟอร์มต่อฟิลด์ ไม่ใช่ตัวแก้ไฟล์ TOML —
+`symbols[0].leverage` ชี้ได้ตรงกับช่องกรอกช่องนั้น ซึ่งเลขบรรทัดทำไม่ได้อยู่แล้ว
 
-กติกาการชี้บรรทัด (ยึดตาม design handoff):
+ยังต้องอ่าน TOML อยู่ เพราะ `cane db seed` เอาไฟล์เดิมเข้า DB ครั้งแรก แต่ TOML
+เป็น **ทางเข้า** ไม่ใช่แหล่งความจริงอีกแล้ว
 
-- ค่าผิด / คีย์ที่ไม่รู้จัก → บรรทัดของคีย์นั้นเอง
-- คีย์ที่หายไป          → บรรทัดถัดจากคีย์สุดท้ายของตารางนั้น (จุดที่ควรแทรก)
-- กฎข้ามคีย์            → บรรทัดของคีย์ที่จุดชนวนกฎ ไม่ใช่คีย์ที่หาย
+`validate_settings()` เป็นประตูเดียวที่ค่าจากภายนอกผ่าน ไม่ว่าจะมาจากไฟล์ seed
+หรือจากฟอร์มคอนโซล — ฟอร์มก็คือข้อมูลจากภายนอกเหมือนกัน จึงต้องผ่านตัวเดียวกัน
 """
 
 from __future__ import annotations
 
 import difflib
-import re
 import tomllib
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from pydantic import ValidationError
 
 from cane.config.settings import Loc, Settings, cross_checks, model_at
 
-# บรรทัดที่เป็นการกำหนดค่า: `key = ...` หรือ `"quoted key" = ...`
-_KEY_LINE = re.compile(r'^\s*(?P<key>[A-Za-z0-9_-]+|"[^"]*")\s*=')
-# หัวตาราง `[a.b]` หรือหัวสมาชิก array `[[a]]`
-_TABLE_LINE = re.compile(r"^\s*(?P<brackets>\[\[?)\s*(?P<path>[^\]]+?)\s*\]\]?\s*$")
+
+def render_loc(loc: Loc) -> str:
+    """`("symbols", 0, "leverage")` → `symbols[0].leverage`
+
+    รูปนี้ตรงกับ path ที่คอนโซลใช้ตั้งชื่อ input ในฟอร์ม จึงชี้ช่องที่ต้องแก้ได้ตรงตัว
+    """
+    out = ""
+    for part in loc:
+        if isinstance(part, int):
+            out += f"[{part}]"
+        else:
+            out += f".{part}" if out else str(part)
+    return out
 
 
 @dataclass(frozen=True)
 class Problem:
-    """ข้อผิดพลาดหนึ่งข้อ พร้อมบรรทัดที่คนต้องไปแก้"""
+    """ข้อผิดพลาดหนึ่งข้อ พร้อม path ของฟิลด์ที่คนต้องไปแก้
 
-    line: int
-    message: str
+    `loc = ()` คือปัญหาที่ไม่ผูกกับฟิลด์ใดฟิลด์หนึ่ง เช่นไฟล์ TOML ผิดรูปทั้งไฟล์
+    ซึ่งยังต้องรายงานได้ ไม่ใช่ยัดให้ฟิลด์ใดฟิลด์หนึ่งรับผิดไป
+    """
+
+    loc: Loc = field(default=())
+    message: str = ""
     detail: str = ""
 
+    @property
+    def field_path(self) -> str:
+        return render_loc(self.loc)
+
     def __str__(self) -> str:
+        head = f"{self.field_path}: " if self.loc else ""
         tail = f" — {self.detail}" if self.detail else ""
-        return f"L{self.line} {self.message}{tail}"
+        return f"{head}{self.message}{tail}"
 
 
 class ConfigError(Exception):
-    """โหลด config ไม่ผ่าน — ระบบต้องไม่เทรดต่อ"""
+    """config ไม่ผ่าน — ระบบต้องไม่เทรดต่อ และเวอร์ชันนี้ต้องไม่ถูกบันทึกลง DB
 
-    def __init__(self, path: Path, problems: list[Problem]) -> None:
-        self.path = path
-        self.problems = sorted(problems, key=lambda p: (p.line, p.message))
-        body = "\n".join(f"  {p}" for p in self.problems)
-        super().__init__(f"{path} โหลดไม่ผ่าน {len(self.problems)} ข้อ:\n{body}")
-
-
-class LineIndex:
-    """แผนที่จาก path ของคีย์ → เลขบรรทัด สร้างจากตัวอักษรดิบของไฟล์
-
-    ตั้งใจสแกนบรรทัดต่อบรรทัด ไม่ได้ parse TOML เต็มรูปแบบ — schema ของโปรเจกต์นี้
-    ไม่มีค่าที่กินหลายบรรทัด (ไม่มี array ยาว ไม่มี multi-line string) และไฟล์ที่
-    รูปแบบเพี้ยนจะถูก `tomllib` ปฏิเสธไปก่อนที่แผนที่นี้จะถูกใช้
+    `source` เป็นแค่คำอธิบายว่าค่ามาจากไหน (พาธไฟล์ seed หรือ `"console"`)
+    ไม่ใช่สิ่งที่โค้ดเอาไปตัดสินใจต่อ — ตัวที่เอาไปใช้จริงคือ `problems`
     """
 
-    def __init__(self, text: str) -> None:
-        self._key_line: dict[Loc, int] = {}
-        self._table_header: dict[Loc, int] = {}
-        self._table_last_key: dict[Loc, int] = {}
-        self._total_lines = 0
-        self._scan(text)
-
-    def _scan(self, text: str) -> None:
-        table: Loc = ()
-        array_seen: dict[Loc, int] = {}
-
-        for lineno, raw in enumerate(text.splitlines(), start=1):
-            self._total_lines = lineno
-            line = raw.split("#", 1)[0]
-            if not line.strip():
-                continue
-
-            header = _TABLE_LINE.match(line)
-            if header:
-                path: Loc = tuple(
-                    part.strip().strip('"') for part in header["path"].split(".")
-                )
-                if header["brackets"] == "[[":
-                    idx = array_seen.get(path, 0)
-                    array_seen[path] = idx + 1
-                    path = (*path, idx)
-                table = path
-                self._table_header[table] = lineno
-                continue
-
-            key = _KEY_LINE.match(line)
-            if key:
-                name = key["key"].strip('"')
-                self._key_line[(*table, name)] = lineno
-                self._table_last_key[table] = lineno
-
-    def line_of(self, path: Loc) -> int | None:
-        return self._key_line.get(path)
-
-    def insert_line_for(self, table: Loc) -> int:
-        """บรรทัดที่คีย์ซึ่งหายไปของตารางนี้ควรไปอยู่"""
-        anchor = self._table_last_key.get(table) or self._table_header.get(table)
-        if anchor is not None:
-            return anchor + 1
-        return self._total_lines + 1
-
-    def anchor(self, loc: Loc) -> int:
-        """เลขบรรทัดที่ควรชี้สำหรับ path หนึ่ง มีคีย์อยู่จริงก็ชี้ที่คีย์ ไม่มีก็ชี้จุดแทรก"""
-        return self.line_of(loc) or self.insert_line_for(loc[:-1])
+    def __init__(self, problems: list[Problem], *, source: str | None = None) -> None:
+        self.source = source
+        self.problems = sorted(problems, key=lambda p: (p.field_path, p.message))
+        where = f"{source} " if source else ""
+        body = "\n".join(f"  {p}" for p in self.problems)
+        super().__init__(f"{where}ไม่ผ่าน {len(self.problems)} ข้อ:\n{body}")
 
 
-def _describe(err: dict, index: LineIndex) -> Problem:
+def _describe(err: dict) -> Problem:
     loc: Loc = tuple(err["loc"])
     kind = err["type"]
     name = str(loc[-1]) if loc else "(root)"
     parent = loc[:-1]
 
     if kind == "extra_forbidden":
-        return Problem(index.anchor(loc), f"คีย์ที่ไม่รู้จัก {name}", _did_you_mean(name, parent))
+        return Problem(loc, f"คีย์ที่ไม่รู้จัก {name}", _did_you_mean(name, parent))
 
     if kind == "missing":
         detail = "risk limit ไม่มีค่าตั้งต้นให้" if parent == ("risk",) else "ไม่มีค่าตั้งต้นให้"
-        return Problem(index.insert_line_for(parent), f"ขาด {name}", detail)
+        return Problem(loc, f"ขาด {name}", detail)
 
     if loc == ("base_pct",) and kind in {"greater_than_equal", "less_than_equal"}:
         return Problem(
-            index.anchor(loc),
+            loc,
             f"base_pct = {err['input']} อยู่นอกช่วง 5–20",
-            "ตรวจตอนโหลด ไม่ใช่ตอนคำนวณ",
+            "ตรวจตอนบันทึกเวอร์ชัน ไม่ใช่ตอนคำนวณ",
         )
 
     if kind == "literal_error":
         allowed = str(err.get("ctx", {}).get("expected", ""))
-        return Problem(index.anchor(loc), f"{name} = {err['input']!r} ไม่ใช่ค่าที่รองรับ", f"ต้องเป็น {allowed}")
+        return Problem(loc, f"{name} = {err['input']!r} ไม่ใช่ค่าที่รองรับ", f"ต้องเป็น {allowed}")
 
     if kind == "too_short" and loc == ("symbols",):
-        return Problem(index.anchor(loc), "ไม่มี symbol ให้เทรดเลย", "ต้องมี [[symbols]] อย่างน้อยหนึ่งบล็อก")
+        return Problem(loc, "ไม่มี symbol ให้เทรดเลย", "ต้องมีอย่างน้อยหนึ่งคู่เหรียญ")
 
-    return Problem(index.anchor(loc), f"{'.'.join(str(p) for p in loc)}: {err['msg']}")
+    if kind == "value_error":
+        # pydantic เติม "Value error, " หน้าข้อความของ validator เอง — ตัดออกเพราะ
+        # ข้อความที่คนอ่านคือของเรา ไม่ใช่ชื่อชนิดข้อผิดพลาดของไลบรารี
+        return Problem(loc, f"{name} = {err['input']}: {err['msg'].removeprefix('Value error, ')}")
+
+    return Problem(loc, err["msg"])
 
 
 def _did_you_mean(name: str, parent: Loc) -> str:
@@ -152,43 +123,64 @@ def _did_you_mean(name: str, parent: Loc) -> str:
     return "ตั้งใจปฏิเสธ ไม่ปล่อยให้ค่าหายไปเงียบๆ"
 
 
-def _toml_error_line(exc: tomllib.TOMLDecodeError) -> int:
-    lineno = getattr(exc, "lineno", None)
-    if isinstance(lineno, int):
-        return lineno
-    found = re.search(r"at line (\d+)", str(exc))
-    return int(found[1]) if found else 1
+def validate_settings(raw: Mapping[str, Any], *, source: str | None = None) -> Settings:
+    """ตรวจค่าดิบหนึ่งชุด ผ่านครบทุกกฎเท่านั้นจึงคืน `Settings`
 
+    ตรวจ **ทั้งสองชั้นก่อนแล้วค่อยโยน** (กฎข้ามคีย์ + schema) เพื่อให้คนแก้เห็นทุกข้อ
+    ในรอบเดียว ไม่ใช่แก้ทีละข้อแล้วกดบันทึกใหม่ทุกครั้ง — ข้อบังคับเดิมของ spec/07
+    ที่ยังใช้ได้เหมือนกันทั้งกับไฟล์และกับฟอร์ม
 
-def load_profile(path: str | Path) -> Settings:
-    """อ่าน config profile หนึ่งไฟล์ ผ่านครบทุกกฎเท่านั้นจึงคืนค่า
-
-    ผิดข้อใดข้อหนึ่ง → `ConfigError` ที่รวมทุกข้อไว้พร้อมเลขบรรทัด
-    ไม่มีโหมดเตือนแล้วไปต่อ
+    กฎบางข้อที่นี่ **ซ้ำกับ CHECK ใน DB** โดยเจตนา (paper บังคับ dry_run, ช่วงของ
+    base_pct, short ต้องมี bucket ของตัวเอง) — DB เป็นด่านสุดท้ายที่ทับไม่ได้
+    ส่วนด่านนี้มีไว้เพื่อ **บอกให้ครบทุกข้อพร้อมกัน** ซึ่ง CHECK ทำไม่ได้เพราะมัน
+    ล้มที่ข้อแรกที่เจอ · กฎที่ DB เขียนไม่ได้เลยคือ `leverage` ต่อเหรียญเทียบกับ
+    `max_leverage` ของ profile เพราะเป็นกฎข้ามตาราง (อยู่ใน `cross_checks`)
     """
-    path = Path(path)
-    text = path.read_text(encoding="utf-8")
-    index = LineIndex(text)
-
-    try:
-        raw = tomllib.loads(text)
-    except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(path, [Problem(_toml_error_line(exc), f"ไฟล์ TOML ผิดรูป: {exc}")]) from exc
-
-    # ตรวจทั้งสองชั้นก่อนแล้วค่อยโยน เพื่อให้คนแก้ไฟล์เห็นทุกข้อในรอบเดียว
     problems = [
-        Problem(index.anchor(loc), message, detail)
-        for loc, message, detail in cross_checks(raw)
+        Problem(loc, message, detail) for loc, message, detail in cross_checks(raw)
     ]
 
     settings: Settings | None = None
     try:
         settings = Settings.model_validate(raw)
     except ValidationError as exc:
-        problems.extend(_describe(err, index) for err in exc.errors())
+        problems.extend(_describe(err) for err in exc.errors())
 
     if problems:
-        raise ConfigError(path, problems)
+        raise ConfigError(problems, source=source)
 
     assert settings is not None
     return settings
+
+
+def load_toml(path: str | Path) -> dict[str, Any]:
+    """อ่านไฟล์ TOML หนึ่งไฟล์ · ผิดรูป = `ConfigError` ไม่ใช่ traceback ของ tomllib
+
+    เก็บเลขบรรทัดที่ `tomllib` บอกไว้ในข้อความ เพราะไฟล์ที่ **ผิดไวยากรณ์** ยังเป็น
+    ปัญหาของตัวไฟล์จริงๆ (ต่างจากค่าที่ผิดกฎ ซึ่งเป็นปัญหาของฟิลด์)
+    """
+    path = Path(path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        # ไฟล์ที่ไม่มีหรืออ่านไม่ได้เป็นความผิดพลาดของคนสั่ง ไม่ใช่บั๊ก — ต้องได้
+        # ข้อความเดียวกับกรณีค่าผิดและรหัสออกเดียวกัน ไม่ใช่ traceback
+        raise ConfigError(
+            [Problem(message=f"อ่านไฟล์ไม่ได้: {exc.strerror or exc}")], source=str(path)
+        ) from exc
+
+    try:
+        return tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(
+            [Problem(message=f"ไฟล์ TOML ผิดรูป: {exc}")], source=str(path)
+        ) from exc
+
+
+def load_profile(path: str | Path) -> Settings:
+    """อ่าน + ตรวจไฟล์ profile หนึ่งไฟล์ — ทางเข้าของ `cane db seed`
+
+    **ไม่ใช่เส้นทางที่ engine ใช้ตอนรันแล้ว** engine อ่าน config ที่ active จาก DB
+    (`db.repo.config.active_settings`) ฟังก์ชันนี้เหลือหน้าที่เดียวคือพา TOML เข้า DB
+    """
+    return validate_settings(load_toml(path), source=str(path))
