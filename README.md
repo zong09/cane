@@ -39,11 +39,12 @@ Specs and ADRs are complete. The code is being built out in the order laid out b
 | `log.py` — strips credentials from log output on the way out | ✅ |
 | `data/` — closed-bar OHLCV (live and replay share one `as_of` axis), funding rate, disk cache, ccxt client | ✅ |
 | `db/` — PostgreSQL foundation: schema, migrations, repositories, append-only enforced by grants | ✅ |
+| `db/repo/decisions.py` — the per-bar decision record and its six child tables | ✅ |
 | Action Zone computation → `zone`, `state`, `long_signal`, `short_signal` | ⬜ |
 | Confluence Judge (LLM weighing the supporting factors) | ⬜ |
 | Position sizing + the discipline rules + cold start | ⬜ |
 | Risk limits, kill switch, broker, reconciliation | ⬜ |
-| Per-bar-close runner + DecisionRecord | ⬜ |
+| Per-bar-close runner that fills the decision record in | ⬜ |
 | Console (FastAPI + Jinja2 + HTMX) and notifications | ⬜ |
 
 The data layer **never reads an API key**. Both OHLCV and funding rate are public endpoints, so the
@@ -170,7 +171,7 @@ alembic/        migrations, one per domain; the DSN comes from the environment
 docker-compose.yml  PostgreSQL for dev and tests
 config/         paper / live profiles
 docs/spec/      system specs — readable in order, each file self-contained
-docs/decisions.md   25 ADRs with their reasoning
+docs/decisions.md   27 ADRs with their reasoning
 reference/      sources — the actual Pine Script and the trading principles it came from
 tests/          no network access; `-m "not db"` needs no services either
 ```

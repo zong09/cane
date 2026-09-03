@@ -136,21 +136,38 @@ exchange = "binance"
 
 ## บันทึกการตัดสินใจ
 
-`DecisionRecord` เป็น JSONL แบบ append-only หนึ่งบรรทัดต่อหนึ่งแท่งต่อหนึ่ง symbol เขียน **ทุกกรณี** รวมถึงตอนที่ผลลัพธ์คือ "ไม่ทำอะไร"
+บันทึกอยู่ในตาราง `decisions` แบบ append-only (บังคับด้วย grant ตาม [decisions #23](../decisions.md))
+หนึ่งแถวต่อหนึ่งแท่งต่อหนึ่ง symbol เขียน **ทุกกรณี** รวมถึงตอนที่ผลลัพธ์คือ "ไม่ทำอะไร"
+
+> เดิมข้อนี้เป็น JSONL หนึ่งบรรทัดต่อแท่ง · [decisions #22](../decisions.md) ย้ายลง PostgreSQL
+> เจตนาไม่เปลี่ยน เปลี่ยนแค่สื่อกลาง — และได้ของที่ไฟล์ทำไม่ได้มาด้วย คือ append-only ที่บังคับ
+> ด้วยสิทธิ์จริง และ "ค้างมากี่แท่งแล้ว" ที่เป็น `count(*)` แทนการไล่อ่านย้อน
 
 ```
-ts · symbol · zone · signal · side
-flip { close_qty_intended, close_qty_filled, residual_qty, aborted }
-leverage · margin_mode
-verdicts[]        พร้อมธงว่ามาจาก cache หรือ fallback
-size_rule · size_pct_formula · size_pct_final · capped
-margin · notional · qty
-stop { px, order_id }        เส้นทาง cold start ทางที่ 2 เท่านั้น
-risk              ผลการตรวจทีละชั้น
-order             ที่ส่งจริง หรือ
-skip_reason       เหตุผลที่ไม่ส่ง เช่น flip_aborted, cane_rule, kill_switch, liq_buffer
-unmanaged         สถานะที่เปิดค้างอยู่ที่ปลายทางแต่ระบบไม่ได้ตั้งใจถือ — เขียนซ้ำทุกแท่ง
-                  จนกว่าคนจะปิด (มาจาก flip_aborted, decisions #19)
+กุญแจ    profile · market · symbol · timeframe · bar_close_ts
+         **ไม่ unique** — แท่งเดียวมีได้หลายแถวถ้า process ตายกลางแท่ง (decisions #27.1)
+เวลา     decided_ts (ตอนตัดสิน) · created_ts (ตอนบันทึก) · utc_day (ขอบวัน UTC ของ risk)
+config   config_version_id → เวอร์ชันที่ใช้ตัดสินแท่งนั้นจริง (decisions #18)
+สัญญาณ   close_px · zone · state · long_signal · short_signal · side
+         **บูลีนสองตัว ไม่มีคอลัมน์ `signal`** (decisions #27.3)
+ตลาด     leverage · margin_mode · funding_rate · funding_next_ts ·
+         funding_unavailable_reason — ทั้งชุดเป็น NULL บนเหรียญ spot (decisions #26)
+judge    judge_called · llm_fallback · llm_fallback_reason · prompt_hash · factors_present
+sizing   size_rule · size_pct_formula · size_pct_final · capped · margin · notional · qty · ref_px
+เหตุผล   skip_reason — ตอบคำถามเดียวว่าทำไมไม่มีออเดอร์เปิดถูกส่ง · เป็น NULL เมื่อ
+         และเมื่อมีออเดอร์เปิดที่ venue **รับแล้ว** (decisions #27.2)
+```
+
+ของที่เป็นหลายแถวจริงอยู่ในตารางลูก ไม่ใช่ JSON ก้อน เพราะคอนโซลต้องกรองและนับต่อแท่ง:
+
+```
+decision_verdicts      คำตัดสินต่อ factor พร้อมธงว่ามาจาก cache หรือไม่ · UNIQUE (decision_id, factor)
+decision_risk_checks   ผลการตรวจทีละชั้น เรียงตาม seq · ชั้นที่ไม่มีคือหลักฐานว่าลำดับถูกเคารพ
+decision_orders        ออเดอร์ **ต่อขา** — แท่งเดียวยิงได้สามขา (close, open, stop)
+decision_flip          close_qty_intended · close_qty_filled · residual_qty · residual_side · aborted
+decision_stop          action ∈ placed | replaced | unchanged | missing · px · stop_order_id
+decision_unmanaged     สถานะที่เปิดค้างที่ปลายทางแต่ระบบไม่ได้ตั้งใจถือ — เขียนซ้ำทุกแท่ง
+                       จนกว่าคนจะปิด (มาจาก flip_aborted, decisions #19)
 ```
 
 นี่คือสิ่งที่ทำให้ backtest ย้อนหลังได้ในภายหลังโดยไม่ต้องรื้อระบบ ระบบเฟสแรกไม่มี backtest engine แต่ต้องไม่ปิดประตูตัวเอง
