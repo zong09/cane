@@ -21,12 +21,12 @@ from cane.config import ConfigError, load_profile, render_loc, validate_settings
 BROKEN_LIVE = """\
 profile    = "live"
 timeframe  = "1d"
-market     = "usdtm_perp"
 base_pct   = 32.0
 dry_run    = true
 
 [[symbols]]
 symbol             = "BTC/USDT"
+market             = "usdtm_perp"
 bucket_quote_long  = 100.0
 bucket_quote_short = 60.0
 leverage           = 2.0
@@ -70,8 +70,45 @@ def fields_of(path):
 def test_ships_with_loadable_profiles(profile):
     settings = load_profile(f"config/{profile}.toml")
     assert settings.profile == profile
-    assert settings.market == "usdtm_perp"
+    assert settings.symbols[0].market == "usdtm_perp"
     assert settings.dry_run is True
+
+
+def test_paper_ships_with_a_real_spot_symbol():
+    """เส้นทาง spot ต้องมีของจริงเดินผ่านตั้งแต่วันแรก ไม่ใช่โค้ดที่ไม่เคยรัน
+
+    ถ้าเหรียญ spot หลุดออกจาก `paper.toml` CHECK ในฐานจะไม่ดัง (มันตรวจแถวที่มี
+    ไม่ใช่แถวที่ขาด) และชุด `-m "not db"` จะยังเขียวหมด — เทสต์ตัวนี้คือที่เดียว
+    ที่ยืนยันว่ายังมี
+    """
+    paper = load_profile("config/paper.toml")
+
+    assert {sym.market for sym in paper.symbols} == {"usdtm_perp", "spot"}
+
+    spot = next(sym for sym in paper.symbols if sym.market == "spot")
+    # สามข้อที่ตลาด spot ไม่มี — ตรงกับ CHECK ใน `config_symbols`
+    assert (spot.leverage, spot.allow_short, spot.bucket_quote_short) == (1.0, False, None)
+
+
+def test_a_spot_symbol_cannot_ask_for_what_spot_does_not_have(tmp_path):
+    """สามข้อของ spot ต้องดังพร้อมกันทั้งหมด พร้อมชื่อฟิลด์ที่ผิด
+
+    ซ้ำกับ CHECK ในฐานโดยเจตนา — CHECK ล้มที่ข้อแรกที่เจอและบอกได้แค่ชื่อ constraint
+    ส่วนคนที่กรอกฟอร์มต้องเห็นทั้งสามข้อพร้อมกันและเห็นว่าเป็นฟิลด์ไหน
+    """
+    broken = BROKEN_LIVE.replace('market             = "usdtm_perp"', 'market             = "spot"')
+
+    found = fields_of(write(tmp_path, broken))
+
+    assert ("symbols[0].allow_short", "BTC/USDT อยู่บน spot จึงเปิด allow_short ไม่ได้") in found
+    assert (
+        "symbols[0].leverage",
+        "BTC/USDT อยู่บน spot จึงต้องมี leverage = 1 (ได้ 2.0)",
+    ) in found
+    assert (
+        "symbols[0].bucket_quote_short",
+        "BTC/USDT อยู่บน spot จึงไม่มีกระเป๋าฝั่ง short",
+    ) in found
 
 
 def test_paper_profile_matches_design_values():
@@ -289,13 +326,13 @@ def test_values_from_a_form_go_through_the_same_gate():
     raw = {
         "profile": "live",
         "timeframe": "1d",
-        "market": "usdtm_perp",
         "base_pct": 7.5,
         "dry_run": True,
         "allow_short": True,
         "symbols": [
             {
                 "symbol": "BTC/USDT",
+                "market": "usdtm_perp",
                 "bucket_quote_long": 100.0,
                 "bucket_quote_short": 60.0,
                 "leverage": 2.0,

@@ -24,20 +24,22 @@ from cane.db.repo.bars import insert_bars
 pytestmark = pytest.mark.db
 
 SYMBOL = "BTC/USDT"
+MARKET = "usdtm_perp"
 TIMEFRAME = "1d"
 OPEN_TS = 1_788_000_000_000
 DAY_MS = 86_400_000
 
 _INSERT_BAR = text(
     """
-    INSERT INTO bars (symbol, timeframe, open_ts, close_ts,
+    INSERT INTO bars (market, symbol, timeframe, open_ts, close_ts,
                       open, high, low, close, volume, created_ts)
-    VALUES (:symbol, :timeframe, :open_ts, :close_ts,
+    VALUES (:market, :symbol, :timeframe, :open_ts, :close_ts,
             :open, :high, :low, :close, :volume, :created_ts)
     """
 )
 
 _BAR = {
+    "market": MARKET,
     "symbol": SYMBOL,
     "timeframe": TIMEFRAME,
     "open_ts": OPEN_TS,
@@ -97,8 +99,8 @@ def test_the_engine_role_can_reinsert_a_bar_without_update_privilege(db):
 
     with db.begin_nested():
         _as_role(db, "cane_engine")
-        first = insert_bars(db, SYMBOL, TIMEFRAME, [dup])
-        second = insert_bars(db, SYMBOL, TIMEFRAME, [dup])
+        first = insert_bars(db, MARKET, SYMBOL, TIMEFRAME, [dup])
+        second = insert_bars(db, MARKET, SYMBOL, TIMEFRAME, [dup])
 
     assert (first, second) == (1, 0)
 

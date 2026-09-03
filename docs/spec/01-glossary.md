@@ -6,7 +6,7 @@
 
 | คำ | นิยาม |
 | --- | --- |
-| **market** | ตลาดที่ระบบเทรด — `usdtm_perp` (USDT-M perpetual futures) มี leverage ไม่ใช่ spot |
+| **market** | ตลาดของ **แต่ละเหรียญ** ไม่ใช่ของทั้งระบบ — `usdtm_perp` (USDT-M perpetual futures, มี leverage และ liquidation) หรือ `spot` (long-only ไม่มี leverage ไม่มี funding) |
 | **Bar** | แท่งเทียนที่ **ปิดแล้ว** ของ timeframe หนึ่ง มี OHLCV และ `close_ts` แท่งที่ยังวิ่งอยู่ไม่ใช่ Bar และไม่เข้าระบบ |
 | **Zone** | สีของแท่งตาม CDC Action Zone หนึ่งใน `GREEN`, `BLUE`, `LBLUE`, `RED`, `ORANGE`, `YELLOW`, `BLACK` |
 | **Bull / Bear** | `FastMA > SlowMA` / `FastMA < SlowMA` — ความสัมพันธ์ของเส้นค่าเฉลี่ย ไม่ใช่สถานะเทรนด์ของระบบ |

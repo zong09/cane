@@ -1,11 +1,17 @@
 # cane
 
 A crypto trading bot that follows the **CDC Action Zone** system by Chaloke Sambhandharaksa,
-trading **USDT-M perpetual futures**. It reads price data from the exchange, detects trend-change
-signals, weighs the supporting factors, turns that into a position size, and places the orders itself.
+trading **USDT-M perpetual futures and spot**. It reads price data from the exchange, detects
+trend-change signals, weighs the supporting factors, turns that into a position size, and places
+the orders itself.
 
-It trades **both sides** — the first green bar opens a long; the first red bar closes the long and
-opens a short within the same bar.
+The market is set **per symbol**, not for the whole system, so one profile can hold BTC on perp
+and ETH on spot at the same time.
+
+On **perp** it trades **both sides** — the first green bar opens a long; the first red bar closes
+the long and opens a short within the same bar. On **spot** it is long-only: a red bar sells out to
+flat and stops there, because there is no short leg to open. Leverage, funding and liquidation —
+and therefore the liquidation-buffer risk check — exist on perp only.
 
 Principles the whole system is built around:
 

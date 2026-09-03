@@ -1,6 +1,5 @@
 profile    = "live"
 timeframe  = "1d"
-market     = "usdtm_perp"
 cold_start = "wait_1h"
 base_pct   = 5.0
 dry_run    = true
@@ -8,6 +7,7 @@ allow_short = true
 
 [[symbols]]
 symbol             = "BTC/USDT"
+market             = "usdtm_perp"   # usdtm_perp | spot — ต่อเหรียญ ไม่ใช่ต่อ profile
 bucket_quote_long  = 100.0
 bucket_quote_short = 60.0
 leverage           = 2.0

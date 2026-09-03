@@ -17,6 +17,7 @@ from cane.db.types import now_ms, price_from_db, price_to_db, store_symbol
 
 def insert_bars(
     conn: Connection,
+    market: str,
     symbol: str,
     timeframe: str,
     bars: Sequence[Bar],
@@ -35,6 +36,10 @@ def insert_bars(
 
     ผู้เรียกต้องกรองแท่งที่ยังวิ่งอยู่ออกก่อน (`closed_as_of()`) — ตารางนี้ไม่รู้
     เวลานาฬิกาของผู้เรียก จึงกรองซ้ำให้ไม่ได้ เหมือนที่ `BarCache` เคยเป็น
+
+    `market` **ไม่มีค่าตั้งต้น** เพราะ `store_symbol()` ตัด `:USDT` ทิ้ง — `BTC/USDT`
+    บน spot กับบน perp จึงมีชื่อเดียวกันในตาราง ตลาดที่เดาผิดไม่ได้ทำให้เขียนล้ม
+    แต่ทำให้แท่งของสองตลาดปนกันเงียบๆ แล้ว indicator คำนวณบนข้อมูลที่ไม่มีอยู่จริง
     """
     if not bars:
         return 0
@@ -42,6 +47,7 @@ def insert_bars(
     name = store_symbol(symbol)
     rows = [
         {
+            "market": market,
             "symbol": name,
             "timeframe": timeframe,
             "open_ts": bar.open_ts,
@@ -81,6 +87,7 @@ def _to_bar(row) -> Bar:  # noqa: ANN001 — Row ของ SQLAlchemy ไม่�
 
 def closed_bars(
     conn: Connection,
+    market: str,
     symbol: str,
     timeframe: str,
     as_of: int,
@@ -100,6 +107,7 @@ def closed_bars(
     stmt = (
         select(bars_t)
         .where(
+            bars_t.c.market == market,
             bars_t.c.symbol == store_symbol(symbol),
             bars_t.c.timeframe == timeframe,
             bars_t.c.close_ts < as_of,
@@ -114,7 +122,7 @@ def closed_bars(
     return [_to_bar(row) for row in rows]
 
 
-def last_bar(conn: Connection, symbol: str, timeframe: str) -> Bar | None:
+def last_bar(conn: Connection, market: str, symbol: str, timeframe: str) -> Bar | None:
     """แท่งที่ใหม่ที่สุดในตาราง — ใช้ตั้ง `since` ของการดึงรอบถัดไป
 
     **ไม่กรอง `as_of`** โดยเจตนา: คำถามนี้คือ "เรามีของถึงไหนแล้ว" ซึ่งเป็นเรื่องของ
@@ -124,6 +132,7 @@ def last_bar(conn: Connection, symbol: str, timeframe: str) -> Bar | None:
     stmt = (
         select(bars_t)
         .where(
+            bars_t.c.market == market,
             bars_t.c.symbol == store_symbol(symbol),
             bars_t.c.timeframe == timeframe,
         )

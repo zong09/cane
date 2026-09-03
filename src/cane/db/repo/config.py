@@ -128,7 +128,6 @@ def insert_version(
             config_version_id=version_id,
             profile=profile,
             timeframe=settings.timeframe,
-            market=settings.market,
             cold_start=settings.cold_start,
             base_pct=pct_to_db(settings.base_pct),
             dry_run=settings.dry_run,
@@ -144,6 +143,7 @@ def insert_version(
                 "config_version_id": version_id,
                 "profile": profile,
                 "symbol": store_symbol(sym.symbol),
+                "market": sym.market,
                 "bucket_quote_long": price_to_db(sym.bucket_quote_long),
                 "bucket_quote_short": (
                     None
@@ -299,7 +299,6 @@ def settings_of(conn: Connection, version_id: int) -> Settings | None:
         {
             "profile": head.profile,
             "timeframe": core.timeframe,
-            "market": core.market,
             "cold_start": core.cold_start,
             "base_pct": pct_from_db(core.base_pct),
             "dry_run": core.dry_run,
@@ -307,6 +306,7 @@ def settings_of(conn: Connection, version_id: int) -> Settings | None:
             "symbols": [
                 {
                     "symbol": row.symbol,
+                    "market": row.market,
                     "bucket_quote_long": price_from_db(row.bucket_quote_long),
                     "bucket_quote_short": (
                         None

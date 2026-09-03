@@ -59,6 +59,12 @@ class SymbolConfig(BaseModel):
     model_config = STRICT
 
     symbol: str
+    #: ตลาดของเหรียญนี้ — **บังคับกรอก ไม่มีค่าตั้งต้นโดยเจตนา** (decisions #26)
+    #:
+    #: ค่าตั้งต้นที่เป็นไปได้มีแต่ `usdtm_perp` ซึ่งเป็นตลาดที่มี leverage และมี
+    #: liquidation · การเดาให้แปลว่าคนที่ลืมพิมพ์บรรทัดนี้จะได้ความเสี่ยงที่ไม่ได้ขอ
+    #: ซึ่งเป็นทิศตรงข้ามกับ fail-closed ที่ไฟล์นี้ยึดกับ risk limit อยู่แล้ว
+    market: Literal["usdtm_perp", "spot"]
     bucket_quote_long: Money = Field(gt=0)
     # เว้นได้ = เทรดฝั่ง long อย่างเดียว
     bucket_quote_short: Money | None = Field(default=None, gt=0)
@@ -102,7 +108,6 @@ class Settings(BaseModel):
 
     profile: Literal["live", "paper"]
     timeframe: str
-    market: Literal["usdtm_perp"]
     # ไม่ระบุ = ไม่เข้าเส้นทาง cold start เลย (fail-closed, spec/03)
     cold_start: Literal["wait_1h", "trailing", "skip"] | None = None
     base_pct: Pct = Field(ge=5, le=20)
@@ -188,6 +193,29 @@ def cross_checks(raw: Mapping[str, Any]) -> list[tuple[Loc, str, str]]:
                     f"{name} เปิด allow_short แต่ไม่มี bucket_quote_short",
                     "ฝั่ง short ต้องมีเงินของตัวเอง ไม่ยืมจากฝั่ง long",
                 ))
+            # สามข้อของ spot — `schema.py` เขียนเป็น CHECK ไว้แล้วทั้งสามข้อ ที่ทำซ้ำ
+            # ที่นี่เพราะคนที่กรอกฟอร์มต้องเห็น **ชื่อฟิลด์ที่ผิด** ไม่ใช่ข้อความของ
+            # Postgres ที่บอกแค่ชื่อ constraint · ไม่ใช่ข้อบังคับที่ตั้งใหม่
+            if sym.get("market") == "spot":
+                if sym.get("allow_short") is True:
+                    out.append((
+                        ("symbols", i, "allow_short"),
+                        f"{name} อยู่บน spot จึงเปิด allow_short ไม่ได้",
+                        "spot ขายชอร์ตไม่ได้ — แดงคือขายออกให้แบน ไม่ใช่เปิดฝั่งตรงข้าม",
+                    ))
+                leverage = sym.get("leverage")
+                if _is_number(leverage) and leverage != 1:
+                    out.append((
+                        ("symbols", i, "leverage"),
+                        f"{name} อยู่บน spot จึงต้องมี leverage = 1 (ได้ {leverage})",
+                        "spot ไม่มีอัตราทด — ใส่ 1 เพื่อให้สูตร notional = margin × leverage เดินเส้นทางเดียว",
+                    ))
+                if sym.get("bucket_quote_short") is not None:
+                    out.append((
+                        ("symbols", i, "bucket_quote_short"),
+                        f"{name} อยู่บน spot จึงไม่มีกระเป๋าฝั่ง short",
+                        "ฝั่ง short ไม่มีอยู่จริงบน spot ไม่ใช่มีแล้วเป็นศูนย์",
+                    ))
 
     return out
 
