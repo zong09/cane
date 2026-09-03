@@ -114,6 +114,28 @@ def test_an_errored_entry_cannot_be_filed_under_another_reason():
         validate_record(record(skip_reason="cane_rule", orders=(broke,)))
 
 
+def test_a_retry_that_succeeded_in_the_same_bar_is_writable():
+    """ครั้งแรกพัง ครั้งที่สองผ่าน ในแท่งเดียว — ไม่มีประตูไหนปิด จึงไม่มี `skip_reason`
+
+    `decision_orders` ใช้ surrogate key เพราะขาเดียวกันซ้ำได้ตอน retry · ถ้าเทียบ
+    `order_error` แบบ biconditional ล้วน แถวนี้จะถูกบังคับให้เป็นทั้ง `None` และ
+    `'order_error'` พร้อมกันแล้วเขียนไม่ลงเลย ซึ่งกลับหัวเจตนาของกุญแจนั้นเอง
+    """
+    validate_record(
+        record(
+            skip_reason=None,
+            orders=(
+                entry_order(
+                    client_order_id="cane-btc-open-1",
+                    accepted=False,
+                    error="timeout",
+                ),
+                entry_order(client_order_id="cane-btc-open-2"),
+            ),
+        )
+    )
+
+
 def test_an_unknown_skip_reason_is_refused_before_the_database_sees_it():
     with pytest.raises(ValueError, match="ไม่รู้จัก"):
         validate_record(record(skip_reason="kill_switch"))

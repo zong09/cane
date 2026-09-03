@@ -242,17 +242,24 @@ def _check_skip_reason(record: DecisionRecord) -> None:
             "แท่งที่ไม่ได้เข้าไม้ต้องบอกได้ว่าเพราะอะไร (spec/08:67)"
         )
 
-    failed = any(order.error is not None for order in opens)
-    if failed and record.skip_reason != "order_error":
-        raise ValueError(
-            "มีออเดอร์เปิดที่มี error แต่ skip_reason ไม่ใช่ 'order_error' "
-            f"(เป็น {record.skip_reason!r})"
-        )
-    if record.skip_reason == "order_error" and not failed:
-        raise ValueError(
-            "skip_reason = 'order_error' แต่ไม่มีออเดอร์เปิดที่มี error — "
-            "เหตุผลไม่มีหลักฐานรองรับ"
-        )
+    # `order_error` ถูกตรวจเฉพาะตอนที่ **ไม่มี** ออเดอร์เปิดที่ถูกรับ เพราะ `skip_reason`
+    # ตอบคำถามเดียวว่า "ทำไมไม่มีออเดอร์เปิดถูกส่ง" โดยเลือกจาก **ประตูแรกที่ปิด** —
+    # แท่งที่ retry แล้วสำเร็จ (ครั้งแรกมี error ครั้งที่สอง accepted) ไม่มีประตูไหนปิด
+    # ถ้าเทียบแบบ biconditional ล้วน แถวนั้นจะถูกบังคับให้เป็นทั้ง `None` และ
+    # `'order_error'` พร้อมกัน แล้วเขียนไม่ลงเลย ซึ่งเป็นสิ่งที่ PK ของ `decision_orders`
+    # ตั้งใจรองรับอยู่แล้ว (ขาเดียวกันซ้ำได้ตอน retry)
+    if not accepted:
+        failed = any(order.error is not None for order in opens)
+        if failed and record.skip_reason != "order_error":
+            raise ValueError(
+                "มีออเดอร์เปิดที่มี error แต่ skip_reason ไม่ใช่ 'order_error' "
+                f"(เป็น {record.skip_reason!r})"
+            )
+        if record.skip_reason == "order_error" and not failed:
+            raise ValueError(
+                "skip_reason = 'order_error' แต่ไม่มีออเดอร์เปิดที่มี error — "
+                "เหตุผลไม่มีหลักฐานรองรับ"
+            )
 
 
 def _check_risk_sequence(record: DecisionRecord) -> None:
