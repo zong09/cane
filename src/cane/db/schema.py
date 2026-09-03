@@ -27,6 +27,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Column,
+    Computed,
     ForeignKeyConstraint,
     Identity,
     Index,
@@ -363,4 +364,409 @@ CONFIG_TABLES = (
     config_risk,
     config_broker,
     config_data,
+)
+
+
+# ── บันทึกการตัดสินใจ (ใบ 03) ────────────────────────────────────────────────
+#
+# หนึ่งแถวต่อหนึ่งแท่งต่อหนึ่ง symbol **เขียนทุกกรณี** รวมถึงตอนที่ผลคือ "ไม่ทำอะไร"
+# (decisions #11, spec/08:67) — บันทึกที่เขียนเฉพาะตอนมีออเดอร์คือบันทึกที่เข้าข้างตัวเอง
+# เห็นแต่ตอนที่ระบบทำอะไร ไม่เห็นตอนที่มันเลือกจะไม่ทำ
+
+#: สีของ Action Zone — เจ็ดค่า (spec/02:32-38) · หัวข้อในสเปกเขียน "6 สี" ซึ่งนับเฉพาะ
+#: สีจริง `BLACK` คือแท่งที่ไม่เข้าเงื่อนไขใดเลย (เช่น `FastMA == SlowMA`) ซึ่งเกิดได้
+#: และต้องบันทึกได้ · ระบบเทรดจริงใช้แค่ `GREEN`/`RED` แต่ต้องคำนวณครบเพราะ golden
+#: test เทียบสีทีละแท่งกับ TradingView (spec/02:40)
+ZONE_T = postgresql.ENUM(
+    "GREEN",
+    "BLUE",
+    "LBLUE",
+    "RED",
+    "ORANGE",
+    "YELLOW",
+    "BLACK",
+    name="zone_t",
+    create_type=False,
+)
+
+#: สถานะของสัญญาณ (spec/02:64) · `UNSET` = ยังไม่เคยเกิด `longcond`/`shortcond` เลย
+#: ซึ่งไม่ใช่ค่าที่หายไป แต่เป็นสถานะจริงของช่วงต้นชุดข้อมูล (spec/02:76-82)
+STATE_T = postgresql.ENUM("BULLISH", "BEARISH", "UNSET", name="state_t", create_type=False)
+
+#: ฝั่งของ **ไม้** · `order_side_t` ด้านล่างคือฝั่งของ **ออเดอร์** — สองชุดนี้คนละเรื่อง
+#: การ flip จาก long ไป short ในโหมด one-way คือ `sell` สองครั้ง (spec/06:94) ถ้าใช้ชุด
+#: เดียวกันทั้งสองความหมาย บันทึกจะอ่านเหมือนเปิด short ซ้ำสองไม้
+SIDE_T = postgresql.ENUM("long", "short", name="side_t", create_type=False)
+
+#: ฝั่งของออเดอร์ที่ยิงเข้า venue
+ORDER_SIDE_T = postgresql.ENUM("buy", "sell", name="order_side_t", create_type=False)
+
+#: ขาของออเดอร์ในหนึ่งแท่ง (spec/06:124) · `stop` อยู่ในชุดด้วยเพราะ cold start ทางที่ 2
+#: วาง `stop_market` ไว้ที่ venue ในแท่งเดียวกับที่เปิดไม้ (spec/06:129, decisions #17)
+LEG_T = postgresql.ENUM("open", "close", "stop", name="leg_t", create_type=False)
+
+
+#: หัวของบันทึกหนึ่งแท่ง
+#:
+#: **ไม่มี UNIQUE บน `(profile, market, symbol, timeframe, bar_close_ts)` โดยเจตนา** —
+#: process ที่ตายกลางแท่งแล้วกลับมาในแท่งเดิมจะส่ง `clientOrderId` เดิมซ้ำแล้ว venue
+#: ปฏิเสธ (spec/06:127) · สองแถวของกุญแจเดียวกันจึง**ไม่ใช่**ข้อเท็จจริงเดียวกัน แถวที่สอง
+#: คือหลักฐานของ restart · ถ้าใส่ UNIQUE แล้ว upsert แถวแรกจะถูกทับ แล้วคนอ่านย้อนหลัง
+#: จะสรุปว่า "ไม่มีออเดอร์ถูกส่ง" ซึ่งกลับหัวความจริง · คอนโซลเลือกแถวล่าสุดไปแสดง
+#: และรู้ตัวว่าเลือก
+#:
+#: คอลัมน์เกือบทั้งหมด **nullable** เพราะแท่งที่จบด้วย `no_signal` มีแค่หัวกับ
+#: `zone`/`state`/`close_px` — NOT NULL ที่เกินจริงจะทำให้แท่งที่ระบบเลือกจะไม่ทำอะไร
+#: เขียนไม่ลง ซึ่งกลับหัวเจตนาทั้งใบ (spec/08:67)
+decisions = Table(
+    "decisions",
+    metadata,
+    Column("id", BigInteger, Identity(always=True), primary_key=True),
+    Column("profile", PROFILE_T, nullable=False),
+    #: `usdtm_perp` / `spot` — ค่าต่อเหรียญ (decisions #26) · อยู่ในกุญแจธรรมชาติเพราะ
+    #: เหรียญชื่อเดียวกันบนสองตลาดเป็นคนละของ
+    Column("market", Text, nullable=False),
+    Column("symbol", Text, nullable=False),
+    Column("timeframe", Text, nullable=False),
+    Column("bar_close_ts", BigInteger, nullable=False),
+    #: ขอบวัน UTC ของ risk (spec/06:57) — `max_daily_loss_pct` reset เที่ยงคืน UTC
+    #: ไม่ใช่เวลาท้องถิ่น · คอลัมน์นี้ทำให้ query ต่อวันเขียนได้โดยไม่ต้องเอา
+    #: `datetime` เข้ามาใน `src/` (decisions #22)
+    Column("utc_day", Integer, Computed("bar_close_ts / 86400000", persisted=True)),
+    #: เวลาที่ตัดสิน — แยกจาก `bar_close_ts` (เวลาของเหตุการณ์) และจาก `created_ts`
+    #: (เวลาที่บันทึกลงฐาน) · ตอนไล่ปัญหาต้องใช้ทั้งสาม
+    Column("decided_ts", BigInteger, nullable=False),
+    #: FK ไปเวอร์ชัน config ที่ใช้จริง → ไม่ต้อง snapshot `base_pct`/`bucket_quote`/
+    #: `max_position_pct` ลงทุกแถว (decisions #18, #22) · `repo.config.settings_of()`
+    #: คืนค่าทั้งชุดของเวอร์ชันนั้นให้
+    Column("config_version_id", BigInteger, nullable=False),
+    Column("close_px", PRICE, nullable=False),
+    Column("zone", ZONE_T, nullable=False),
+    Column("state", STATE_T, nullable=False),
+    #: **ไม่มีคอลัมน์ `signal`** — spec/02:64 ให้ชื่อจริงในโค้ดเป็นบูลีนสองตัว
+    #: ส่วน spec/07:142 เขียน `signal` เฉยๆ ไม่เคยระบุค่าที่มันเก็บ
+    Column("long_signal", Boolean, nullable=False),
+    Column("short_signal", Boolean, nullable=False),
+    Column("side", SIDE_T),
+    #: โหมด cold start ที่แท่งนี้เดิน (ชุดเดียวกับ `config_settings.cold_start`)
+    #: NULL = ไม่ได้เข้าเส้นทาง cold start
+    Column("cold_start", Text),
+    Column("dry_run", Boolean, nullable=False),
+    #: NULL บน spot — ตลาดนั้นไม่มีทั้งคู่ (decisions #26)
+    Column("leverage", PCT),
+    Column("margin_mode", MARGIN_MODE_T),
+    Column("judge_called", Boolean),
+    #: LLM ล้มเหลว = **ยังลงไม้ ที่ `base_pct`** (decisions #6, spec/04:87) ไม่ใช่ข้ามสัญญาณ
+    #: จึงเป็นคอลัมน์ ไม่ใช่ค่าของ `skip_reason` · ถ้าไม่มีธงนี้ ตอนอ่านย้อนหลังจะแยกไม่ออก
+    #: ระหว่าง "LLM บอกว่าไม่มีปัจจัย" กับ "LLM ตอบไม่ได้"
+    Column("llm_fallback", Boolean),
+    Column("llm_fallback_reason", Text),
+    Column("prompt_hash", Text),
+    Column("factors_present", Integer),
+    #: `confluence` / `cold_start` / `none` — ตอบว่า "ใช้สูตรไหน" ส่วน `llm_fallback`
+    #: ตอบว่า "input จริงหรือเปล่า" · ไม่มีค่า `base_only` เพราะเส้นทาง fallback รันสูตร
+    #: confluence ตัวเดิมด้วย `factors_present = 0`
+    Column("size_rule", Text),
+    #: ก่อนเพดาน / หลังเพดาน (spec/05:16-17) · `capped` แยก "ไม้เล็กเพราะปัจจัยน้อย"
+    #: ออกจาก "ไม้เล็กเพราะชนเพดาน" (spec/05:68)
+    Column("size_pct_formula", PCT),
+    Column("size_pct_final", PCT),
+    Column("capped", Boolean),
+    Column("margin", PRICE),
+    Column("notional", PRICE),
+    Column("qty", PRICE),
+    Column("ref_px", PRICE),
+    #: ตอบคำถามเดียว: "ทำไมไม่มีออเดอร์เปิด (`leg = open`) ถูกส่ง" — หนึ่งค่าต่อแถว
+    #: เลือกจากประตูแรกที่ปิด · invariant ที่ผูกค่านี้กับ `decision_orders` เขียนเป็น
+    #: CHECK ไม่ได้ (ข้ามตาราง) จึงอยู่ที่ `repo.decisions.validate_record()`
+    Column("skip_reason", Text),
+    #: NULL ทั้งชุดบน spot — ตลาดนั้น**ไม่มี** funding ซึ่งคนละความหมายกับ "ดึงไม่ได้"
+    #: (decisions #26, spec/07:19)
+    Column("funding_rate", FUNDING_RATE),
+    Column("funding_next_ts", BigInteger),
+    Column("funding_unavailable_reason", Text),
+    Column("created_ts", BigInteger, nullable=False),
+    # ให้ตารางลูกอ้างกลับได้แบบ composite เพื่อกันคอลัมน์ profile ของลูกเพี้ยนจากหัว
+    UniqueConstraint("id", "profile", name="uq_decisions_id_profile"),
+    # ไม้ของ live ชี้ config version ของ paper ไม่ได้ — ต้องเป็น composite ไม่ใช่ FK
+    # คอลัมน์เดียว ไม่งั้นบันทึกจะอ้างการตั้งค่าของอีกโหมดได้โดยไม่มีอะไรขวาง
+    ForeignKeyConstraint(
+        ["config_version_id", "profile"],
+        ["config_versions.id", "config_versions.profile"],
+        name="fk_decisions_config_version",
+    ),
+    CheckConstraint("market IN ('usdtm_perp', 'spot')", name="ck_decisions_market"),
+    # ชุดนี้ตรงกับ `TIMEFRAME_MS` ใน data/ohlcv.py และกับ `ck_config_settings_timeframe`
+    CheckConstraint("timeframe IN ('1h', '1d')", name="ck_decisions_timeframe"),
+    # แท่งเดียวเป็นสัญญาณสองฝั่งพร้อมกันไม่ได้ (spec/02:44-46 นิยามสัญญาณจาก state ก่อนหน้า)
+    CheckConstraint(
+        "NOT (long_signal AND short_signal)", name="ck_decisions_signal_exclusive"
+    ),
+    CheckConstraint(
+        "cold_start IS NULL OR cold_start IN ('wait_1h', 'trailing', 'skip')",
+        name="ck_decisions_cold_start",
+    ),
+    # factor มีสามตัวต่อฝั่ง (spec/04:19-24) — ค่าที่เกินสามคือบั๊กของชั้น judge
+    CheckConstraint(
+        "factors_present IS NULL OR factors_present BETWEEN 0 AND 3",
+        name="ck_decisions_factors_present",
+    ),
+    CheckConstraint(
+        "size_rule IS NULL OR size_rule IN ('confluence', 'cold_start', 'none')",
+        name="ck_decisions_size_rule",
+    ),
+    # ชุดปิดที่ตกลงกันไว้ในใบ · เป็น TEXT + CHECK ไม่ใช่ ENUM เพราะชุดนี้จะโตอีก
+    # (ขั้น 1 ของ spec/08 ที่ข้ามเหรียญไปเลยยังไม่มีค่าของตัวเอง — ใบ 12 ตัดสิน)
+    CheckConstraint(
+        "skip_reason IS NULL OR skip_reason IN ("
+        "'flip_aborted', 'no_signal', 'already_positioned', 'short_disabled', "
+        "'cane_rule', 'rr_too_low', 'risk_rejected', 'order_error', 'dry_run')",
+        name="ck_decisions_skip_reason",
+    ),
+    # สามข้อล่างเขียนสิ่งที่ตลาด spot **ไม่มี** ลงไปให้ฐานปฏิเสธ แบบเดียวกับที่
+    # `config_symbols` ทำ — ค่าที่ขัดข้อพวกนี้ไม่ได้ "ตั้งผิด" แต่เป็นไปไม่ได้
+    CheckConstraint(
+        "market <> 'spot' OR (leverage = 1 AND margin_mode IS NULL)",
+        name="ck_decisions_spot_no_leverage",
+    ),
+    CheckConstraint(
+        "market <> 'spot' OR (funding_rate IS NULL AND funding_next_ts IS NULL "
+        "AND funding_unavailable_reason IS NULL)",
+        name="ck_decisions_spot_no_funding",
+    ),
+    # spot เป็น long-only — แดงบน spot คือ "ขายออกให้แบน" ไม่ใช่การเปิดไม้ short
+    # (decisions #26, spec/03:20)
+    CheckConstraint(
+        "market <> 'spot' OR side IS NULL OR side = 'long'",
+        name="ck_decisions_spot_long_only",
+    ),
+    # กุญแจธรรมชาติ **ไม่ unique** ตามเหตุผลใน docstring ของตาราง
+    Index(
+        "ix_decisions_natural",
+        "profile",
+        "market",
+        "symbol",
+        "timeframe",
+        "bar_close_ts",
+    ),
+)
+
+
+def _decision_fk() -> tuple[Column, Column]:
+    """คอลัมน์ที่ตารางลูกของ `decisions` ใช้ผูกกลับไปที่หัว
+
+    เหตุผลเดียวกับ `_version_fk()` — `profile` ซ้ำอยู่บนลูกทุกตัวเพื่อให้กฎที่ผูกโหมด
+    เขียนเป็น CHECK ได้ และความซ้ำนั้นเพี้ยนจากหัวไม่ได้เพราะ FK เป็นแบบ composite
+    `(decision_id, profile)` ชี้ไปที่ `UNIQUE (id, profile)` ของหัว · ลูกที่โกหก
+    `profile` ได้ทำให้คอนโซลเอาไม้ paper ไปปนกับ live โดยไม่มีอะไรขวาง
+
+    `market` **ไม่** ซ้ำลงมาด้วย แม้จะมีกฎของ spot ที่อยากเขียนเป็น CHECK บนลูก
+    (`reduce_only` เป็นของ perp) — การพา `market` ลงมาบังคับให้ FK ขยายเป็น
+    `(decision_id, profile, market)` ทั้งหกตาราง ซึ่งไม่คุ้มกับกฎข้อเดียว
+    กฎนั้นจึงอยู่ที่ `validate_record()` แทน
+    """
+    return (
+        Column("decision_id", BigInteger, primary_key=True),
+        Column("profile", PROFILE_T, nullable=False),
+    )
+
+
+_DECISION_FK = "decisions.id"
+
+
+#: คำตัดสินของ Judge ต่อ factor — เขียนลงทุกตัว **ไม่ว่าผลจะเป็นอะไร** (spec/04:77)
+#: เป็นแถวจริงไม่ใช่ JSON ก้อน เพราะคอนโซลต้องกรองตาม factor และนับ compliance ต่อแท่ง
+decision_verdicts = Table(
+    "decision_verdicts",
+    metadata,
+    *_decision_fk(),
+    Column("factor", Text, primary_key=True),
+    #: ตัดสินเฉพาะ factor ของฝั่งที่กำลังจะเข้า ไม่มีการหักลบข้ามฝั่ง (spec/04:26)
+    Column("side", SIDE_T, nullable=False),
+    Column("present", Boolean, nullable=False),
+    #: ใช้สำหรับให้คนอ่านย้อนหลังเท่านั้น **ห้ามผูกกับขนาดไม้** (decisions #12, spec/05:52)
+    Column("confidence", PCT),
+    Column("evidence_bars", postgresql.ARRAY(BigInteger)),
+    Column("rationale", Text),
+    #: มาจาก cache หรือเรียกจริง (spec/07:145) — ต่างกันตอนไล่ค่าใช้จ่ายและตอนไล่บั๊ก
+    Column("cached", Boolean, nullable=False),
+    Column("created_ts", BigInteger, nullable=False),
+    ForeignKeyConstraint(
+        ["decision_id", "profile"],
+        [_DECISION_FK, "decisions.profile"],
+        name="fk_decision_verdicts_decision",
+    ),
+    CheckConstraint(
+        "factor IN ('CHANNEL_BREAKOUT', 'RETAIL_CAPITULATION', 'HIGHER_LOW', "
+        "'CHANNEL_BREAKDOWN', 'BUYING_EXHAUSTION', 'LOWER_HIGH')",
+        name="ck_decision_verdicts_factor",
+    ),
+)
+
+
+#: ผลการตรวจ risk **ทีละชั้น** (spec/07:149) เรียงตาม `seq`
+#:
+#: spec/08:39 ตรวจเรียง `kill_switch` → `daily_loss` → `liq_buffer` และชั้นแรกที่ไม่ผ่าน
+#: ปฏิเสธทั้งไม้ → **ชั้นที่ไม่มีในตารางคือหลักฐานว่าลำดับถูกเคารพ** ไม่ใช่ข้อมูลที่หายไป
+#: ไม้บน spot มีสองแถว เพราะไม่มี liquidation จึง**ไม่เรียก** ชั้น `liq_buffer` เลย
+#: ไม่ใช่เรียกแล้วผ่านเสมอ (decisions #26, spec/06:50)
+#:
+#: invariant "มีได้ไม่เกินหนึ่งแถวที่ `passed = false` และต้องเป็น `seq` สูงสุด" กับ
+#: "`seq` เรียง 1..n ไม่มีช่อง" เป็นกฎข้ามแถว CHECK เขียนไม่ได้ → `validate_record()`
+decision_risk_checks = Table(
+    "decision_risk_checks",
+    metadata,
+    *_decision_fk(),
+    Column("seq", Integer, primary_key=True),
+    Column("layer", Text, nullable=False),
+    Column("passed", Boolean, nullable=False),
+    Column("value", PRICE),
+    Column("limit_value", PRICE),
+    Column("detail", Text),
+    Column("created_ts", BigInteger, nullable=False),
+    ForeignKeyConstraint(
+        ["decision_id", "profile"],
+        [_DECISION_FK, "decisions.profile"],
+        name="fk_decision_risk_checks_decision",
+    ),
+    CheckConstraint(
+        "layer IN ('kill_switch', 'daily_loss', 'liq_buffer')",
+        name="ck_decision_risk_checks_layer",
+    ),
+    CheckConstraint("seq > 0", name="ck_decision_risk_checks_seq"),
+)
+
+
+#: ออเดอร์ที่พยายามส่งในแท่งนี้ — **หลายแถวต่อหนึ่ง decision**
+#:
+#: flip ยิงสองขาในแท่งเดียว (ปิดแล้วเปิด, spec/06:129) และ cold start ทางที่ 2 เพิ่มขา
+#: `stop` เข้ามาอีก · คีย์เป็น surrogate เพราะขาเดียวกันซ้ำได้ตอน retry จึงไม่มีชุด
+#: คอลัมน์ธรรมชาติที่เป็นกุญแจได้
+decision_orders = Table(
+    "decision_orders",
+    metadata,
+    Column("id", BigInteger, Identity(always=True), primary_key=True),
+    Column("decision_id", BigInteger, nullable=False),
+    Column("profile", PROFILE_T, nullable=False),
+    Column("leg", LEG_T, nullable=False),
+    #: ฝั่งของออเดอร์ ไม่ใช่ฝั่งของไม้ — flip long→short ในโหมด one-way คือ `sell`
+    #: สองครั้ง (spec/06:94)
+    Column("order_side", ORDER_SIDE_T, nullable=False),
+    Column("order_type", Text, nullable=False),
+    #: ของ perp เท่านั้น (decisions #26) — บังคับที่ `validate_record()` ไม่ใช่ CHECK
+    #: เพราะ CHECK ต้องเห็น `market` ในแถวเดียวกัน ซึ่งพา composite FK ไปทั้งหกตาราง
+    Column("reduce_only", Boolean, nullable=False),
+    Column("qty", PRICE, nullable=False),
+    Column("stop_px", PRICE),
+    #: กำหนดจาก (symbol, แท่ง, ขา) แบบ deterministic ก่อนพยายามส่ง (spec/06:127) จึงมี
+    #: ค่าอยู่แม้แถวที่พังก่อนส่ง — เป็นตัวที่ทำให้ restart ในแท่งเดิมถูก venue ปฏิเสธ
+    Column("client_order_id", Text, nullable=False),
+    Column("sent", Boolean, nullable=False),
+    Column("accepted", Boolean, nullable=False),
+    Column("venue_order_id", Text),
+    Column("error", Text),
+    Column("created_ts", BigInteger, nullable=False),
+    ForeignKeyConstraint(
+        ["decision_id", "profile"],
+        [_DECISION_FK, "decisions.profile"],
+        name="fk_decision_orders_decision",
+    ),
+    CheckConstraint(
+        "order_type IN ('market', 'stop_market')", name="ck_decision_orders_order_type"
+    ),
+    # ออเดอร์ที่ส่งแล้วไม่ถูกรับ ต้องบอกได้ว่าเพราะอะไร — ถ้าไม่บังคับ แถวที่ venue
+    # ปฏิเสธจะแยกไม่ออกจากแถวที่โค้ดลืมเซ็ต `accepted` และ `skip_reason = order_error`
+    # จะไม่มีหลักฐานรองรับ
+    CheckConstraint(
+        "NOT (sent AND NOT accepted) OR error IS NOT NULL",
+        name="ck_decision_orders_rejected_needs_error",
+    ),
+    Index("ix_decision_orders_decision", "decision_id"),
+)
+
+
+#: ผลของ flip สองขาในแท่งนี้ (spec/07:143) — หนึ่งแถวต่อ decision
+#:
+#: `residual_side` ไม่ได้อยู่ในบล็อก `flip{}` ของ spec/07:143 แต่ spec/03:79 สั่งให้บันทึก
+#: **ฝั่งของ residual** ด้วย · ของค้างที่ไม่รู้ฝั่งคือของค้างที่คนปิดด้วยมือไม่ได้
+#: **ตารางนี้ไม่มีแถวของไม้ spot** — ไม่มี flip บน spot (decisions #26, spec/03:20)
+decision_flip = Table(
+    "decision_flip",
+    metadata,
+    *_decision_fk(),
+    Column("close_qty_intended", PRICE, nullable=False),
+    Column("close_qty_filled", PRICE, nullable=False),
+    Column("residual_qty", PRICE, nullable=False),
+    Column("residual_side", SIDE_T),
+    Column("aborted", Boolean, nullable=False),
+    Column("created_ts", BigInteger, nullable=False),
+    ForeignKeyConstraint(
+        ["decision_id", "profile"],
+        [_DECISION_FK, "decisions.profile"],
+        name="fk_decision_flip_decision",
+    ),
+    # ฝั่งเว้นได้เฉพาะตอนไม่มีของค้าง — spec/03:79 บังคับให้ของค้างมีฝั่งกำกับ
+    CheckConstraint(
+        "residual_qty = 0 OR residual_side IS NOT NULL",
+        name="ck_decision_flip_residual_needs_side",
+    ),
+)
+
+
+#: stop order ของแท่งนี้ (spec/07:148) — cold start ทางที่ 2 และการขยับ Slow Trail
+#:
+#: `missing` คือการทำตาม spec/08:80 ที่ห้ามวาง stop ใหม่เงียบๆ ทับตอนหา stop เดิมไม่เจอ
+#: ต้องเทียบกับ `positions()` แล้วบันทึกให้ชัดว่ามันหายไป
+decision_stop = Table(
+    "decision_stop",
+    metadata,
+    *_decision_fk(),
+    Column("action", Text, nullable=False),
+    Column("px", PRICE),
+    Column("stop_order_id", Text),
+    Column("created_ts", BigInteger, nullable=False),
+    ForeignKeyConstraint(
+        ["decision_id", "profile"],
+        [_DECISION_FK, "decisions.profile"],
+        name="fk_decision_stop_decision",
+    ),
+    CheckConstraint(
+        "action IN ('placed', 'replaced', 'unchanged', 'missing')",
+        name="ck_decision_stop_action",
+    ),
+)
+
+
+#: สถานะที่เปิดค้างที่ปลายทางแต่ระบบไม่ได้ตั้งใจถือ — **เขียนซ้ำทุกแท่งจนกว่าคนจะปิด**
+#: (decisions #19) ไม่ใช่ event ครั้งเดียวตอนเกิด
+#:
+#: เพราะกฎนั้น "ค้างมากี่แท่งแล้ว" จึงเป็น `count(*)` แทนการไล่อ่านย้อนหาแท่งที่เกิดเหตุ
+#: คีย์เป็น `(decision_id, side)` เพราะหนึ่งแท่งมีของค้างได้ฝั่งละไม่เกินหนึ่ง — surrogate
+#: key จะปล่อยให้แท่งเดียวมีสองแถวฝั่งเดียวกัน ซึ่งทำให้ `count(*)` เพี้ยนเงียบๆ
+decision_unmanaged = Table(
+    "decision_unmanaged",
+    metadata,
+    *_decision_fk(),
+    Column("side", SIDE_T, primary_key=True),
+    Column("qty", PRICE, nullable=False),
+    Column("source", Text, nullable=False),
+    #: แท่งที่เห็นของค้างนี้ครั้งแรก — ยกมาซ้ำทุกแท่งที่เขียนต่อจากนั้น
+    Column("first_seen_bar_close_ts", BigInteger, nullable=False),
+    Column("created_ts", BigInteger, nullable=False),
+    ForeignKeyConstraint(
+        ["decision_id", "profile"],
+        [_DECISION_FK, "decisions.profile"],
+        name="fk_decision_unmanaged_decision",
+    ),
+)
+
+#: ตารางบันทึกทั้งชุด เรียงตามลำดับที่ต้องเขียน (หัวก่อนลูก)
+DECISION_TABLES = (
+    decisions,
+    decision_verdicts,
+    decision_risk_checks,
+    decision_orders,
+    decision_flip,
+    decision_stop,
+    decision_unmanaged,
 )
