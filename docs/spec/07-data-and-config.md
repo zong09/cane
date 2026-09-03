@@ -41,7 +41,6 @@ perp มีค่า funding ทุก 8 ชั่วโมง ซึ่งเ�
 
 ```toml
 profile    = "live"           # live | paper
-market     = "usdtm_perp"
 timeframe  = "1d"
 cold_start = "wait_1h"        # wait_1h | trailing | skip — ไม่ระบุ = ไม่เข้าเส้นทาง cold start
 base_pct   = 5.0              # ต้องอยู่ 5–20
@@ -50,6 +49,7 @@ allow_short = true            # สวิตช์ระดับระบบ �
 
 [[symbols]]
 symbol             = "BTC/USDT"
+market             = "usdtm_perp"   # usdtm_perp | spot — บังคับกรอก ไม่มีค่าตั้งต้น
 bucket_quote_long  = 100.0
 bucket_quote_short = 60.0     # เว้นได้ = เทรดฝั่ง long อย่างเดียว
 leverage           = 2.0

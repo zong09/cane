@@ -22,6 +22,8 @@ from cane.db.repo.funding import latest_observation, record_observation
 pytestmark = pytest.mark.db
 
 SYMBOL = "BTC/USDT"
+PERP = "usdtm_perp"
+SPOT = "spot"
 TIMEFRAME = "1d"
 DAY_MS = 86_400_000
 T0 = 1_788_000_000_000
@@ -44,9 +46,9 @@ def bar(index: int, close: float = 77_500.0) -> Bar:
 
 
 def test_a_bar_survives_the_round_trip_as_floats(db):
-    insert_bars(db, SYMBOL, TIMEFRAME, [bar(0)])
+    insert_bars(db, PERP, SYMBOL, TIMEFRAME, [bar(0)])
 
-    got = closed_bars(db, SYMBOL, TIMEFRAME, as_of=T0 + 10 * DAY_MS)
+    got = closed_bars(db, PERP, SYMBOL, TIMEFRAME, as_of=T0 + 10 * DAY_MS)
 
     assert got == [bar(0)]
     assert all(isinstance(value, float) for value in (got[0].close, got[0].volume))
@@ -64,25 +66,25 @@ def test_prices_keep_eight_decimals(db):
         volume=98_765_432.5,
     )
 
-    insert_bars(db, SYMBOL, TIMEFRAME, [tiny])
-    got = closed_bars(db, SYMBOL, TIMEFRAME, as_of=T0 + DAY_MS + 1)
+    insert_bars(db, PERP, SYMBOL, TIMEFRAME, [tiny])
+    got = closed_bars(db, PERP, SYMBOL, TIMEFRAME, as_of=T0 + DAY_MS + 1)
 
     assert got == [tiny]
 
 
 def test_bars_come_back_oldest_first(db):
-    insert_bars(db, SYMBOL, TIMEFRAME, [bar(2), bar(0), bar(1)])
+    insert_bars(db, PERP, SYMBOL, TIMEFRAME, [bar(2), bar(0), bar(1)])
 
-    got = closed_bars(db, SYMBOL, TIMEFRAME, as_of=T0 + 10 * DAY_MS)
+    got = closed_bars(db, PERP, SYMBOL, TIMEFRAME, as_of=T0 + 10 * DAY_MS)
 
     assert [b.open_ts for b in got] == [T0, T0 + DAY_MS, T0 + 2 * DAY_MS]
 
 
 def test_the_limit_takes_the_newest_bars_still_oldest_first(db):
     """ผู้เรียกทุกรายต้องการของล่าสุด (#04 ใช้ 130 แท่ง การตัดสินใจใช้ 85)"""
-    insert_bars(db, SYMBOL, TIMEFRAME, [bar(i) for i in range(5)])
+    insert_bars(db, PERP, SYMBOL, TIMEFRAME, [bar(i) for i in range(5)])
 
-    got = closed_bars(db, SYMBOL, TIMEFRAME, as_of=T0 + 10 * DAY_MS, limit=2)
+    got = closed_bars(db, PERP, SYMBOL, TIMEFRAME, as_of=T0 + 10 * DAY_MS, limit=2)
 
     assert [b.open_ts for b in got] == [T0 + 3 * DAY_MS, T0 + 4 * DAY_MS]
 
@@ -92,25 +94,25 @@ def test_the_limit_takes_the_newest_bars_still_oldest_first(db):
 
 def test_reinserting_a_bar_changes_nothing(db):
     """feed ที่ส่งค่าใหม่ให้แท่งที่ปิดแล้วคือ feed ที่ขัดกับตัวเอง — ของเดิมอยู่"""
-    insert_bars(db, SYMBOL, TIMEFRAME, [bar(0, close=77_500.0)])
+    insert_bars(db, PERP, SYMBOL, TIMEFRAME, [bar(0, close=77_500.0)])
 
-    written = insert_bars(db, SYMBOL, TIMEFRAME, [bar(0, close=77_600.0)])
+    written = insert_bars(db, PERP, SYMBOL, TIMEFRAME, [bar(0, close=77_600.0)])
 
     assert written == 0
-    got = closed_bars(db, SYMBOL, TIMEFRAME, as_of=T0 + 10 * DAY_MS)
+    got = closed_bars(db, PERP, SYMBOL, TIMEFRAME, as_of=T0 + 10 * DAY_MS)
     assert got[0].close == 77_500.0
 
 
 def test_inserting_reports_how_many_rows_were_new(db):
-    insert_bars(db, SYMBOL, TIMEFRAME, [bar(0)])
+    insert_bars(db, PERP, SYMBOL, TIMEFRAME, [bar(0)])
 
-    written = insert_bars(db, SYMBOL, TIMEFRAME, [bar(0), bar(1), bar(2)])
+    written = insert_bars(db, PERP, SYMBOL, TIMEFRAME, [bar(0), bar(1), bar(2)])
 
     assert written == 2
 
 
 def test_inserting_nothing_touches_nothing(db):
-    assert insert_bars(db, SYMBOL, TIMEFRAME, []) == 0
+    assert insert_bars(db, PERP, SYMBOL, TIMEFRAME, []) == 0
 
 
 # ── `as_of` — กฎเดียวกับ closed_as_of() ─────────────────────────────────────
@@ -123,10 +125,10 @@ def test_the_as_of_boundary_matches_closed_as_of_exactly(db):
     ประวัติทั้งก้อน เทสต์ตัวนี้คือสิ่งที่จะดังถ้าวันหนึ่งสองที่นั้นเลิกตรงกัน
     """
     history = [bar(0), bar(1), bar(2)]
-    insert_bars(db, SYMBOL, TIMEFRAME, history)
+    insert_bars(db, PERP, SYMBOL, TIMEFRAME, history)
     boundary = history[1].close_ts
 
-    from_sql = closed_bars(db, SYMBOL, TIMEFRAME, as_of=boundary)
+    from_sql = closed_bars(db, PERP, SYMBOL, TIMEFRAME, as_of=boundary)
 
     assert from_sql == closed_as_of(history, boundary)
     assert [b.close_ts for b in from_sql] == [history[0].close_ts]
@@ -134,13 +136,13 @@ def test_the_as_of_boundary_matches_closed_as_of_exactly(db):
 
 def test_last_bar_ignores_as_of_because_it_answers_a_different_question(db):
     """"เรามีของถึงไหน" เป็นเรื่องของการดึงข้อมูล ไม่ใช่ของการตัดสินใจ"""
-    insert_bars(db, SYMBOL, TIMEFRAME, [bar(0), bar(1), bar(2)])
+    insert_bars(db, PERP, SYMBOL, TIMEFRAME, [bar(0), bar(1), bar(2)])
 
-    assert last_bar(db, SYMBOL, TIMEFRAME) == bar(2)
+    assert last_bar(db, PERP, SYMBOL, TIMEFRAME) == bar(2)
 
 
 def test_last_bar_of_an_unknown_pair_is_none(db):
-    assert last_bar(db, "ETH/USDT", TIMEFRAME) is None
+    assert last_bar(db, PERP, "ETH/USDT", TIMEFRAME) is None
 
 
 # ── ชื่อคู่เหรียญเหลือรูปเดียวในตาราง ────────────────────────────────────────
@@ -148,20 +150,59 @@ def test_last_bar_of_an_unknown_pair_is_none(db):
 
 def test_the_perp_and_the_config_spelling_land_on_one_row(db):
     """`BTC/USDT:USDT` กับ `BTC/USDT` คือเหรียญเดียวกัน ไม่ใช่สองประวัติ"""
-    insert_bars(db, "BTC/USDT:USDT", TIMEFRAME, [bar(0)])
+    insert_bars(db, PERP, "BTC/USDT:USDT", TIMEFRAME, [bar(0)])
 
-    written = insert_bars(db, "BTC/USDT", TIMEFRAME, [bar(0)])
+    written = insert_bars(db, PERP, "BTC/USDT", TIMEFRAME, [bar(0)])
 
     assert written == 0
-    assert closed_bars(db, "BTC/USDT:USDT", TIMEFRAME, as_of=T0 + DAY_MS + 1) == [bar(0)]
+    assert closed_bars(db, PERP, "BTC/USDT:USDT", TIMEFRAME, as_of=T0 + DAY_MS + 1) == [bar(0)]
+
+
+# ── spot กับ perp เป็นคนละแท่งราคา ─────────────────────────────────────────
+
+
+def test_the_same_pair_on_two_markets_is_two_rows(db):
+    """`store_symbol()` ตัด `:USDT` ทิ้ง — `market` จึงเป็นสิ่งเดียวที่แยกสองตลาดออกจากกัน
+
+    ก่อนใบ 03c การเขียนแท่งของ spot ทับแท่งของ perp เงียบๆ (`ON CONFLICT DO NOTHING`
+    ทำให้แท่งที่สองหายไปเฉยๆ ไม่มีข้อความอะไร) แล้ว indicator จะคำนวณบนประวัติที่
+    ปนกันสองตลาด · เทสต์ตัวนี้คือตัวที่จะดังถ้า `market` หลุดออกจากกุญแจอีก
+    """
+    perp = bar(0, close=77_500.0)
+    spot = bar(0, close=77_480.0)
+
+    assert insert_bars(db, PERP, SYMBOL, TIMEFRAME, [perp]) == 1
+    assert insert_bars(db, SPOT, SYMBOL, TIMEFRAME, [spot]) == 1
+
+    as_of = T0 + DAY_MS + 1
+    assert closed_bars(db, PERP, SYMBOL, TIMEFRAME, as_of=as_of) == [perp]
+    assert closed_bars(db, SPOT, SYMBOL, TIMEFRAME, as_of=as_of) == [spot]
+
+
+def test_last_bar_does_not_reach_across_markets(db):
+    """"เรามีของถึงไหน" ของ spot ต้องไม่ถูกตอบด้วยแท่งที่ดึงมาให้ perp"""
+    insert_bars(db, PERP, SYMBOL, TIMEFRAME, [bar(0), bar(1), bar(2)])
+
+    assert last_bar(db, SPOT, SYMBOL, TIMEFRAME) is None
+    assert last_bar(db, PERP, SYMBOL, TIMEFRAME) == bar(2)
+
+
+def test_an_unknown_market_is_refused(db):
+    """ชุดของ `market` เป็นชุดปิด — สะกดผิดต้องล้มตอนเขียน ไม่ใช่ได้แถวที่ไม่มีใครอ่าน"""
+    from sqlalchemy.exc import IntegrityError
+
+    with pytest.raises(IntegrityError) as caught:
+        insert_bars(db, "usdtm-perp", SYMBOL, TIMEFRAME, [bar(0)])
+
+    assert "ck_bars_market" in str(caught.value)
 
 
 def test_timeframes_of_one_pair_do_not_mix(db):
     """cold start ทางที่ 1 อ่าน 1h ขณะที่การตัดสินใจอ่าน 1d (spec/07)"""
-    insert_bars(db, SYMBOL, "1d", [bar(0)])
-    insert_bars(db, SYMBOL, "1h", [bar(1)])
+    insert_bars(db, PERP, SYMBOL, "1d", [bar(0)])
+    insert_bars(db, PERP, SYMBOL, "1h", [bar(1)])
 
-    got = closed_bars(db, SYMBOL, "1d", as_of=T0 + 10 * DAY_MS)
+    got = closed_bars(db, PERP, SYMBOL, "1d", as_of=T0 + 10 * DAY_MS)
 
     assert [b.open_ts for b in got] == [T0]
 

@@ -21,12 +21,12 @@ from cane.config import ConfigError, load_profile, render_loc, validate_settings
 BROKEN_LIVE = """\
 profile    = "live"
 timeframe  = "1d"
-market     = "usdtm_perp"
 base_pct   = 32.0
 dry_run    = true
 
 [[symbols]]
 symbol             = "BTC/USDT"
+market             = "usdtm_perp"
 bucket_quote_long  = 100.0
 bucket_quote_short = 60.0
 leverage           = 2.0
@@ -70,7 +70,7 @@ def fields_of(path):
 def test_ships_with_loadable_profiles(profile):
     settings = load_profile(f"config/{profile}.toml")
     assert settings.profile == profile
-    assert settings.market == "usdtm_perp"
+    assert settings.symbols[0].market == "usdtm_perp"
     assert settings.dry_run is True
 
 
@@ -289,13 +289,13 @@ def test_values_from_a_form_go_through_the_same_gate():
     raw = {
         "profile": "live",
         "timeframe": "1d",
-        "market": "usdtm_perp",
         "base_pct": 7.5,
         "dry_run": True,
         "allow_short": True,
         "symbols": [
             {
                 "symbol": "BTC/USDT",
+                "market": "usdtm_perp",
                 "bucket_quote_long": 100.0,
                 "bucket_quote_short": 60.0,
                 "leverage": 2.0,

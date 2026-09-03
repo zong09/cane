@@ -12,8 +12,12 @@ SQL ที่รันจริงไว้หลัง lazy-load ซึ่ง�
   เพราะเวลาที่เหตุการณ์เกิดกับเวลาที่เราบันทึกมันไม่เท่ากัน และตอนไล่ปัญหาต้องใช้ทั้งคู่
 - `profile` อยู่ใน unique key ของทุกตารางที่ผูกโหมด — query ที่ลืมกรอง profile จะชน
   กันเองตอนเขียน ไม่ใช่ไปโป๊ะตอนคอนโซลเอาไม้ paper ไปแสดงปนกับ live
-- enum ที่ปิดจริงเป็น Postgres ENUM · ชุดที่จะโตอีก (`skip_reason`, `exit_reason`)
+- enum ที่ปิดจริงเป็น Postgres ENUM · ชุดที่จะโตอีก (`market`, `skip_reason`, `exit_reason`)
   เป็น `TEXT` + `CHECK` เพราะเพิ่มค่าใหม่ทำได้ใน migration ธรรมดา ไม่ต้อง `ALTER TYPE`
+- `market` (`usdtm_perp` / `spot`) เป็น **ค่าต่อเหรียญ ไม่ใช่ค่าของทั้งระบบ** (decisions #26)
+  และอยู่ในกุญแจของทุกตารางที่เก็บของต่อเหรียญ — เหรียญชื่อเดียวกันบนสองตลาดเป็นคนละของ
+  · ค่าเขียนซ้ำใน `CHECK` ของแต่ละตารางโดยเจตนา ไม่ตั้งเป็นค่าคงที่ร่วมให้ `config/`
+  import มาใช้ เพราะทิศ `config` → `db` ทำให้เกิด import cycle (ดู `repo/config.py`)
 """
 
 from __future__ import annotations
@@ -61,6 +65,12 @@ PCT = Numeric(9, 4)
 bars = Table(
     "bars",
     metadata,
+    # `market` อยู่ในกุญแจเพราะ `BTC/USDT` บน spot กับบน perp เป็นคนละแท่งราคา —
+    # `store_symbol()` ตัด `:USDT` ทิ้งเพื่อให้ตารางเก็บรูปเดียวกับที่ config เขียน
+    # (spec/07) ถ้าไม่มีคอลัมน์นี้ สองตลาดจะยุบเป็นแถวเดียวกันแล้ว indicator จะคำนวณ
+    # บนแท่งที่ปนกันสองตลาดโดยไม่มีอะไรส่งเสียง · เก็บเป็นคอลัมน์ไม่ใช่เข้ารหัสไว้ใน
+    # สตริง symbol เพราะ `WHERE market = 'spot'` ต้องเขียนได้ ไม่ใช่ต้อง `LIKE '%:USDT'`
+    Column("market", Text, primary_key=True),
     Column("symbol", Text, primary_key=True),
     Column("timeframe", Text, primary_key=True),
     Column("open_ts", BigInteger, primary_key=True),
@@ -81,10 +91,15 @@ bars = Table(
     CheckConstraint("high >= open AND high >= close", name="ck_bars_high_is_max"),
     CheckConstraint("low <= open AND low <= close", name="ck_bars_low_is_min"),
     CheckConstraint("volume >= 0", name="ck_bars_volume_nonneg"),
+    CheckConstraint("market IN ('usdtm_perp', 'spot')", name="ck_bars_market"),
 )
 
 
 #: การสังเกต funding rate หนึ่งครั้ง — บันทึกทั้งตอนได้ค่าและตอนดึงไม่ได้
+#:
+#: **ตารางนี้เป็นของ `usdtm_perp` เท่านั้น จึงไม่มีคอลัมน์ `market`** — spot ไม่มี funding
+#: อยู่จริง ไม่ใช่มีแล้วเป็นศูนย์ แถวในตารางนี้จึงไม่กำกวมแม้ไม่ระบุตลาด · ถ้าวันหนึ่ง
+#: มีตลาดที่สามที่มี funding ด้วย ตอนนั้นค่อยเพิ่มคอลัมน์ อย่าเดาไว้ก่อน
 #:
 #: `CHECK` ตัวนั้นคือกฎของ `data/funding.py` ("ดึงไม่ได้ = บันทึกว่าไม่มีข้อมูล
 #: **ห้ามเดาเป็น 0**") ที่ยกจาก docstring ขึ้นมาเป็นข้อบังคับของ schema — เขียน
@@ -181,7 +196,6 @@ config_settings = Table(
     metadata,
     *_version_fk(),
     Column("timeframe", Text, nullable=False),
-    Column("market", Text, nullable=False),
     # NULL = ไม่เข้าเส้นทาง cold start เลย (fail-closed ตาม spec/03)
     Column("cold_start", Text),
     Column("base_pct", PCT, nullable=False),
@@ -194,7 +208,6 @@ config_settings = Table(
         name="fk_config_settings_version",
     ),
     CheckConstraint("base_pct BETWEEN 5 AND 20", name="ck_config_settings_base_pct"),
-    CheckConstraint("market = 'usdtm_perp'", name="ck_config_settings_market"),
     # paper บังคับ dry_run — profile ที่ไม่มีทางส่งคำสั่งจริงได้เลย ต้องเป็นข้อบังคับ
     # ของ DB ไม่ใช่ของ validator ที่ลืมเรียกได้
     CheckConstraint("profile <> 'paper' OR dry_run", name="ck_config_settings_paper_dry_run"),
@@ -214,6 +227,9 @@ config_symbols = Table(
     Column("config_version_id", BigInteger, primary_key=True),
     Column("symbol", Text, primary_key=True),
     Column("profile", PROFILE_T, nullable=False),
+    #: `usdtm_perp` / `spot` — **ค่าต่อเหรียญ ไม่ใช่ค่าของทั้ง profile** (decisions #26)
+    #: เหรียญหนึ่งเลือกได้ตลาดเดียว แต่ profile เดียวถือ BTC บน perp และ ETH บน spot ได้
+    Column("market", Text, nullable=False),
     Column("bucket_quote_long", PRICE, nullable=False),
     # เว้นได้ = เทรดฝั่ง long อย่างเดียว
     Column("bucket_quote_short", PRICE),
@@ -237,6 +253,22 @@ config_symbols = Table(
     CheckConstraint(
         "NOT allow_short OR bucket_quote_short IS NOT NULL",
         name="ck_config_symbols_short_needs_bucket",
+    ),
+    CheckConstraint("market IN ('usdtm_perp', 'spot')", name="ck_config_symbols_market"),
+    # สามข้อล่างนี้ไม่ใช่การตั้งกฎ แต่เป็นการเขียนสิ่งที่ตลาด spot **ไม่มี** ลงไปให้ฐาน
+    # ปฏิเสธแทนที่จะให้โค้ดชั้นบนคอยจำ — บน spot ขายชอร์ตไม่ได้ ไม่มี leverage และ
+    # ไม่มีกระเป๋าฝั่ง short · ค่าที่ขัดข้อพวกนี้ไม่ได้ "ตั้งผิด" แต่ **เป็นไปไม่ได้**
+    CheckConstraint(
+        "market <> 'spot' OR NOT allow_short", name="ck_config_symbols_spot_no_short"
+    ),
+    # `leverage = 1` ไม่ใช่ NULL เพราะสูตร `notional = margin × leverage` (spec/05:16)
+    # ต้องเดินเส้นทางเดียวทั้งสองตลาด — ตัวคูณที่เป็นหนึ่งทำให้ notional = margin เอง
+    CheckConstraint(
+        "market <> 'spot' OR leverage = 1", name="ck_config_symbols_spot_no_leverage"
+    ),
+    CheckConstraint(
+        "market <> 'spot' OR bucket_quote_short IS NULL",
+        name="ck_config_symbols_spot_no_short_bucket",
     ),
 )
 

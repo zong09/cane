@@ -70,7 +70,6 @@ def settings_row(db, version_id, profile="live", **overrides):
         "config_version_id": version_id,
         "profile": profile,
         "timeframe": "1d",
-        "market": "usdtm_perp",
         "base_pct": 10,
         "dry_run": True,
         "allow_short": True,
@@ -211,7 +210,6 @@ def test_paper_cannot_store_dry_run_false(db):
     [
         ("base_pct", 32),  # นอกช่วง 5–20
         ("base_pct", 1),
-        ("market", "spot"),
         ("timeframe", "5m"),  # ไม่อยู่ใน TIMEFRAME_MS ของ data/ohlcv.py
         ("cold_start", "guess"),
     ],
@@ -255,10 +253,36 @@ def test_a_risk_limit_left_out_is_refused(db):
         # bucket ติดลบ
         ("bucket_quote_long, leverage, allow_short, enabled", "-1, 2, false, true"),
         ("bucket_quote_long, leverage, allow_short, enabled", "100, 0, false, true"),
+        # ── สามข้อของ spot: สิ่งที่ตลาดนี้ไม่มี ไม่ใช่ค่าที่ตั้งผิด ──────────────
+        # spot ขายชอร์ตไม่ได้
+        (
+            "market, bucket_quote_long, bucket_quote_short, leverage, allow_short, enabled",
+            "'spot', 100, 60, 1, true, true",
+        ),
+        # spot ไม่มีอัตราทด
+        (
+            "market, bucket_quote_long, leverage, allow_short, enabled",
+            "'spot', 100, 2, false, true",
+        ),
+        # spot ไม่มีกระเป๋าฝั่ง short แม้จะไม่เปิด short ก็ตาม
+        (
+            "market, bucket_quote_long, bucket_quote_short, leverage, allow_short, enabled",
+            "'spot', 100, 60, 1, false, true",
+        ),
+        # ตลาดที่สะกดผิดต้องล้มตอนเขียน ไม่ใช่ได้แถวที่ไม่มีใครอ่าน
+        (
+            "market, bucket_quote_long, leverage, allow_short, enabled",
+            "'usdtm-perp', 100, 1, false, true",
+        ),
     ],
 )
 def test_an_impossible_symbol_is_refused(db, columns, values):
     version_id = head_row(db)
+    # เคสที่ไม่ได้ระบุ market เองใช้ค่าตั้งต้นของตาราง — market เป็น NOT NULL
+    # จึงต้องมีเสมอ ไม่งั้นเคสอื่นจะล้มด้วย NotNullViolation แทน CheckViolation
+    if "market" not in columns:
+        columns = f"market, {columns}"
+        values = f"'usdtm_perp', {values}"
 
     with pytest.raises(IntegrityError) as caught:
         with db.begin_nested():
@@ -330,9 +354,10 @@ def test_a_zero_short_bucket_is_refused(db):
                 text(
                     """
                     INSERT INTO config_symbols (config_version_id, profile, symbol,
-                        bucket_quote_long, bucket_quote_short, leverage,
+                        market, bucket_quote_long, bucket_quote_short, leverage,
                         allow_short, enabled, created_ts)
-                    VALUES (:v, 'live', 'BTC/USDT', 100, 0, 2, true, true, :ts)
+                    VALUES (:v, 'live', 'BTC/USDT', 'usdtm_perp',
+                            100, 0, 2, true, true, :ts)
                     """
                 ),
                 {"v": version_id, "ts": TS},

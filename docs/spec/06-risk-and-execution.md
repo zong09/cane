@@ -47,6 +47,8 @@
 | `max_leverage` | **โหลด config ไม่ผ่าน** ตั้งแต่ก่อนระบบเริ่มทำงาน ไม่ใช่การตรวจตอนรัน |
 | `consecutive_loss_breaker` | latch kill switch แล้วจากนั้นทุกไม้ใหม่ถูกปฏิเสธจนกว่าจะปลดด้วยมือ |
 
+**สองตัวนี้เป็นของ `usdtm_perp` เท่านั้น** ([decisions #26](../decisions.md)) — เหรียญที่อยู่บน `spot` ไม่มี liquidation จึง **ไม่เรียกชั้น `min_liq_buffer_pct` เลย** ไม่ใช่เรียกแล้วผ่านเสมอ · ขั้น 12 ของไม้ spot จึงมีสองชั้นคือ `kill switch` แล้ว `max_daily_loss_pct` และบันทึกไว้แค่สองแถว · ส่วน `max_leverage` เป็นเพดานของ perp เพราะ `spot` ถูกบังคับ `leverage = 1` ด้วย CHECK อยู่แล้ว
+
 `max_leverage` ตรวจตอนโหลดแล้วก็จริง แต่ค่าที่ตั้งไว้ที่ **exchange** ถูกเปลี่ยนจากนอกระบบได้
 ก่อนเปิดไม้จึงต้องตั้ง leverage ที่ exchange ให้ตรงกับ config เสมอ (`set_leverage`)
 ไม่ใช่เชื่อว่ามันยังเป็นค่าเดิมจากครั้งก่อน

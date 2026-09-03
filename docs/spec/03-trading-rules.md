@@ -2,11 +2,26 @@
 
 ## ตลาด
 
-**USDT-M perpetual futures** (`market = "usdtm_perp"`) — margin แบบ `isolated`, position mode แบบ `one_way`
+**ตลาดเป็นค่าของแต่ละเหรียญ ไม่ใช่ของทั้งระบบ** (`symbols[].market`, [decisions #26](../decisions.md)) — profile เดียวถือ BTC บน perp และ ETH บน spot พร้อมกันได้ · เหรียญหนึ่งเลือกได้ตลาดเดียว
+
+| `market` | ความหมาย |
+| --- | --- |
+| `usdtm_perp` | USDT-M perpetual futures — margin แบบ `isolated`, position mode แบบ `one_way` |
+| `spot` | ซื้อขายของจริง — **long-only** |
+
+### `usdtm_perp`
 
 `one_way` แปลว่า **หนึ่ง symbol มีสถานะได้ฝั่งเดียวเสมอ** ห้ามถือ long กับ short พร้อมกัน จุดเดียวที่ระบบเข้าใกล้การละเมิดข้อนี้คือตอน flip จึงต้องมีโปรโตคอลเฉพาะ (ด้านล่าง)
 
 มี leverage ต่อ symbol (`leverage`) ใต้เพดานระดับ profile (`max_leverage`) ผลที่ตามมาที่ใหญ่ที่สุดคือ **ไม้ถูกปิดโดย exchange ได้เองที่ราคา liquidation แม้ยังไม่เกิดสัญญาณฝั่งตรงข้าม** ซึ่งเป็นสิ่งที่ระบบ spot ไม่มี — `min_liq_buffer_pct` ใน [06](06-risk-and-execution.md) คือสิ่งเดียวที่กันเรื่องนี้
+
+### `spot` — long-only
+
+**สัญญาณแดงบนเหรียญ spot แปลว่า "ขายออกให้แบน" จบ** ไม่มีขาเปิดตาม เพราะขายชอร์ตบน spot ทำไม่ได้ — ผลคือ **ไม่มี flip บน spot** โปรโตคอลสองขาด้านล่างเป็นของ `usdtm_perp` เท่านั้น และ `flip_aborted` / `residual_qty` / `unmanaged` ที่ตามมาจากมันก็เกิดบน spot ไม่ได้เช่นกัน
+
+สิ่งที่ไม่มีอยู่จริงบน spot — **ไม่ใช่มีแล้วเป็นศูนย์**: liquidation · funding · leverage (บังคับ `leverage = 1` เพื่อให้สูตรใน [05](05-position-sizing.md) เดินเส้นทางเดียว) · ฝั่ง short (`allow_short` ต้อง false และไม่มี `bucket_quote_short`) · ธง `reduce_only` ของออเดอร์
+
+กฎที่เหลือทั้งหมด — กฎไม้เรียว, การเข้าที่แท่งสัญญาณเท่านั้น, การไม่เปิดทับฝั่งเดิม, cold start — ใช้เหมือนกันทั้งสองตลาด
 
 ## เข้าไม้
 
