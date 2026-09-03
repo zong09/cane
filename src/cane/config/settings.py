@@ -24,7 +24,7 @@ PCT_PLACES = 4
 MONEY_PLACES = 8
 
 
-def _no_more_places_than(places: int):
+def require_scale(value: float, places: int, field: str = "") -> float:
     """ปฏิเสธค่าที่ละเอียดกว่าที่เก็บได้ **ไม่ใช่ปัดให้เงียบๆ**
 
     ที่เก็บถือ `base_pct` ไว้ 4 ตำแหน่ง ถ้ารับ `10.00001` เข้ามาแล้วปัดเป็น `10.0000`
@@ -35,16 +35,31 @@ def _no_more_places_than(places: int):
     ผลพลอยได้ที่ต้องการด้วย: `cane db seed` เทียบค่าเดิมกับค่าใหม่เพื่อไม่สร้าง
     เวอร์ชันซ้ำ ค่าที่ถูกปัดตอนเก็บจะเทียบไม่เท่ากับที่อ่านกลับมาเสมอ แล้วการรัน
     seed ทุกครั้งจะสร้างเวอร์ชันใหม่ที่ไม่มีอะไรต่างกัน
+
+    อยู่เป็นฟังก์ชันธรรมดา **ไม่ใช่แค่ pydantic validator** เพราะชั้นบันทึกการตัดสินใจ
+    (`db/repo/decisions.py`) เป็น frozen dataclass ที่เรียก validator ของ pydantic ไม่ได้
+    แต่ต้องเคารพกฎเดียวกัน — `price_to_db()`/`pct_to_db()` ใน `db/types.py` **ปัด**
+    (ROUND_HALF_EVEN) ตัวปฏิเสธจึงต้องมาก่อน · `field` ใส่ไว้ให้ผู้เรียกที่ไม่มี
+    location ของ pydantic บอกได้ว่าคอลัมน์ไหนผิด
+
+    **ห้ามย้ายฟังก์ชันนี้ไป `db/types.py`** — `cane/db/__init__.py` import `repo.*` และ
+    `repo/config.py` import โมดูลนี้อยู่แล้ว ทิศที่ปลอดภัยมีทางเดียวคือ `db` → `config`
     """
+    where = f"{field}: " if field else ""
+    try:
+        exponent = Decimal(str(value)).as_tuple().exponent
+    except InvalidOperation:  # pragma: no cover - pydantic กรอง nan/inf ไปก่อน
+        raise ValueError(f"{where}ไม่ใช่ตัวเลขที่เก็บได้") from None
+    if isinstance(exponent, int) and -exponent > places:
+        raise ValueError(f"{where}ทศนิยมได้ไม่เกิน {places} ตำแหน่ง (ที่เก็บถือได้เท่านี้)")
+    return value
+
+
+def _no_more_places_than(places: int):
+    """ห่อ `require_scale()` ให้เป็น `AfterValidator` ของ pydantic"""
 
     def check(value: float) -> float:
-        try:
-            exponent = Decimal(str(value)).as_tuple().exponent
-        except InvalidOperation:  # pragma: no cover - pydantic กรอง nan/inf ไปก่อน
-            raise ValueError("ไม่ใช่ตัวเลขที่เก็บได้") from None
-        if isinstance(exponent, int) and -exponent > places:
-            raise ValueError(f"ทศนิยมได้ไม่เกิน {places} ตำแหน่ง (ที่เก็บถือได้เท่านี้)")
-        return value
+        return require_scale(value, places)
 
     return check
 
