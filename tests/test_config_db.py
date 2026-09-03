@@ -507,3 +507,45 @@ def test_the_console_role_cannot_delete_a_version(db, paper):
             )
 
     assert isinstance(caught.value.orig, psycopg.errors.InsufficientPrivilege)
+
+
+# ── migration 0003: การถอยที่ทำให้ข้อมูลเปลี่ยนความหมายต้องล้ม ───────────────
+
+
+def test_downgrading_past_the_market_column_refuses_while_spot_rows_exist(db):
+    """`downgrade()` ของ 0003 ต้อง **raise** ไม่ใช่ drop คอลัมน์แล้วสำเร็จเงียบๆ
+
+    `bars` ล้มเองอยู่แล้วตอนยุบ `market` ทิ้ง (PK ชน) แต่ `config_symbols` ไม่ล้ม —
+    การถอยจะสำเร็จแล้วเหรียญ spot ทุกตัวถูกติดป้ายใหม่เป็น perp ซึ่งคือการเปลี่ยน
+    ความหมายของข้อมูลโดยไม่มีใครเห็น · เทสต์ตัวนี้รัน `downgrade()` **ตัวจริง** ใน
+    ทรานแซกชันของเทสต์เอง (fixture `db` rollback ทิ้งท้ายเทสต์) ไม่ใช่ยิง SELECT
+    เลียนแบบเงื่อนไขของมัน — ที่ผ่านมาการยืนยันข้อนี้ทำด้วยมือใน terminal เท่านั้น
+    """
+    import importlib.util
+
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+
+    version_id = head_row(db)
+    db.execute(
+        text(
+            """
+            INSERT INTO config_symbols (config_version_id, profile, symbol, market,
+                bucket_quote_long, leverage, allow_short, enabled, created_ts)
+            VALUES (:v, 'live', 'ETH/USDT', 'spot', 80, 1, false, true, :ts)
+            """
+        ),
+        {"v": version_id, "ts": TS},
+    )
+
+    spec = importlib.util.spec_from_file_location(
+        "_m0003", "alembic/versions/0003_market_dimension.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    with Operations.context(MigrationContext.configure(db)):
+        with pytest.raises(RuntimeError) as caught:
+            module.downgrade()
+
+    assert "spot" in str(caught.value)
