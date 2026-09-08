@@ -13,6 +13,7 @@ import pytest
 from cane.data import fetch_funding_rate
 
 SYMBOL = "BTC/USDT"
+PERP = "usdtm_perp"
 
 #: รูปร่างจริงที่ ccxt คืนจาก `fapi/v1/premiumIndex`
 #: `fundingRate` ← `lastFundingRate`, `fundingTimestamp` ← `nextFundingTime`
@@ -41,7 +42,7 @@ class FakeClient:
 
 
 def test_reads_the_rate_and_the_cycle_timestamp():
-    got = fetch_funding_rate(FakeClient(RAW), SYMBOL)
+    got = fetch_funding_rate(FakeClient(RAW), PERP, SYMBOL)
 
     assert got.available is True
     assert got.rate == pytest.approx(0.00007542)
@@ -51,7 +52,7 @@ def test_reads_the_rate_and_the_cycle_timestamp():
 
 def test_asks_for_the_perp_symbol():
     client = FakeClient(RAW)
-    fetch_funding_rate(client, SYMBOL)
+    fetch_funding_rate(client, PERP, SYMBOL)
     assert client.calls == ["BTC/USDT:USDT"]
 
 
@@ -68,7 +69,7 @@ def test_asks_for_the_perp_symbol():
     ],
 )
 def test_a_failed_fetch_is_recorded_as_no_data_never_as_zero(error):
-    got = fetch_funding_rate(FakeClient(error=error), SYMBOL)
+    got = fetch_funding_rate(FakeClient(error=error), PERP, SYMBOL)
 
     assert got.rate is None
     assert got.rate != 0
@@ -80,7 +81,7 @@ def test_a_successful_fetch_with_a_missing_rate_is_also_no_data():
     """`safe_number` ของ ccxt คืน None ได้แม้ request สำเร็จ — ยังไม่ใช่ 0 อยู่ดี"""
     raw = dict(RAW, fundingRate=None)
 
-    got = fetch_funding_rate(FakeClient(raw), SYMBOL)
+    got = fetch_funding_rate(FakeClient(raw), PERP, SYMBOL)
 
     assert got.rate is None
     assert got.available is False
@@ -90,7 +91,7 @@ def test_a_successful_fetch_with_a_missing_rate_is_also_no_data():
 
 def test_a_real_zero_from_the_venue_stays_a_real_zero():
     """อีกด้านของกฎเดียวกัน — funding เป็น 0 ได้จริง ห้ามอ่านว่า "ไม่มีข้อมูล\""""
-    got = fetch_funding_rate(FakeClient(dict(RAW, fundingRate=0.0)), SYMBOL)
+    got = fetch_funding_rate(FakeClient(dict(RAW, fundingRate=0.0)), PERP, SYMBOL)
 
     assert got.rate == 0.0
     assert got.available is True
@@ -100,4 +101,26 @@ def test_a_real_zero_from_the_venue_stays_a_real_zero():
 def test_a_bug_in_our_own_code_is_not_disguised_as_no_data():
     """จับเฉพาะ error ของ ccxt — `TypeError` ของเราเองต้องดังออกมา"""
     with pytest.raises(TypeError):
-        fetch_funding_rate(FakeClient(error=TypeError("บั๊กของเราเอง")), SYMBOL)
+        fetch_funding_rate(FakeClient(error=TypeError("บั๊กของเราเอง")), PERP, SYMBOL)
+
+
+# ── spot ไม่มี funding: "ไม่มีอยู่" ไม่ใช่ "ดึงไม่ได้" ────────────────────────
+
+
+@pytest.mark.parametrize("market", ["spot", "coinm_perp"])
+def test_a_market_without_funding_is_refused_before_the_client_is_touched(market):
+    """ปฏิเสธ ไม่ใช่บันทึกว่า "ไม่มีข้อมูล"
+
+    `funding_observations` ไม่มีคอลัมน์ market (schema.py:101) และ `store_symbol()`
+    ตัด `:USDT` ทิ้ง — แถวของ spot ที่หลุดลงไปจะแยกจากแถว perp ของเหรียญเดียวกัน
+    ไม่ออกตลอดไป และยังทำให้ความหมายของ `unavailable_reason` พังไปด้วย เพราะมันจะ
+    อ้างว่า "ลองแล้วไม่สำเร็จ" ทั้งที่ไม่เคยลอง
+
+    `client.calls` ว่างคือส่วนที่รับน้ำหนัก: ต้องดังก่อนถึงเครือข่าย
+    """
+    client = FakeClient(RAW)
+
+    with pytest.raises(ValueError, match="usdtm_perp"):
+        fetch_funding_rate(client, market, SYMBOL)
+
+    assert client.calls == []

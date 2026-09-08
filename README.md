@@ -37,7 +37,7 @@ Specs and ADRs are complete. The code is being built out in the order laid out b
 | --- | --- |
 | `config/` — fail-closed validation, every problem reported with its field path | ✅ |
 | `log.py` — strips credentials from log output on the way out | ✅ |
-| `data/` — closed-bar OHLCV (live and replay share one `as_of` axis), funding rate, disk cache, ccxt client | ✅ |
+| `data/` — closed-bar OHLCV (live and replay share one `as_of` axis), funding rate, ccxt client per market; writes through `db/repo` | ✅ |
 | `db/` — PostgreSQL foundation: schema, migrations, repositories, append-only enforced by grants | ✅ |
 | `db/repo/decisions.py` — the per-bar decision record and its six child tables | ✅ |
 | Action Zone computation → `zone`, `state`, `long_signal`, `short_signal` | ⬜ |
@@ -57,13 +57,13 @@ Requires Python 3.11+ (for stdlib `tomllib`) and [uv](https://docs.astral.sh/uv/
 
 ```bash
 uv sync --extra dev                          # install dependencies + pytest
-uv run --extra dev pytest -q -m "not db"     # 70 passing, no services needed
+uv run --extra dev pytest -q -m "not db"     # 116 passing, no services needed
 ```
 
 `pytest` is an optional dependency — skipping `uv sync --extra dev` and running a bare
 `uv run pytest` will fail.
 
-The full suite (153 tests) needs PostgreSQL; see [Database](#database) below. Tests that touch
+The full suite (258 tests) needs PostgreSQL; see [Database](#database) below. Tests that touch
 persistence carry the `db` marker so the rest still runs anywhere.
 
 The test suite never touches the network: the exchange client is injected everywhere, never
@@ -79,7 +79,7 @@ there is no ORM.
 docker compose up -d db                                   # postgres:16-alpine on host port 5436
 cp .env.example .env                                      # CANE_DB_DSN lives here
 uv run --env-file .env alembic upgrade head
-uv run --env-file .env --extra dev pytest -q              # 153 passing
+uv run --env-file .env --extra dev pytest -q              # 258 passing
 ```
 
 Host port **5436**, not 5432 — the dev machine already has other Postgres containers on 5432 and
@@ -162,7 +162,7 @@ and `0x…` addresses before anything is written to a log.
 ```
 src/cane/
   config/       schema + profile loader (fail-closed, line-numbered errors)
-  data/         OHLCV, funding rate, cache, ccxt client
+  data/         OHLCV, funding rate, ccxt client per market (writes to `bars` / `funding_observations`)
   db/           engine (role per connection), schema, type boundary
     repo/       one module per domain; returns the project's frozen dataclasses
   log.py        credential redaction for logs
