@@ -14,7 +14,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from cane.data.exchange import DATA_ERRORS, ExchangeClient, perp_symbol
+from typing import TYPE_CHECKING
+
+from cane.data.exchange import DATA_ERRORS, ExchangeClient, unified_symbol
+
+if TYPE_CHECKING:
+    from sqlalchemy import Connection
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,18 +46,32 @@ class FundingRate:
         return self.rate is not None
 
 
-def fetch_funding_rate(client: ExchangeClient, symbol: str) -> FundingRate:
-    """ดึง funding rate ปัจจุบันของ symbol — ไม่เคยยก exception ออกไป
+def fetch_funding_rate(
+    client: ExchangeClient, market: str, symbol: str
+) -> FundingRate:
+    """ดึง funding rate ปัจจุบันของ symbol — **ความล้มเหลวของข้อมูล**ไม่ยก exception
 
     ความล้มเหลวของ funding **ต้องไม่ล้มรอบการตัดสินใจ** ราคาและ Action Zone ยังใช้ได้
     อยู่ ที่หายไปคือตัวเลขที่คอนโซลแสดงคู่กับ leverage เท่านั้น จึงคืนเป็นสถานะ
     "ไม่มีข้อมูล" แล้วให้บันทึกไว้ ไม่ใช่ดันข้อผิดพลาดขึ้นไปหยุดทั้งรอบ
 
     จับเฉพาะ error ของ ccxt (`DATA_ERRORS`) ไม่จับ `Exception` เปล่า — บั๊กของเราเอง
-    ต้องดังออกมา ไม่ใช่ปลอมตัวเป็น "ดึงข้อมูลไม่ได้"
+    ต้องดังออกมา ไม่ใช่ปลอมตัวเป็น "ดึงข้อมูลไม่ได้" **การเรียกผิดสัญญาก็เช่นกัน**:
+    market ที่ไม่ใช่ perp ถูกปฏิเสธด้วย `ValueError` ก่อนแตะ client
+
+    **spot ไม่มี funding** — นี่คือ "ไม่มีอยู่" ไม่ใช่ "ดึงไม่ได้" ซึ่งคนละเรื่องกับ
+    `unavailable_reason` และ `funding_observations` ไม่มีคอลัมน์ market
+    (schema.py:101) ขณะที่ `store_symbol()` ตัด `:USDT` ทิ้ง — แถวของ spot ที่หลุด
+    ลงไปจะ **แยกจากแถว perp ของเหรียญเดียวกันไม่ออก** ตลอดไป
+
+    ฟังก์ชันนี้ **ไม่แตะฐานข้อมูล** — การบันทึกอยู่ที่ `observe_funding_rate()`
+    ชื่อที่บอกว่า "ดึง" แล้วเขียนตารางด้วยคือชื่อที่โกหก และจะลากเทสต์ทั้งไฟล์นี้ไป
+    อยู่หลัง marker `db` โดยไม่ได้อะไรเพิ่ม
     """
+    if market != "usdtm_perp":
+        raise ValueError(f"funding rate มีเฉพาะ usdtm_perp ไม่ใช่ {market!r}")
     try:
-        raw = client.fetch_funding_rate(perp_symbol(symbol))
+        raw = client.fetch_funding_rate(unified_symbol(symbol, market))
     except DATA_ERRORS as error:
         return FundingRate(
             symbol=symbol,
@@ -73,3 +92,23 @@ def fetch_funding_rate(client: ExchangeClient, symbol: str) -> FundingRate:
         )
 
     return FundingRate(symbol=symbol, rate=float(rate), next_funding_ts=next_ts)
+
+
+def observe_funding_rate(
+    conn: "Connection", client: ExchangeClient, market: str, symbol: str
+) -> FundingRate:
+    """ดึงแล้วบันทึกลง `funding_observations` — คืนสิ่งที่บันทึกไป
+
+    บันทึก **ทั้งตอนได้ค่าและตอนดึงไม่ได้** ตามที่ตารางออกแบบไว้ (`repo/funding.py`)
+    ต้นทุนที่หายต้องหายเสียงดัง การไม่บันทึกความล้มเหลวทำให้ช่องว่างในประวัติดูเหมือน
+    ช่วงที่ไม่มีต้นทุน
+
+    ไม่ commit — ผู้เรียกเป็นเจ้าของทรานแซกชัน · spot ถูกปฏิเสธที่
+    `fetch_funding_rate()` ก่อนถึงบรรทัดเขียน
+    """
+    observation = fetch_funding_rate(client, market, symbol)
+    # import ที่นี่ ไม่ใช่หัวไฟล์ — `db/repo/funding.py` นำเข้า `FundingRate` จากไฟล์นี้
+    from cane.db.repo.funding import record_observation
+
+    record_observation(conn, observation)
+    return observation

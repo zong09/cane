@@ -16,10 +16,10 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
-from cane.data.exchange import ExchangeClient, perp_symbol
+from cane.data.exchange import ExchangeClient, unified_symbol
 
-if TYPE_CHECKING:  # cache.py แปลงแถวดิบด้วย to_bars() ของไฟล์นี้ จึงนำเข้าจริงไม่ได้
-    from cane.data.cache import BarCache
+if TYPE_CHECKING:
+    from sqlalchemy import Connection
 
 #: timeframe ที่ระบบใช้จริง — รายวันเป็นหลัก ราย 1 ชม. สำหรับ cold start ทางที่ 1 (spec/07)
 #: ตั้งใจไม่เขียน parser ทั่วไป ค่าที่ไม่รู้จักต้องดังตั้งแต่ตอนเรียก ไม่ใช่ตอนคำนวณผิด
@@ -139,8 +139,9 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
-def _fetch_forward(
+def fetch_forward(
     client: ExchangeClient,
+    market: str,
     symbol: str,
     timeframe: str,
     since: int | None,
@@ -148,24 +149,24 @@ def _fetch_forward(
 ) -> list[list[float]]:
     """ดึงไปข้างหน้าจนหมด ไม่ใช่หน้าเดียว
 
-    **หน้าเดียวไม่พอเมื่อ cache ค้างเก่ากว่า `limit` แท่ง** — bot ที่หยุดไปสามสัปดาห์
-    แล้วกลับมาบน timeframe 1h จะมีช่องว่างเกิน 500 แท่ง การขอครั้งเดียวจาก
+    **หน้าเดียวไม่พอเมื่อประวัติในตารางค้างเก่ากว่า `limit` แท่ง** — bot ที่หยุดไป
+    สามสัปดาห์แล้วกลับมาบน timeframe 1h จะมีช่องว่างเกิน 500 แท่ง การขอครั้งเดียวจาก
     `since` จะได้ 500 แท่งแรกของช่องว่างนั้นมา แล้วหยุด แท่งที่ใหม่ที่สุดจะหายไป
     เงียบๆ และร้ายที่สุดคือ **ทุกแท่งที่ได้มานั้นปิดแล้วจริง** ตัวกรอง `as_of` จึงไม่
     เห็นอะไรผิด engine จะคำนวณ Action Zone บนแท่งของเมื่อสามสัปดาห์ก่อนโดยเชื่อว่า
     เป็นแท่งล่าสุด — ข้อมูลเก่าที่หน้าตาเหมือนข้อมูลสด
 
-    `since = None` (cache ว่าง) ไม่ต้องไล่หน้า เพราะ endpoint คืน `limit` แท่ง
-    **ล่าสุด** ให้อยู่แล้ว ซึ่งเกินเกณฑ์ 85 แท่งไปไกล
+    `since = None` (ยังไม่มีแท่งในตาราง) ไม่ต้องไล่หน้า เพราะ endpoint คืน `limit`
+    แท่ง **ล่าสุด** ให้อยู่แล้ว ซึ่งเกินเกณฑ์ 85 แท่งไปไกล
     """
-    market = perp_symbol(symbol)
+    venue_symbol = unified_symbol(symbol, market)
     if since is None:
-        return client.fetch_ohlcv(market, timeframe, since=None, limit=limit)
+        return client.fetch_ohlcv(venue_symbol, timeframe, since=None, limit=limit)
 
     rows: list[list[float]] = []
     cursor = since
     while True:
-        page = client.fetch_ohlcv(market, timeframe, since=cursor, limit=limit)
+        page = client.fetch_ohlcv(venue_symbol, timeframe, since=cursor, limit=limit)
         if not page:
             break
         rows.extend(page)
@@ -180,30 +181,52 @@ def _fetch_forward(
 
 
 def _load(
+    conn: "Connection",
     client: ExchangeClient,
-    cache: "BarCache | None",
+    market: str,
     symbol: str,
     timeframe: str,
     limit: int,
     wall_now: int,
 ) -> list[Bar]:
-    """ดึง + รวมกับ cache แล้วเขียน cache กลับ — คืน **ทุกแท่งที่มี รวมแท่งที่ยังวิ่ง**
+    """ดึง + รวมกับประวัติในตาราง แล้วเขียนกลับ — คืน **ทุกแท่งที่มี รวมแท่งที่ยังวิ่ง**
 
     ตัวกรอง `as_of` ไม่อยู่ที่นี่โดยเจตนา เพราะ replay มี `as_of` อยู่ในอดีตขณะที่
-    cache ล้ำหน้าไปแล้ว ถ้ากรองตอนโหลด replay จะอ่าน cache ที่อุ่นอยู่ไม่ได้เลย
+    ตารางล้ำหน้าไปแล้ว ถ้ากรองตอนโหลด replay จะอ่านประวัติที่มีอยู่ไม่ได้เลย
     การกรองจึงเกิดตอน *อ่าน* ทุกครั้ง ไม่ใช่ตอนเก็บ
 
-    ที่เขียนลง cache ใช้ **เวลานาฬิกาจริง** ไม่ใช่ `as_of` ของผู้เรียก — ถ้าเก็บแท่งที่
-    ยังวิ่งอยู่ลงดิสก์ รอบถัดไปจะอ่านค่าที่ยังเปลี่ยนได้กลับมาใช้ กลายเป็น repainting
-    ที่เดินเข้ามาทางประตูหลัง
+    ที่เขียนลงตารางใช้ **เวลานาฬิกาจริง** ไม่ใช่ `as_of` ของผู้เรียก และ
+    `closed_as_of()` บรรทัดนั้น **เป็นด่านเดียวของระบบ** ที่กันแท่งที่ยังวิ่งไม่ให้ลง
+    ตาราง — `bars` ไม่มี CHECK ที่รู้จักเวลาปัจจุบัน (schema.py:66) และ `cane_engine`
+    ไม่มี `UPDATE`/`DELETE` แถวที่หลุดไปจึงเป็นข้อมูลผิด **ถาวร** ไม่ใช่ cache ที่ลบ
+    แล้วสร้างใหม่ได้เหมือนเดิม
+
+    ไม่ commit — ผู้เรียกเป็นเจ้าของทรานแซกชันตามสัญญาของชั้น repo
+    (`db/repo/__init__.py`) · `conn` ไม่มีค่าตั้งต้น: source ที่ลืมส่ง connection จะ
+    ดึงใหม่ทั้งชุดทุกแท่งแล้วไม่เก็บอะไรเลย ซึ่งเป็นความเสื่อมแบบเงียบ ๆ ที่ทั้งไฟล์นี้
+    เขียนมาเพื่อไม่ให้เกิด
     """
-    cached = cache.load(symbol, timeframe) if cache is not None else []
-    since = cached[-1].open_ts if cached else None
-    rows = _fetch_forward(client, symbol, timeframe, since, limit)
-    merged = merge_bars(cached, to_bars(rows, timeframe))
-    if cache is not None:
-        cache.save(symbol, timeframe, closed_as_of(merged, wall_now))
-    return merged
+    # import ที่นี่ ไม่ใช่หัวไฟล์ — `db/repo/bars.py` นำเข้า `Bar` จากไฟล์นี้
+    # การนำเข้าที่หัวไฟล์จึงผูกวงกันตอน `cane.data` ถูกโหลดก่อน `cane.db`
+    from cane.db.repo.bars import closed_bars, insert_bars
+
+    stored = closed_bars(conn, market, symbol, timeframe, as_of=wall_now)
+    since = stored[-1].open_ts if stored else None
+    fetched = to_bars(
+        fetch_forward(client, market, symbol, timeframe, since, limit), timeframe
+    )
+    insert_bars(
+        conn,
+        market,
+        symbol,
+        timeframe,
+        closed_as_of(fetched, wall_now),
+        created_ts=wall_now,
+    )
+    # `stored` มาหลัง `fetched` เพราะ `merge_bars` เอาตัวหลังเมื่อ open_ts ซ้ำ และ
+    # `insert_bars` เป็น `ON CONFLICT DO NOTHING` — แถวเดิมในตารางชนะการเขียนซ้ำ
+    # เสมอ ถ้าคืนค่าที่ดึงมาใหม่ทับ indicator จะคำนวณบนตัวเลขที่ตารางไม่ได้ถืออยู่
+    return merge_bars(fetched, stored)
 
 
 class LiveBarSource:
@@ -215,20 +238,30 @@ class LiveBarSource:
 
     def __init__(
         self,
+        conn: "Connection",
         client: ExchangeClient,
+        market: str,
         *,
-        cache: "BarCache | None" = None,
         clock: Callable[[], int] = _now_ms,
         limit: int = DEFAULT_LIMIT,
     ) -> None:
+        self._conn = conn
         self._client = client
-        self._cache = cache
+        self._market = market
         self._clock = clock
         self._limit = limit
 
     def bars(self, symbol: str, timeframe: str) -> list[Bar]:
         now = self._clock()
-        history = _load(self._client, self._cache, symbol, timeframe, self._limit, now)
+        history = _load(
+            self._conn,
+            self._client,
+            self._market,
+            symbol,
+            timeframe,
+            self._limit,
+            now,
+        )
         return closed_as_of(history, now)
 
 
@@ -244,15 +277,17 @@ class ReplayBarSource:
 
     def __init__(
         self,
+        conn: "Connection",
         client: ExchangeClient,
+        market: str,
         *,
         as_of: int,
-        cache: "BarCache | None" = None,
         clock: Callable[[], int] = _now_ms,
         limit: int = DEFAULT_LIMIT,
     ) -> None:
+        self._conn = conn
         self._client = client
-        self._cache = cache
+        self._market = market
         self._clock = clock
         self._limit = limit
         self.as_of = as_of
@@ -260,8 +295,16 @@ class ReplayBarSource:
 
     def bars(self, symbol: str, timeframe: str) -> list[Bar]:
         key = (symbol, timeframe)
+        # กุญแจไม่มี market เพราะ market ผูกกับ instance แล้ว (หนึ่ง client หนึ่งตลาด)
+        # ถ้าวันหนึ่งมีใครขยาย `BarSource.bars()` ให้รับ market กุญแจนี้คือบั๊กตัวแรก
         if key not in self._history:
             self._history[key] = _load(
-                self._client, self._cache, symbol, timeframe, self._limit, self._clock()
+                self._conn,
+                self._client,
+                self._market,
+                symbol,
+                timeframe,
+                self._limit,
+                self._clock(),
             )
         return closed_as_of(self._history[key], self.as_of)

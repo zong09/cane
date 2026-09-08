@@ -1,6 +1,5 @@
-from cane.data.cache import BarCache
-from cane.data.exchange import ExchangeClient, make_client, perp_symbol
-from cane.data.funding import FundingRate, fetch_funding_rate
+from cane.data.exchange import ExchangeClient, default_type, make_client, unified_symbol
+from cane.data.funding import FundingRate, fetch_funding_rate, observe_funding_rate
 from cane.data.ohlcv import (
     DEFAULT_LIMIT,
     MIN_CLOSED_BARS,
@@ -11,6 +10,7 @@ from cane.data.ohlcv import (
     ReplayBarSource,
     bars_needed,
     closed_as_of,
+    fetch_forward,
     merge_bars,
     timeframe_ms,
     to_bars,
@@ -21,7 +21,6 @@ __all__ = [
     "MIN_CLOSED_BARS",
     "TIMEFRAME_MS",
     "Bar",
-    "BarCache",
     "BarSource",
     "ExchangeClient",
     "FundingRate",
@@ -29,10 +28,13 @@ __all__ = [
     "ReplayBarSource",
     "bars_needed",
     "closed_as_of",
+    "default_type",
+    "fetch_forward",
     "fetch_funding_rate",
     "make_client",
     "merge_bars",
-    "perp_symbol",
+    "observe_funding_rate",
     "timeframe_ms",
     "to_bars",
+    "unified_symbol",
 ]
