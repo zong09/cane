@@ -40,12 +40,16 @@ Specs and ADRs are complete. The code is being built out in the order laid out b
 | `data/` — closed-bar OHLCV (live and replay share one `as_of` axis), funding rate, ccxt client per market; writes through `db/repo` | ✅ |
 | `db/` — PostgreSQL foundation: schema, migrations, repositories, append-only enforced by grants | ✅ |
 | `db/repo/decisions.py` — the per-bar decision record and its six child tables | ✅ |
-| Action Zone computation → `zone`, `state`, `long_signal`, `short_signal` | ⬜ |
+| Action Zone computation → `zone`, `state`, `long_signal`, `short_signal` | 🟡 |
 | Confluence Judge (LLM weighing the supporting factors) | ⬜ |
 | Position sizing + the discipline rules + cold start | ⬜ |
 | Risk limits, kill switch, broker, reconciliation | ⬜ |
 | Per-bar-close runner that fills the decision record in | ⬜ |
 | Console (FastAPI + Jinja2 + HTMX) and notifications | ⬜ |
+
+🟡 Action Zone is ported and unit-tested, but its acceptance gate has not run: closing it
+requires a bar-by-bar match against a TradingView export of the same symbol, and nobody has
+that file yet. Until it passes, the module must not be relied on downstream.
 
 The data layer **never reads an API key**. Both OHLCV and funding rate are public endpoints, so the
 rule "the paper profile never touches credentials" holds structurally rather than by the author's
@@ -57,13 +61,13 @@ Requires Python 3.11+ (for stdlib `tomllib`) and [uv](https://docs.astral.sh/uv/
 
 ```bash
 uv sync --extra dev                          # install dependencies + pytest
-uv run --extra dev pytest -q -m "not db"     # 116 passing, no services needed
+uv run --extra dev pytest -q -m "not db"     # 141 passing, no services needed
 ```
 
 `pytest` is an optional dependency — skipping `uv sync --extra dev` and running a bare
 `uv run pytest` will fail.
 
-The full suite (258 tests) needs PostgreSQL; see [Database](#database) below. Tests that touch
+The full suite (283 tests) needs PostgreSQL; see [Database](#database) below. Tests that touch
 persistence carry the `db` marker so the rest still runs anywhere.
 
 The test suite never touches the network: the exchange client is injected everywhere, never
@@ -79,7 +83,7 @@ there is no ORM.
 docker compose up -d db                                   # postgres:16-alpine on host port 5436
 cp .env.example .env                                      # CANE_DB_DSN lives here
 uv run --env-file .env alembic upgrade head
-uv run --env-file .env --extra dev pytest -q              # 258 passing
+uv run --env-file .env --extra dev pytest -q              # 283 passing
 ```
 
 Host port **5436**, not 5432 — the dev machine already has other Postgres containers on 5432 and
