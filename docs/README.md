@@ -16,11 +16,13 @@
 | [spec/09-users-and-auth.md](spec/09-users-and-auth.md) | บัญชีผู้ใช้, role, login สองขั้น, session, ตารางสิทธิ์ |
 | [spec/10-engine-and-console.md](spec/10-engine-and-console.md) | รอบชีวิตของ engine, state ที่อยู่รอดข้ามรีสตาร์ท, สัญญาของ API |
 | [spec/11-notifications.md](spec/11-notifications.md) | การแจ้งเตือน — event ที่ engine ปล่อย, ช่องทาง LINE/Telegram, credential |
-| [decisions.md](decisions.md) | การตัดสินใจเชิงสถาปัตยกรรมและเหตุผล |
+| [decisions.md](decisions.md) | สารบัญ ADR — เลขข้อ หัวข้อ และสถานะ |
+| [adr/](adr/) | เนื้อของแต่ละ ADR ไฟล์ละข้อ พร้อมข้อที่ถูกล้มและตัวที่มาแทน |
 
 **ที่เก็บข้อมูล** ยังไม่มีไฟล์สเปกของตัวเอง — ข้อตกลงของ schema, กฎ append-only ด้วยสิทธิ์ของ DB,
-และนโยบายความลับอยู่ใน [decisions.md](decisions.md) ข้อ 22–25 · ส่วน config ที่ย้ายจากไฟล์ TOML
-มาเป็นเวอร์ชันในตาราง อยู่ในข้อ 18 ที่เขียนใหม่ทั้งข้อ · รูปร่างตารางจริงอ่านได้จาก
+และนโยบายความลับอยู่ใน ADR [22](adr/0022-everything-in-postgresql.md)–[25](adr/0025-secrets-stay-out-of-the-database.md)
+· ส่วน config ที่ย้ายจากไฟล์ TOML มาเป็นเวอร์ชันในตาราง อยู่ใน
+[ข้อ 18](adr/0018-config-in-the-database.md) ที่เขียนใหม่ทั้งข้อ · รูปร่างตารางจริงอ่านได้จาก
 `../src/cane/db/schema.py` (ตัวประกาศ) และ `../alembic/versions/` (ลำดับการเปลี่ยน)
 
 **ที่มา:** `../reference/uncle-chaloke-trading-skill.md` (หลักการเทรด), `../reference/cdc_action_zone.pine` (สูตรอินดิเคเตอร์) และ `../reference/cdc_trailing_stop.pine` (เส้น trailing stop ของ cold start ทางที่ 2)

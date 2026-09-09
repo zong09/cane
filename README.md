@@ -24,7 +24,7 @@ Principles the whole system is built around:
 - **One side per symbol, always** — one-way mode; opposing positions are never held together.
 
 Full specs live in [docs/README.md](docs/README.md); the reasoning behind each choice is in
-[docs/decisions.md](docs/decisions.md).
+[docs/adr/](docs/adr/), indexed by [docs/decisions.md](docs/decisions.md).
 
 ## Status
 
@@ -175,7 +175,8 @@ alembic/        migrations, one per domain; the DSN comes from the environment
 docker-compose.yml  PostgreSQL for dev and tests
 config/         paper / live profiles
 docs/spec/      system specs — readable in order, each file self-contained
-docs/decisions.md   27 ADRs with their reasoning
+docs/decisions.md   ADR index — number, title, status
+docs/adr/       one file per ADR, superseded ones kept and marked
 reference/      sources — the actual Pine Script and the trading principles it came from
 tests/          no network access; `-m "not db"` needs no services either
 ```
