@@ -69,7 +69,7 @@
 - เป็นสถานะ **latched** — ติดแล้วติดเลย ไม่หายเองเมื่อเวลาผ่านไปหรือเมื่อ process restart
 - **ปลดด้วยการพิมพ์ชื่อ profile ยืนยันเท่านั้น** (`live` / `paper`) การกด stop engine ไม่ปลด และการกด start engine ก็ไม่ปลด
 - ตรวจ**ก่อนยิงทุกออเดอร์** ไม่ใช่ตรวจตอนเริ่มรอบ
-- เก็บสถานะที่ `var/state/killswitch.json` **แยกไฟล์จาก engine state** — engine running กับ kill switch เป็นคนละเรื่องกันคนละ lifecycle
+- เก็บสถานะ **แยกจาก engine state** — engine running กับ kill switch เป็นคนละเรื่องกันคนละ lifecycle · ที่เก็บเป็นตารางใน DB ไม่ใช่ไฟล์ JSON แล้ว ([decisions #22](../decisions.md)) รูปของตารางอยู่ที่ [10](10-engine-and-console.md)
 
 ### kill switch latch แล้วเกิดอะไรกับ stop order ที่ค้างอยู่
 
