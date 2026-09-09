@@ -13,6 +13,8 @@
 | [spec/06-risk-and-execution.md](spec/06-risk-and-execution.md) | risk limit, kill switch, broker, reconciliation |
 | [spec/07-data-and-config.md](spec/07-data-and-config.md) | แหล่งข้อมูล, config profile, ความปลอดภัยของ credential |
 | [spec/08-runtime-pipeline.md](spec/08-runtime-pipeline.md) | ลำดับการทำงานต่อการปิดแท่ง |
+| [spec/09-users-and-auth.md](spec/09-users-and-auth.md) | บัญชีผู้ใช้, role, login สองขั้น, session, ตารางสิทธิ์ |
+| [spec/10-engine-and-console.md](spec/10-engine-and-console.md) | รอบชีวิตของ engine, state ที่อยู่รอดข้ามรีสตาร์ท, สัญญาของ API |
 | [spec/11-notifications.md](spec/11-notifications.md) | การแจ้งเตือน — event ที่ engine ปล่อย, ช่องทาง LINE/Telegram, credential |
 | [decisions.md](decisions.md) | การตัดสินใจเชิงสถาปัตยกรรมและเหตุผล |
 
