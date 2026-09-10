@@ -13,6 +13,7 @@ from cane.execution.broker import (
     check_market_supports,
     client_order_id,
 )
+from cane.execution.paper import PaperBroker, PaperError
 
 __all__ = [
     "ID_PREFIX",
@@ -25,6 +26,8 @@ __all__ = [
     "OpenOrder",
     "Order",
     "OrderResult",
+    "PaperBroker",
+    "PaperError",
     "Position",
     "check_market_supports",
     "client_order_id",
