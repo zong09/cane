@@ -325,6 +325,13 @@ config_broker = Table(
     Column("margin_mode", MARGIN_MODE_T, nullable=False),
     Column("position_mode", Text, nullable=False),
     Column("seed_quote", PRICE),
+    #: พารามิเตอร์ของ **การจำลอง** ไม่ใช่ของการเทรดจริง — ฝั่ง live ค่าจริงมาจากที่
+    #: ปลายทางแจ้ง (fee ต่อ fill, `liquidationPrice` ของ position) ไม่ใช่จาก config
+    #: ทั้งคู่เว้นว่างได้แม้ใน paper · ประตูที่ปิดจริงอยู่ที่ `PaperBroker` ที่สร้าง
+    #: ไม่ขึ้นถ้าไม่มีค่า ไม่ใช่ที่นี่ — บังคับ NOT NULL แล้ว `paper` v1 ที่เก็บไว้
+    #: ก่อน migration 0005 จะอ่านกลับไม่ได้
+    Column("taker_fee_pct", PCT),
+    Column("maintenance_margin_pct", PCT),
     Column("created_ts", BigInteger, nullable=False),
     ForeignKeyConstraint(
         ["config_version_id", "profile"],
@@ -337,6 +344,23 @@ config_broker = Table(
     # เงินตั้งต้นจำลองไม่มีความหมายกับ broker จริง
     CheckConstraint("kind = 'paper' OR seed_quote IS NULL", name="ck_config_broker_seed_quote"),
     CheckConstraint("seed_quote IS NULL OR seed_quote > 0", name="ck_config_broker_seed_positive"),
+    # เหตุผลเดียวกับ `ck_config_broker_seed_quote` — ค่าจำลองใน config ของ live จะเป็น
+    # แหล่งความจริงที่สองที่ขัดกับใบแจ้งของ venue
+    CheckConstraint(
+        "kind = 'paper' OR (taker_fee_pct IS NULL AND maintenance_margin_pct IS NULL)",
+        name="ck_config_broker_paper_only_sim",
+    ),
+    # fee ติดลบคือรายได้ต่อไม้ · MMR เป็นศูนย์แปลว่าไม่มีวัน liquidate ซึ่งเป็นการปิด
+    # ชั้นป้องกันทั้งชั้นด้วยการกรอกเลข ไม่ใช่ด้วยการตัดสินใจ
+    CheckConstraint(
+        "taker_fee_pct IS NULL OR (taker_fee_pct >= 0 AND taker_fee_pct < 100)",
+        name="ck_config_broker_taker_fee_range",
+    ),
+    CheckConstraint(
+        "maintenance_margin_pct IS NULL OR "
+        "(maintenance_margin_pct > 0 AND maintenance_margin_pct < 100)",
+        name="ck_config_broker_mmr_range",
+    ),
     # one-way เป็นข้อบังคับของระบบ ไม่ใช่ตัวเลือก — hedge ทำให้ถือสวนกันได้
     # ซึ่งละเมิดหลัก "หนึ่งฝั่งต่อเหรียญเสมอ" (spec/03)
     CheckConstraint("position_mode = 'one_way'", name="ck_config_broker_position_mode"),

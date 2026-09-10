@@ -110,6 +110,11 @@ class BrokerConfig(BaseModel):
     # ซึ่งละเมิดหลัก "หนึ่งฝั่งต่อเหรียญเสมอ" (spec/03)
     position_mode: Literal["one_way"] = "one_way"
     seed_quote: Money | None = Field(default=None, gt=0)
+    # ค่าของ *การจำลอง* — `PaperBroker` ต้องใช้ทั้งคู่เพื่อคิด fee และหาราคา liquidation
+    # เว้นว่างได้ที่ชั้นนี้โดยเจตนา: เวอร์ชัน paper ที่ seed ไว้ก่อน migration 0005 ยัง
+    # ต้องอ่านกลับได้ · ตัวที่ปฏิเสธจริงคือ `PaperBroker` ตอนสร้าง
+    taker_fee_pct: Pct | None = Field(default=None, ge=0, lt=100)
+    maintenance_margin_pct: Pct | None = Field(default=None, gt=0, lt=100)
 
 
 class DataConfig(BaseModel):
@@ -178,6 +183,16 @@ def cross_checks(raw: Mapping[str, Any]) -> list[tuple[Loc, str, str]]:
                 "seed_quote ใช้ได้เฉพาะ broker.kind = paper",
                 "เงินตั้งต้นจำลองไม่มีความหมายกับ broker จริง",
             ))
+        # ค่าของการจำลองก็เหมือน seed_quote — ตั้งไว้ใน broker จริงแล้วไม่มีใครอ่าน
+        # และทำให้คนอ่าน config เข้าใจว่าระบบคิด fee เองแทนที่จะใช้ค่าที่ venue แจ้ง
+        for field in ("taker_fee_pct", "maintenance_margin_pct"):
+            if kind is not None and kind != "paper" and broker.get(field) is not None:
+                out.append((
+                    ("broker", field),
+                    f"{field} ใช้ได้เฉพาะ broker.kind = paper",
+                    "ค่าของการจำลองไม่มีความหมายกับ broker จริง — "
+                    "fee จริงมาจาก fill และราคา liquidation มาจาก exchange",
+                ))
 
     if raw.get("profile") == "paper" and raw.get("dry_run") is False:
         out.append((
