@@ -120,11 +120,15 @@ class OrderResult:
     filled_qty: float
     avg_px: float | None = None
     fee_quote: Decimal | None = None
+    fee_ccy: str | None = None
     fee_unavailable_reason: str | None = None
 
     def __post_init__(self) -> None:
         if self.fee_quote is not None and self.fee_unavailable_reason is not None:
             raise ValueError("fee_quote กับ fee_unavailable_reason มีพร้อมกันไม่ได้")
+        # ยอดที่ไม่รู้สกุลบวกเข้ารายงานไม่ได้ — CHECK ของ `fills` ปฏิเสธเหมือนกัน
+        if self.fee_quote is not None and self.fee_ccy is None:
+            raise ValueError("fee_quote ต้องมาคู่กับ fee_ccy")
 
 
 @dataclass(frozen=True, slots=True)
