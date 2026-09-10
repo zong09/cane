@@ -794,3 +794,128 @@ DECISION_TABLES = (
     decision_stop,
     decision_unmanaged,
 )
+
+
+#: ค่าของ `exit_reason` ใน `fills` — สี่ค่านี้มาจากสเปกทั้งสี่ ไม่ใช่ชุดที่คิดขึ้นเอง
+#:
+#: `signal` คือทางออกปกติทางเดียวของระบบ (spec/03 "ออกจากไม้") และ **ขา 1 ของ flip ใช้ค่านี้**
+#: ไม่มีค่าแยก เพราะ flip คือการออกด้วยสัญญาณฝั่งตรงข้ามแล้วเข้าฝั่งใหม่ต่อในแท่งเดียว
+#: เหตุของการออกเป็นเหตุเดียวกันเป๊ะ · `stop` คือ stop ที่วางไว้ที่ exchange ทำงาน (ADR 17)
+#: · `liquidation` คือ exchange ปิดให้เองแม้ยังไม่มีสัญญาณฝั่งตรงข้าม (spec/06) ซึ่งเป็น
+#: ทางออกที่ระบบไม่ได้สั่ง จึงต้องแยกจาก `stop` · `manual` คือคนกดปิดไม้ฉุกเฉิน (spec/06)
+EXIT_REASONS = ("signal", "stop", "liquidation", "manual")
+
+
+#: fill ที่เกิดจริงที่ปลายทาง (spec/07:186) — `decisions` เก็บว่าระบบ*ตั้งใจ*ทำอะไร
+#: ตารางนี้เก็บว่าเกิดอะไรขึ้นจริง ราคาที่ได้ ค่าธรรมเนียมที่ถูกหัก
+#:
+#: **`UNIQUE (profile, dedupe_key)` คือหัวใจ** — reconcile อ่านสถานะจริงทุกแท่ง แล้วเห็น
+#: fill เดิมซ้ำเมื่อ process กลับมาในแท่งเดิม ตอนเป็นไฟล์ต้อง dedupe เองและถ้าพลาดคือคิด
+#: ค่าธรรมเนียมซ้ำ ตอนนี้ฐานปฏิเสธให้ตั้งแต่ insert · นิยามของคีย์อยู่ที่ `dedupe_key_of()`
+#: ใน `repo/ledger.py` — UNIQUE ดีได้เท่ากับนิยามของคีย์เท่านั้น
+#:
+#: **stop ที่ทำงานคือแถวที่นี่ที่ `leg = 'stop'` ไม่ใช่ตารางแยก** — `decision_stop` เก็บ
+#: การ *วาง* และ *ขยับ* stop ต่อแท่งอยู่แล้ว (ใบ 03) การเพิ่มตารางที่สามให้เรื่องเดียวกัน
+#: คือแหล่งความจริงที่ซ้อนกัน ซึ่ง ADR 24 กันไว้
+fills = Table(
+    "fills",
+    metadata,
+    Column("id", BigInteger, Identity(always=True), primary_key=True),
+    Column("profile", PROFILE_T, nullable=False),
+    #: net% ของ perp กับ spot เทียบกันไม่ได้ถ้าไม่แยก — ค่าธรรมเนียมคนละแบบ และ
+    #: ฝั่งหนึ่งมี funding อีกฝั่งไม่มี
+    Column("market", Text, nullable=False),
+    Column("symbol", Text, nullable=False),
+    #: `{market}:{SYMBOL}:{side}:{open_bar_close_ts}` — ดู `trade_id_of()`
+    Column("trade_id", Text, nullable=False),
+    Column("leg", LEG_T, nullable=False),
+    Column("fill_ts", BigInteger, nullable=False),
+    Column("px", PRICE, nullable=False),
+    Column("qty", PRICE, nullable=False),
+    #: ราคาที่ชั้นตัดสินใจเห็นตอนสั่ง — slippage คือ `px` เทียบกับค่านี้ เก็บตัวตั้ง
+    #: ไม่ใช่เก็บผลต่างที่ derive ได้ (ADR 24)
+    Column("ref_px", PRICE),
+    Column("fee_quote", PRICE),
+    Column("fee_ccy", Text),
+    Column("fee_unavailable_reason", Text),
+    Column("venue_fill_id", Text),
+    Column("client_order_id", Text, nullable=False),
+    Column("order_type", Text, nullable=False),
+    Column("reduce_only", Boolean, nullable=False),
+    #: ขนาดที่เหลือ **หลัง** fill ใบนี้ — ไล่ลำดับได้โดยไม่ต้องรวมทุกแถวก่อนหน้า และ
+    #: เป็นตัวที่บอกว่าขาปิดปิดครบหรือเหลือของค้าง (spec/03 `flip_aborted`)
+    Column("position_qty_after", PRICE, nullable=False),
+    Column("leverage", PCT),
+    Column("exit_reason", Text),
+    Column("exit_detail", Text),
+    Column("bar_close_ts", BigInteger, nullable=False),
+    Column("dedupe_key", Text, nullable=False),
+    Column("created_ts", BigInteger, nullable=False),
+    UniqueConstraint("profile", "dedupe_key", name="uq_fills_dedupe"),
+    CheckConstraint("market IN ('usdtm_perp', 'spot')", name="ck_fills_market"),
+    CheckConstraint("order_type IN ('market', 'stop_market')", name="ck_fills_order_type"),
+    CheckConstraint("px > 0", name="ck_fills_px_positive"),
+    CheckConstraint("qty > 0", name="ck_fills_qty_positive"),
+    CheckConstraint(
+        "position_qty_after >= 0", name="ck_fills_position_qty_after_not_negative"
+    ),
+    # "ยังไม่รู้ค่าธรรมเนียม" ต่างจาก "ไม่มีค่าธรรมเนียม" — ศูนย์ไม่ใช่คำตอบของกรณีแรก
+    CheckConstraint(
+        "fee_quote IS NULL OR fee_unavailable_reason IS NULL", name="ck_fills_fee_xor"
+    ),
+    CheckConstraint("fee_quote IS NULL OR fee_ccy IS NOT NULL", name="ck_fills_fee_needs_ccy"),
+    CheckConstraint(
+        "exit_reason IS NULL OR exit_reason IN ('signal', 'stop', 'liquidation', 'manual')",
+        name="ck_fills_exit_reason",
+    ),
+    # ขาเปิดไม่มีเหตุผลของการออก · ขาปิดกับขา stop ต้องมี ไม่งั้นรายงาน "ออกเพราะอะไร"
+    # จะมีแถวที่ตอบไม่ได้ปนอยู่โดยไม่มีใครเห็น
+    CheckConstraint(
+        "(leg = 'open') = (exit_reason IS NULL)", name="ck_fills_exit_reason_by_leg"
+    ),
+    CheckConstraint("market <> 'spot' OR NOT reduce_only", name="ck_fills_spot_no_reduce_only"),
+    CheckConstraint(
+        "market <> 'spot' OR leverage IS NULL OR leverage = 1",
+        name="ck_fills_spot_no_leverage",
+    ),
+    Index("ix_fills_trade", "profile", "trade_id"),
+    Index("ix_fills_symbol_bar", "profile", "market", "symbol", "bar_close_ts"),
+)
+
+
+#: funding ที่ถูกหักไปแล้วจริง หนึ่งแถวต่อหนึ่งรอบต่อหนึ่งไม้
+#:
+#: **ไม่มีแถวของ spot** — ตลาดนั้นไม่มี funding อยู่จริง ไม่ใช่มีแล้วเป็นศูนย์ (ADR 26)
+#: บังคับด้วย CHECK ให้ฐานปฏิเสธ แทนที่จะให้โค้ดชั้นบนคอยจำ
+funding_charges = Table(
+    "funding_charges",
+    metadata,
+    Column("id", BigInteger, Identity(always=True), primary_key=True),
+    Column("profile", PROFILE_T, nullable=False),
+    Column("market", Text, nullable=False),
+    Column("symbol", Text, nullable=False),
+    Column("trade_id", Text, nullable=False),
+    Column("cycle_ts", BigInteger, nullable=False),
+    Column("rate", FUNDING_RATE),
+    Column("amount_quote", PRICE),
+    Column("position_qty", PRICE, nullable=False),
+    Column("mark_px", PRICE),
+    Column("unavailable_reason", Text),
+    Column("created_ts", BigInteger, nullable=False),
+    UniqueConstraint("profile", "trade_id", "cycle_ts", name="uq_funding_charges_cycle"),
+    CheckConstraint("market = 'usdtm_perp'", name="ck_funding_charges_market"),
+    CheckConstraint("position_qty > 0", name="ck_funding_charges_qty_positive"),
+    # แถวนี้มีอยู่เพราะรอบ funding มาถึงตอนที่ยังถือไม้อยู่ มันจึงต้องตอบให้ได้ว่าหักไป
+    # เท่าไร หรือทำไมถึงไม่รู้ · ต่างจาก `decisions.funding_rate` ที่ใบ 03 ตั้งใจไม่ใส่
+    # XOR เพราะที่นั่นแถวมีอยู่เพราะแท่งปิด ที่นี่แถวมีอยู่เพราะมีการหักเงิน
+    CheckConstraint(
+        "(rate IS NOT NULL AND amount_quote IS NOT NULL AND unavailable_reason IS NULL)"
+        " OR (rate IS NULL AND amount_quote IS NULL AND unavailable_reason IS NOT NULL)",
+        name="ck_funding_charges_known_or_explained",
+    ),
+    Index("ix_funding_charges_trade", "profile", "trade_id"),
+)
+
+
+#: ledger ทั้งชุด — ตารางข้อเท็จจริง เขียนได้ครั้งเดียว (ADR 23)
+LEDGER_TABLES = (fills, funding_charges)
