@@ -186,6 +186,14 @@ def insert_version(
             seed_quote=(
                 None if broker.seed_quote is None else price_to_db(broker.seed_quote)
             ),
+            taker_fee_pct=(
+                None if broker.taker_fee_pct is None else pct_to_db(broker.taker_fee_pct)
+            ),
+            maintenance_margin_pct=(
+                None
+                if broker.maintenance_margin_pct is None
+                else pct_to_db(broker.maintenance_margin_pct)
+            ),
             created_ts=stamp,
         )
     )
@@ -336,6 +344,16 @@ def settings_of(conn: Connection, version_id: int) -> Settings | None:
                     None
                     if broker.seed_quote is None
                     else price_from_db(broker.seed_quote)
+                ),
+                "taker_fee_pct": (
+                    None
+                    if broker.taker_fee_pct is None
+                    else pct_from_db(broker.taker_fee_pct)
+                ),
+                "maintenance_margin_pct": (
+                    None
+                    if broker.maintenance_margin_pct is None
+                    else pct_from_db(broker.maintenance_margin_pct)
                 ),
             },
             "data": {"exchange": data.exchange},

@@ -69,7 +69,10 @@ kind          = "ccxt"        # ccxt | paper
 exchange      = "binance"     # บังคับเมื่อ kind = ccxt
 margin_mode   = "isolated"
 position_mode = "one_way"
-# paper เท่านั้น: seed_quote = 10000.0
+# paper เท่านั้น — ค่าของการจำลอง:
+# seed_quote             = 10000.0
+# taker_fee_pct          = 0.05
+# maintenance_margin_pct = 0.4
 
 [data]
 exchange = "binance"
@@ -90,6 +93,9 @@ exchange = "binance"
 - `allow_short = true` ของ symbol ใด แต่ไม่มี `bucket_quote_short`
 - `broker.kind = "ccxt"` แต่ไม่ระบุ `exchange`
 - `broker.kind` ไม่ใช่ `paper` แต่มี `seed_quote` — เงินตั้งต้นจำลองไม่มีความหมายกับ broker จริง
+- `broker.kind` ไม่ใช่ `paper` แต่มี `taker_fee_pct` หรือ `maintenance_margin_pct` — เหตุผลเดียวกัน
+  ค่าจริงของ broker จริงมาจากที่ปลายทางแจ้ง (fee ของแต่ละ fill และ `liquidationPrice` ของ position)
+  ไม่ใช่จาก config · ตั้งไว้ก็ไม่มีใครอ่าน และทำให้คนอ่าน config เข้าใจผิดว่าระบบคิด fee เอง
 - `position_mode` ไม่ใช่ `one_way` — **`hedge` ไม่ใช่ตัวเลือกที่ปิดไว้ แต่เป็นค่าที่ระบบไม่รองรับ** เพราะมันทำให้ถือสวนกันในคู่เดียวได้ ซึ่งละเมิดหลัก "หนึ่งฝั่งต่อเหรียญเสมอ" ([03](03-trading-rules.md))
 - ค่าที่ต้องเป็นบวกแต่ไม่เป็น — `bucket_quote_*`, `leverage`, risk limit ทุกตัว · เปอร์เซ็นต์ที่เกิน 100
 - ไม่มี symbol เลย
@@ -98,6 +104,11 @@ exchange = "binance"
   ค่าที่ไม่ใช่ค่าที่คนกรอก
 
 `dry_run` ที่ไม่ระบุ ให้เป็น `true` · profile `paper` ที่ตั้ง `dry_run = false` ให้ **บันทึกไม่ผ่าน** ไม่ใช่แก้ให้เงียบๆ
+
+**`taker_fee_pct` กับ `maintenance_margin_pct` เว้นว่างได้แม้ใน `paper`** และนั่นเป็นเจตนา —
+เวอร์ชันที่ seed ไว้ก่อนสองฟิลด์นี้จะมีอยู่ต้องอ่านกลับได้ ไม่ใช่กลายเป็นเวอร์ชันที่เก็บแล้ว
+อ่านไม่ออก · ประตูที่ปิดจริงอยู่ที่ `PaperBroker` ซึ่งสร้างไม่ขึ้นถ้าขาดค่าใดค่าหนึ่ง —
+fail-closed ตรงจุดที่ค่าถูกใช้ ที่เดียวกับที่ `seed_quote` ถูกบังคับอยู่แล้ว
 
 **กฎเกือบทุกข้อข้างบนซ้ำอยู่ใน `CHECK` ของ schema ด้วย และซ้ำโดยเจตนา** — `CHECK` เป็นด่านสุดท้าย
 ที่ทับไม่ได้ แต่มัน **ล้มที่ข้อแรกที่เจอเสมอ** จึงบอกได้ทีละข้อ · validator มีไว้เพื่อบอกให้ครบทุกข้อ

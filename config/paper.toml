@@ -37,6 +37,11 @@ kind          = "paper"
 margin_mode   = "isolated"
 position_mode = "one_way"
 seed_quote    = 10000.0
+# ค่าของการจำลอง — ไม่มีสองค่านี้แล้ว PaperBroker สร้างไม่ขึ้น (คิด fee และหาราคา
+# liquidation ไม่ได้) · ตัวเลขเป็นของ Binance USDT-M: taker 0.05% และ maintenance
+# margin ขั้นแรก 0.4% · เป็นค่าที่คนกรอก ไม่ใช่ค่าตั้งต้นในโค้ด
+taker_fee_pct          = 0.05
+maintenance_margin_pct = 0.4
 
 [data]
 exchange = "binance"
