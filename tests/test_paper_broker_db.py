@@ -257,6 +257,10 @@ def test_a_stop_that_fires_is_a_fill_not_an_event(db):
     stop_fill = ledger_repo.fills_of_trade(db, "paper", trade)[-1]
     assert (stop_fill.leg, stop_fill.exit_reason) == ("stop", "stop")
     assert stop_fill.px == 95.0
+    # ทางเชื่อมเดียวระหว่าง `fills` กับ `decision_orders` คือ `client_order_id`
+    # (ใบ 03 เลือก join ด้วยคีย์ ไม่มี FK) — stop ที่ทำงานต้องพา id ของออเดอร์จริง
+    # ไปด้วย ไม่ใช่ id สังเคราะห์ ไม่งั้น reconcile ของใบ 12 โยงกลับไม่ได้
+    assert stop_fill.client_order_id == client_order_id(SYMBOL, T0, "sell", "stop")
 
 
 def test_a_gap_through_the_stop_fills_at_the_open_not_at_the_stop_price(db):
@@ -325,6 +329,9 @@ def test_a_position_that_reaches_liquidation_is_closed_by_the_exchange(db):
     last = ledger_repo.fills_of_trade(db, "paper", trade)[-1]
     assert last.exit_reason == "liquidation"
     assert last.px == pytest.approx(50.4)
+    # ตรงข้ามกับ stop — ไม่มีออเดอร์ของเราให้อ้าง venue เป็นคนปิด id จึงสังเคราะห์
+    # ใบ 13 เป็นคนตัดสินว่า fill ที่ venue ริเริ่มควรทำให้คอลัมน์นี้ nullable หรือไม่
+    assert last.client_order_id.startswith(trade)
 
 
 def test_when_both_levels_are_inside_one_bar_the_stop_fires_first(db):

@@ -300,7 +300,17 @@ class PaperBroker:
         level, reason = levels[0]
         # แท่งที่เปิดมาเลยระดับไปแล้วแปลว่าไม่มีใครได้ราคานั้น — fill ที่ราคาเปิด
         px = bar.open if _crossed(sim.side, level, bar, at_open=True) else level
-        self._close(sim, px, bar, reason, leg="stop" if reason == "stop" else "close")
+
+        if reason == "stop" and sim.stop is not None:
+            # **fill ของ stop ต้องพา `client_order_id` ของออเดอร์จริงไปด้วย** —
+            # มันคือทางเชื่อมเดียวระหว่าง `fills` กับ `decision_orders` (ใบ 03 เลือก
+            # join ด้วยคีย์ ไม่มี FK) ถ้าใช้ id สังเคราะห์ reconcile ของใบ 12 จะโยง
+            # stop ที่ทำงานกลับไปหาแท่งที่วางมันไม่ได้เลย
+            self._close(sim, px, bar, reason, leg="stop", qty=min(sim.stop.qty, sim.qty),
+                        coid=sim.stop.client_order_id)
+        else:
+            # liquidation ไม่มีออเดอร์ของเรา — venue เป็นคนทำ id จึงสังเคราะห์
+            self._close(sim, px, bar, reason, leg="close")
 
     # ── การเขียน fill ────────────────────────────────────────────────────────
 
@@ -366,6 +376,7 @@ class PaperBroker:
         leg: str,
         qty: float | None = None,
         order: Order | None = None,
+        coid: str | None = None,
     ) -> OrderResult:
         closing = sim.qty if qty is None else qty
         share = Decimal(str(closing / sim.qty))
@@ -381,11 +392,12 @@ class PaperBroker:
             sim.margin = Decimal("0")
             sim.stop = None
 
-        coid = (
-            order.client_order_id
-            if order is not None
-            else f"{sim.trade_id}-{reason}-{bar.close_ts}"
-        )
+        if coid is None:
+            coid = (
+                order.client_order_id
+                if order is not None
+                else f"{sim.trade_id}-{reason}-{bar.close_ts}"
+            )
         return self._write(
             sim, coid, leg, px, closing, bar, fee,
             order.type if order is not None else "stop_market" if leg == "stop" else "market",
