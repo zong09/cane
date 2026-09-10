@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import importlib.util
+from pathlib import Path
 
 import psycopg
 import pytest
@@ -563,25 +564,48 @@ def test_no_role_may_delete_from_any_decision_table(db, table):
 # ── migration ถอยแล้วเดินหน้าได้ ─────────────────────────────────────────────
 
 
+
+def _migrations_from(revision: str):
+    """โหลด migration ทุกใบตั้งแต่ `revision` ขึ้นไปถึงหัว เรียงเก่า → ใหม่
+
+    ชื่อไฟล์ขึ้นต้นด้วยเลข revision เรียงตามตัวอักษรจึงเท่ากับเรียงตามลำดับ
+    """
+    folder = Path("alembic/versions")
+    modules = []
+    for path in sorted(folder.glob("[0-9][0-9][0-9][0-9]_*.py")):
+        if path.name[:4] < revision:
+            continue
+        spec = importlib.util.spec_from_file_location(f"_m{path.stem}", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        modules.append(module)
+    return modules
+
+
 def test_the_migration_can_be_rolled_back_and_reapplied(db, live_version):
     """`downgrade()` แล้ว `upgrade()` ของ `0004` ในทรานแซกชันของเทสต์เอง
 
     ท่าเดียวกับที่ `test_config_db.py` ใช้ยิง guard ของ `0003` — `MigrationContext`
     ผูก `op` เข้ากับ connection ของเทสต์ จึงเห็นแถวที่ยัง uncommitted และ fixture `db`
     rollback ทั้ง DDL ทิ้งท้ายเทสต์ · แทนการยืนยันด้วยมือใน terminal
+
+    **ถอยทั้งสายตั้งแต่หัวลงมา ไม่ใช่ถอย `0004` เดี่ยวๆ** — `0004` เป็นเจ้าของ `leg_t`
+    และ migration ที่มาทีหลังใช้ type เดียวกัน (`fills.leg` ของ `0006`) การถอยข้ามใบ
+    จึงล้มด้วย `DependentObjectsStillExist` ซึ่ง **ไม่ใช่บั๊ก** แต่เป็นสัญญาของ alembic
+    เองที่ให้ถอยเรียงย้อนลำดับ · เขียนให้ไล่จากไฟล์จริงในโฟลเดอร์ เพื่อไม่ต้องกลับมา
+    แก้เทสต์นี้ทุกครั้งที่มี migration ใหม่ที่ยืม type ของใบ 03
     """
-    spec = importlib.util.spec_from_file_location(
-        "_m0004", "alembic/versions/0004_decisions.py"
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    chain = _migrations_from("0004")
+    module = chain[0]
 
     repo.insert_decision(db, quiet_bar(live_version))
 
     with Operations.context(MigrationContext.configure(db)):
-        module.downgrade()
+        for step in reversed(chain):
+            step.downgrade()
         assert db.execute(text("SELECT to_regclass('public.decisions')")).scalar_one() is None
-        module.upgrade()
+        for step in chain:
+            step.upgrade()
 
     assert db.execute(select(func.count()).select_from(decisions)).scalar_one() == 0
 
