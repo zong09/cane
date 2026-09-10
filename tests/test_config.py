@@ -200,6 +200,42 @@ def test_seed_quote_is_rejected_on_a_real_broker(tmp_path):
     assert any("seed_quote" in p.message for p in problems_of(write(tmp_path, text)))
 
 
+def test_the_paper_profile_carries_the_simulation_parameters():
+    """ไฟล์ที่ ship มาต้องมีค่าครบ ไม่ใช่แค่ schema รองรับ
+
+    `PaperBroker` สร้างไม่ขึ้นถ้าขาดสองค่านี้ ถ้า `config/paper.toml` ไม่มี คนที่
+    ตั้งเครื่องตาม README จะ seed ได้เวอร์ชันที่รัน paper ไม่ได้ แล้วไปเจอตอน
+    สร้าง broker ซึ่งไกลจากจุดที่แก้ได้
+    """
+    broker = load_profile("config/paper.toml").broker
+
+    # หน่วยเป็น **เปอร์เซ็นต์** เหมือนฟิลด์ `_pct` ตัวอื่นทั้งไฟล์ ไม่ใช่สัดส่วน
+    assert broker.taker_fee_pct == 0.05
+    assert broker.maintenance_margin_pct == 0.4
+
+
+@pytest.mark.parametrize(
+    "field, value", [("taker_fee_pct", "0.05"), ("maintenance_margin_pct", "0.4")]
+)
+def test_simulation_parameters_are_rejected_on_a_real_broker(tmp_path, field, value):
+    """เหตุผลเดียวกับ `seed_quote` — ของ broker จริง fee มาจาก fill ไม่ใช่จาก config"""
+    text = BROKEN_LIVE.replace(
+        'kind          = "ccxt"', f'kind          = "ccxt"\n{field} = {value}'
+    )
+    assert any(field in p.message for p in problems_of(write(tmp_path, text)))
+
+
+def test_a_fee_finer_than_the_column_can_hold_is_refused(tmp_path):
+    """4 ทศนิยมคือสิ่งที่ `NUMERIC(9,4)` เก็บได้ ค่าที่ละเอียดกว่าต้องถูกปฏิเสธ ไม่ใช่ปัดให้
+
+    fee เป็นเลขเล็กกว่าฟิลด์ `_pct` ตัวอื่นมาก การพิมพ์เกินมาหนึ่งตำแหน่งจึงเกิดง่าย
+    ถ้าปัดให้เงียบๆ ระบบจะคิด fee ด้วยอัตราที่ไม่ใช่อัตราที่คนกรอก
+    """
+    source = Path("config/paper.toml").read_text(encoding="utf-8")
+    text = source.replace("taker_fee_pct          = 0.05", "taker_fee_pct          = 0.05001")
+    assert any("taker_fee_pct" in p.field_path for p in problems_of(write(tmp_path, text)))
+
+
 def test_hedge_position_mode_is_not_a_supported_value(tmp_path):
     text = BROKEN_LIVE.replace(
         'kind          = "ccxt"', 'kind          = "ccxt"\nposition_mode = "hedge"'
