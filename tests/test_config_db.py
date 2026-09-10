@@ -399,6 +399,100 @@ def test_an_impossible_broker_is_refused(db, values):
     assert isinstance(caught.value.orig, psycopg.errors.CheckViolation)
 
 
+@pytest.mark.parametrize(
+    "sim",
+    [
+        "0.05, NULL",
+        "NULL, 0.4",
+        "0.05, 0.4",
+    ],
+)
+def test_a_real_broker_cannot_carry_simulation_parameters(db, sim):
+    """ค่าจำลองใน broker จริงคือแหล่งความจริงที่สองที่ขัดกับใบแจ้งของ venue
+
+    `kind = 'ccxt'` อ่าน fee จากที่ปลายทางแจ้งต่อ fill และอ่านราคา liquidation จาก
+    position ที่ exchange ส่งมา ถ้า config เก็บอัตราไว้ด้วย จะมีสองค่าที่ต่างกันได้
+    โดยไม่มีอะไรบอกว่าอันไหนคือของจริง
+    """
+    version_id = head_row(db)
+
+    with pytest.raises(IntegrityError) as caught:
+        with db.begin_nested():
+            db.execute(
+                text(
+                    f"""
+                    INSERT INTO config_broker (config_version_id, profile, kind,
+                        exchange, margin_mode, position_mode, taker_fee_pct,
+                        maintenance_margin_pct, created_ts)
+                    VALUES (:v, 'live', 'ccxt', 'binance', 'isolated', 'one_way',
+                        {sim}, :ts)
+                    """
+                ),
+                {"v": version_id, "ts": TS},
+            )
+
+    assert isinstance(caught.value.orig, psycopg.errors.CheckViolation)
+
+
+@pytest.mark.parametrize(
+    "sim",
+    [
+        # fee ติดลบคือรายได้ต่อไม้
+        "-0.01, 0.4",
+        # MMR เป็นศูนย์แปลว่าไม่มีวันโดน liquidate — ปิดชั้นป้องกันด้วยการกรอกเลข
+        "0.05, 0",
+        "0.05, 100",
+        "100, 0.4",
+    ],
+)
+def test_an_impossible_simulation_parameter_is_refused(db, sim):
+    version_id = head_row(db)
+
+    with pytest.raises(IntegrityError) as caught:
+        with db.begin_nested():
+            db.execute(
+                text(
+                    f"""
+                    INSERT INTO config_broker (config_version_id, profile, kind,
+                        exchange, margin_mode, position_mode, taker_fee_pct,
+                        maintenance_margin_pct, created_ts)
+                    VALUES (:v, 'live', 'paper', NULL, 'isolated', 'one_way',
+                        {sim}, :ts)
+                    """
+                ),
+                {"v": version_id, "ts": TS},
+            )
+
+    assert isinstance(caught.value.orig, psycopg.errors.CheckViolation)
+
+
+def test_a_version_stored_before_the_simulation_columns_existed_still_loads(db, paper):
+    """เวอร์ชันเก่าที่ไม่มีสองค่านี้ต้องอ่านกลับได้ ไม่ใช่กลายเป็นของที่เก็บแล้วอ่านไม่ออก
+
+    นี่คือเหตุผลที่คอลัมน์เว้นว่างได้แม้ใน `paper` และที่ `Settings` ไม่บังคับ —
+    เครื่อง dev มี `paper` v1 ที่ seed ไว้ก่อน migration 0005 อยู่จริง ถ้าบังคับ
+    ให้มีค่า เวอร์ชันนั้นจะพาระบบล้มตอนอ่าน ไม่ใช่ตอนเขียน
+    """
+    head = repo.insert_version(db, paper, source="toml_seed", created_ts=TS)
+    db.execute(
+        text(
+            """
+            UPDATE config_broker
+               SET taker_fee_pct = NULL, maintenance_margin_pct = NULL
+             WHERE config_version_id = :v
+            """
+        ),
+        {"v": head.id},
+    )
+
+    loaded = repo.settings_of(db, head.id)
+
+    assert loaded.broker.taker_fee_pct is None
+    assert loaded.broker.maintenance_margin_pct is None
+    # ส่วนที่เหลือของเวอร์ชันยังอ่านได้ครบ ไม่ใช่แค่ไม่ระเบิด
+    assert loaded.broker.seed_quote == paper.broker.seed_quote
+
+
 def test_a_child_row_cannot_claim_a_different_profile_than_its_head(db):
     """`profile` ซ้ำอยู่บนลูกเพื่อให้เขียน CHECK ได้ — composite FK กันมันเพี้ยนจากหัว
 
