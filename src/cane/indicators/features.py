@@ -35,10 +35,14 @@ spec/04:5-11 ระบุไว้ตรงๆ ว่าคำว่า "สำ�
 
 ## สองที่ที่สเปกอ่านได้สองทาง — เลือกทางไหนและทำไม
 
-1. **"ขนาด body เทียบ ATR (z-score)"** (spec/04:38) อ่านได้ทั้ง "body/ATR" และ "z-score
-   ของ body" · ที่นี่อ่านรวมทั้งประโยค: normalize ด้วย ATR ก่อน แล้วหา z-score ของ
-   *อัตราส่วนนั้น* เทียบ `body_lookback` แท่งหลังสุด — ได้ตัวเลขไร้หน่วยที่เทียบข้าม
-   คู่เหรียญและข้าม timeframe ได้ ซึ่งเป็นสิ่งที่ prompt ชุดเดียวต้องการ
+1. **"ขนาด body เทียบ ATR (z-score)"** (spec/04:38) อ่านได้ทั้ง "body ÷ ATR" และ
+   "z-score ของ body" · **อ่านรวมกันเป็นข้อเดียวไม่ได้** เพราะ ATR เป็นสเกลาร์ตัวเดียว
+   ที่คูณทุกตัวในหน้าต่างเท่ากัน และ z-score ไม่สนใจสเกล — `z(body/ATR)` จึงเท่ากับ
+   `z(body)` เป๊ะทุกกรณี การหารด้วย ATR ก่อนหา z-score เป็นเลขคณิตที่หักล้างตัวเอง
+   · ที่นี่จึงให้ **สองตัวเลข** เพราะสเปกเอ่ยถึงสองแนวคิดจริงๆ ไม่ใช่แนวคิดเดียว:
+   `body_atr` ตอบว่า "แท่งนี้ใหญ่แค่ไหนเทียบความผันผวน" (เทียบข้ามคู่เหรียญได้) และ
+   `body_z` ตอบว่า "ใหญ่ผิดปกติแค่ไหนเทียบแท่งรอบๆ" (เทียบข้ามช่วงเวลาของคู่เดียวกัน)
+   — `RETAIL_CAPITULATION` ต้องการทั้งสองคำตอบ ตัวเดียวตอบไม่ครบ
 2. **"linear fit"** (spec/04:36-37) ฟิตบนอะไร · ที่นี่ฟิตบน **จุด pivot** ไม่ใช่ high/low
    ของทุกแท่ง เพราะเส้นแนวโน้มที่เอกสารต้นทางพูดถึงคือเส้นที่ลากผ่านยอด/ก้น ไม่ใช่
    regression ของราคาทั้งเส้น — สองอย่างนี้ให้เส้นคนละเส้นเมื่อราคาแกว่งแรง
@@ -113,9 +117,10 @@ class Features:
 
     ฟิลด์ที่เป็น `None` ได้คือ **สภาวะตลาดจริง ไม่ใช่ข้อผิดพลาด**:
     `resistance` / `support` เป็น `None` เมื่อมีจุด pivot ไม่ถึงสองจุดในชุดข้อมูล
-    (ตลาดที่เพิ่งเปิดหรือวิ่งทางเดียวไม่มีจุดให้ลากเส้น) · `body_atr_z` เป็น `None`
+    (ตลาดที่เพิ่งเปิดหรือวิ่งทางเดียวไม่มีจุดให้ลากเส้น) · `body_z` เป็น `None`
     เมื่อ body ทุกแท่งในหน้าต่างเท่ากันเป๊ะจน std เป็นศูนย์ — z-score ไม่นิยามตรงนั้น
-    และการคืน 0.0 จะโกหกว่า "ปกติ" ทั้งที่ความจริงคือ "เทียบไม่ได้"
+    และการคืน 0.0 จะโกหกว่า "ปกติ" ทั้งที่ความจริงคือ "เทียบไม่ได้" · `body_atr`
+    ไม่มีวันเป็น `None` เพราะ `features()` ดังไปแล้วตั้งแต่ตอน ATR เป็นศูนย์
     """
 
     bar_index: int
@@ -131,7 +136,8 @@ class Features:
 
     red_run: int
     green_run: int
-    body_atr_z: float | None
+    body_atr: float
+    body_z: float | None
     gap_atr: float
 
 
@@ -151,30 +157,37 @@ def true_range(bar: Bar, prev_close: float | None) -> float:
 
 
 def wilder_atr(bars: Sequence[Bar], length: int = ATR_PERIOD) -> float:
-    """ATR ของแท่งสุดท้าย ตามสูตร `ta.atr` ของ Pine = RMA ของ TR
+    """ATR ของแท่งสุดท้าย ตามสูตร `ta.atr` ของ Pine = `ta.rma(ta.tr(true), length)`
 
     RMA คือ EMA ที่ `alpha = 1/length` (ไม่ใช่ `2/(length+1)` ของ `pine_ema`) seed ด้วย
-    SMA ของ `length` ตัวแรก — นี่คือสูตรที่ Wilder เขียนไว้และที่ `reference/
-    cdc_trailing_stop.pine` เรียกใช้ · ใบ 09 ที่ทำ trailing stop **ต้องเรียกตัวนี้
-    ไม่ใช่เขียนใหม่** ไม่งั้น stop ที่ตั้งจริงกับตัวเลขที่ LLM เห็นจะมาจากคนละสูตร
+    SMA ของ `length` ตัวแรก · ใบ 09 ที่ทำ trailing stop **ต้องเรียกตัวนี้ ไม่ใช่เขียนใหม่**
+    ไม่งั้น stop ที่ตั้งจริงกับตัวเลขที่ LLM เห็นจะมาจากคนละสูตร
+
+    **แท่งแรกเข้า seed ด้วย** เพราะ `ta.tr(true)` คืน `high - low` ตรงนั้น (ไม่ใช่ `na`
+    แบบ `ta.tr(false)`) TR ตัวแรกจึงเป็นค่าที่ขาดองค์ประกอบ gap ไปหนึ่งตัวและดึง seed
+    ให้ต่ำกว่าความจริงเล็กน้อย — **นั่นคือพฤติกรรมของ Pine ไม่ใช่บั๊ก** การตัดมันทิ้ง
+    จะได้ตัวเลขที่ "สะอาด" กว่าแต่ไม่ตรงกับ TradingView
+
+    **ยังไม่ได้เทียบกับไฟล์จริงจาก TradingView** — สถานะเดียวกับการ seed EMA ใน
+    `action_zone.py` คือเชื่อตามคู่มือของ Pine แต่ยังไม่มีหลักฐานว่า built-in ทำตาม
+    คู่มือของตัวเองเป๊ะ · golden test ของใบ 09 คือผู้ตัดสิน และ **บรรทัดที่ต้องแก้ถ้า
+    มันไม่ตรงคือการรวม/ไม่รวม TR ตัวแรก จุดเดียว** อิทธิพลของ seed หลัง 70 แท่งเหลือ
+    ราว `(13/14)**70` ≈ 0.007 ของผลต่างตอนเริ่ม จึงเห็นได้เฉพาะช่วงหัวชุดข้อมูล
 
     คืน `float` ตัวเดียวเพราะไม่มีใครต้องการเส้น ATR ทั้งเส้น — ถ้าใบ 09 ต้องการ
     ค่อยแยกตัวที่คืนทั้งเส้นออกมาตอนนั้น ไม่ใช่เดาไว้ก่อน
     """
     if length < 1:
         raise ValueError(f"คาบของ ATR ต้อง >= 1 ไม่ใช่ {length}")
-    if len(bars) < length + 1:
+    if len(bars) < length:
         raise ValueError(
-            f"ATR คาบ {length} ต้องมีอย่างน้อย {length + 1} แท่ง มีมา {len(bars)}"
+            f"ATR คาบ {length} ต้องมีอย่างน้อย {length} แท่ง มีมา {len(bars)}"
         )
 
     trs = [
         true_range(bar, bars[i - 1].close if i else None)
         for i, bar in enumerate(bars)
     ]
-    # ข้าม TR ตัวแรกทิ้งเสมอ — มันเกิดจากแท่งที่ไม่มีราคาปิดก่อนหน้าจึงเป็น TR
-    # คนละนิยามกับตัวอื่น · Pine ก็คืน `na` ตรงนั้น การเอามาเฉลี่ยด้วยคือการปน
-    trs = trs[1:]
     atr = sum(trs[:length]) / length
     for tr in trs[length:]:
         atr = (atr * (length - 1) + tr) / length
@@ -254,7 +267,7 @@ def min_bars(
     **ไม่เกี่ยวกับ `data.MIN_CLOSED_BARS` (85)** ซึ่งเป็นเกณฑ์ว่าคู่เหรียญพร้อมให้
     ตัดสินใจหรือยัง — คนละชั้นกัน ที่นี่ตอบแค่ว่า "สูตรพวกนี้มีข้อมูลพอจะคำนวณไหม"
     """
-    return max(atr_period + 1, body_lookback, left + right + 1, 2)
+    return max(atr_period, body_lookback, left + right + 1, 2)
 
 
 def features(
@@ -271,6 +284,8 @@ def features(
     ธรรมเนียมเดียวกับ `action_zones()` — ไม่เรียงให้และไม่ตรวจ เพราะการเรียงเงียบๆ
     จะกลบบั๊กของผู้เรียกที่ส่งย้อนลำดับมา
     """
+    if max_swings < 1:
+        raise ValueError(f"max_swings ต้อง >= 1 ไม่ใช่ {max_swings} (0 จะคืนทุกจุดเงียบๆ)")
     need = min_bars(
         atr_period=atr_period, body_lookback=body_lookback, left=left, right=right
     )
@@ -298,7 +313,8 @@ def features(
         support=_trend_line(lows, close=bars[last].close, at=last, atr=atr),
         red_run=_run(bars, up=False),
         green_run=_run(bars, up=True),
-        body_atr_z=_body_atr_z(bars, atr=atr, lookback=body_lookback),
+        body_atr=abs(bars[last].close - bars[last].open) / atr,
+        body_z=_body_z(bars, lookback=body_lookback),
         gap_atr=(bars[last].open - bars[last - 1].close) / atr,
     )
 
@@ -333,8 +349,14 @@ def _run(bars: Sequence[Bar], *, up: bool) -> int:
     return n
 
 
-def _body_atr_z(bars: Sequence[Bar], *, atr: float, lookback: int) -> float | None:
-    """z-score ของ (|body| ÷ ATR) ของแท่งสุดท้าย เทียบ `lookback` แท่งหลังสุด
+def _body_z(bars: Sequence[Bar], *, lookback: int) -> float | None:
+    """z-score ของ |body| แท่งสุดท้าย เทียบ `lookback` แท่งหลังสุด
+
+    **ไม่หารด้วย ATR** และไม่ใช่การละเลย — ดูข้อ 1 ในหัวไฟล์: ATR เป็นสเกลาร์ตัวเดียว
+    ที่คูณทุกตัวในหน้าต่างเท่ากัน z-score จึงให้ค่าเดิมเป๊ะไม่ว่าจะหารหรือไม่หาร
+    การเขียน `/ atr` ไว้ตรงนี้จะเป็นบรรทัดที่ดูมีความหมายแต่ไม่ทำอะไรเลย ซึ่งอันตราย
+    กว่าการไม่เขียน เพราะคนอ่านจะเชื่อว่าตัวเลขนี้เทียบข้ามคู่เหรียญได้ (มันไม่ได้ —
+    ตัวที่ทำหน้าที่นั้นคือ `body_atr`)
 
     หน้าต่าง **รวมแท่งสุดท้ายเอง** ตามนิยามมาตรฐานของ z-score — แท่งที่ใหญ่ผิดปกติ
     จึงดันค่าเฉลี่ยขึ้นเองส่วนหนึ่ง ทำให้ค่าที่ได้อนุรักษ์นิยมกว่าการกันตัวเองออก
@@ -343,8 +365,7 @@ def _body_atr_z(bars: Sequence[Bar], *, atr: float, lookback: int) -> float | No
     std เป็น population (หาร n) ไม่ใช่ sample (หาร n−1) — หน้าต่างนี้คือประชากร
     ทั้งหมดที่คำถามสนใจ ไม่ได้สุ่มมาจากอะไร
     """
-    window = bars[-lookback:]
-    sizes = [abs(bar.close - bar.open) / atr for bar in window]
+    sizes = [abs(bar.close - bar.open) for bar in bars[-lookback:]]
     n = float(len(sizes))
     mean = sum(sizes) / n
     var = sum((s - mean) ** 2 for s in sizes) / n

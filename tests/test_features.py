@@ -67,6 +67,20 @@ def calm(n: int, *, base: float = 100.0):
     return [(base, base + 1.0, base - 1.0, base) for _ in range(n)]
 
 
+def one_big_bar(*, span: float = 1.0):
+    """19 แท่ง doji แล้วปิดท้ายด้วยแท่งเดียวที่ body กว้าง 2.0
+
+    `span` คือครึ่งความกว้างของทุกแท่ง → ATR เป็น `2·span` พอดี (TR ของทุกแท่งเท่ากัน
+    หมด รวมแท่งท้ายที่ high/low ยังเท่าเดิม) · **body เท่าเดิมทั้งสองชุด เปลี่ยนแค่ ATR**
+    คู่นี้จึงเป็นตัวที่แยกได้ว่า `body_atr` กับ `body_z` เป็นคนละตัวเลขจริง
+
+    z-score คำนวณจาก body ดิบ = [0.0 × 19, 2.0] · mean = 0.1, var = 3.8/20 = 0.19
+    → z = 1.9 ÷ √0.19 = √19 **ไม่ขึ้นกับ `span`** เพราะ z-score ไม่สนใจสเกล
+    """
+    flatline = [(100.0, 100.0 + span, 100.0 - span, 100.0)] * 19
+    return bars([*flatline, (99.0, 100.0 + span, 100.0 - span, 101.0)])
+
+
 def mirror(seq):
     """พลิกชุดข้อมูลรอบศูนย์ — สูงสุดกลายเป็นต่ำสุด แท่งเขียวกลายเป็นแท่งแดง
 
@@ -141,34 +155,40 @@ def test_a_series_of_identical_ranges_gives_that_range_back_exactly():
 
 
 def test_the_smoothing_is_wilder_not_a_plain_average():
-    """คำนวณด้วยมือ คาบ 2 · TR = [4 (ทิ้ง), 4, 2, 10] → seed (4+2)/2 = 3 → (3·1+10)/2 = 6.5
+    """คำนวณด้วยมือ คาบ 2 · TR = [10, 4, 2, 10] → seed (10+4)/2 = 7 → 4.5 → 7.25
 
-    ค่าเฉลี่ยธรรมดาของ [4, 2, 10] คือ 5.333… ไม่ใช่ 6.5 — เลขสองตัวนี้ต่างกันพอที่จะ
-    จับได้ว่าใครเผลอเปลี่ยน RMA เป็น SMA
+    ตัวเลขนี้แยกได้สามทางพร้อมกัน: SMA ของทั้งสี่ตัวคือ 6.5, RMA ที่ตัด TR ตัวแรกทิ้ง
+    ก็ได้ 6.5 เหมือนกัน (บังเอิญ) ส่วน RMA ที่นับ TR ตัวแรกได้ 7.25 — ชุดตัวเลขก่อนหน้า
+    นี้ให้ 6.5 ทั้งสองนโยบาย seed จึงแยกไม่ออกว่าโค้ดทำอะไรอยู่
     """
     series = bars(
         [
-            (10, 12, 8, 10),
+            (10, 16, 6, 10),
             (10, 14, 10, 12),
             (12, 13, 11, 12),
             (12, 22, 12, 20),
         ]
     )
-    assert wilder_atr(series, 2) == 6.5
+    assert wilder_atr(series, 2) == 7.25
 
 
-def test_the_first_true_range_is_dropped_not_averaged_in():
-    """แท่งแรกให้ TR คนละนิยาม (ไม่มีราคาปิดก่อนหน้า) จึงต้องไม่เข้า seed
+def test_the_first_true_range_goes_into_the_seed_the_way_pine_does_it():
+    """`ta.atr` = `ta.rma(ta.tr(true), length)` และ `ta.tr(true)` คืน high−low ที่แท่งแรก
 
-    แท่งแรกของชุดนี้ช่วงกว้าง 100 ถ้ามันถูกนับ ATR จะพุ่งไปหลายสิบ ที่ถูกคือ 2.0
+    คำนวณด้วยมือ คาบ 14 · TR = [100, แล้ว 2.0 อีก 14 ตัว] → seed = (100 + 13·2)/14 = 9.0
+    → smooth ครั้งเดียวด้วย 2.0 = (9·13 + 2)/14 = 8.5
+
+    ถ้าใครตัด TR ตัวแรกทิ้ง (ซึ่ง "สะอาด" กว่าในเชิงสถิติ) ค่าจะเป็น 2.0 พอดี — ห่างกัน
+    มากพอที่เทสต์นี้จะเป็นตัวชี้ขาดว่าโค้ดใช้นโยบายไหน ซึ่งเป็นข้อที่ golden test ของ
+    ใบ 09 จะมาตัดสินอีกที
     """
-    series = bars([(100, 150, 50, 100), *calm(15)])
-    assert wilder_atr(series) == 2.0
+    series = bars([(100, 150, 50, 100), *calm(14)])
+    assert wilder_atr(series) == 8.5
 
 
 def test_too_few_bars_for_the_period_is_refused_not_averaged_over_what_there_is():
     with pytest.raises(ValueError, match="14"):
-        wilder_atr(bars(calm(14)))
+        wilder_atr(bars(calm(13)))
 
 
 def test_a_period_below_one_is_refused():
@@ -264,7 +284,7 @@ def test_the_minimum_is_the_formulas_own_need_not_the_data_layers_eighty_five():
     """
     from cane.data import MIN_CLOSED_BARS
 
-    assert min_bars() == 20
+    assert min_bars() == 20  # body_lookback เป็นตัวที่กว้างที่สุด ไม่ใช่ ATR
     assert min_bars() < MIN_CLOSED_BARS
 
 
@@ -288,7 +308,8 @@ def test_a_calm_doji_series_reports_absence_not_zero():
     feat = features(bars(calm(24)))
 
     assert feat.atr == 2.0
-    assert feat.body_atr_z is None
+    assert feat.body_atr == 0.0
+    assert feat.body_z is None
     assert feat.swing_lows == ()
     assert feat.swing_highs == ()
     assert feat.resistance is None
@@ -329,6 +350,56 @@ def test_the_gap_is_signed_and_measured_in_atr():
     feat = features(bars([*calm(20), (94, 95, 93, 94.5)]))
     assert feat.atr == pytest.approx(33.0 / 14.0)
     assert feat.gap_atr == pytest.approx(-6.0 / (33.0 / 14.0))
+
+
+def test_a_bar_that_dwarfs_its_neighbours_scores_exactly_root_nineteen():
+    """ค่าจริงของ `body_z` ที่คำนวณด้วยมือ — ที่มาอยู่ใน docstring ของ `one_big_bar()`
+
+    ตรึงสองอย่าง: หน้าต่างรวมแท่งสุดท้ายเอง และ std เป็น population ไม่ใช่ sample
+    """
+    feat = features(one_big_bar())
+
+    assert feat.atr == 2.0
+    assert feat.body_z == pytest.approx(19.0**0.5)
+    assert (feat.green_run, feat.red_run) == (1, 0)
+    assert feat.gap_atr == pytest.approx(-0.5)
+
+
+def test_the_z_score_cannot_do_the_job_of_the_ratio_because_it_ignores_scale():
+    """สองชุดที่ body เท่ากันแต่ ATR ต่างกันเท่าตัว → `body_atr` ต่างกัน `body_z` เท่าเดิม
+
+    นี่คือข้อที่บอกว่าทำไมสองฟิลด์นี้แยกกัน · ก่อนหน้านี้โค้ดหาร body ด้วย ATR **ก่อน**
+    หา z-score แล้วเรียกผลว่าเป็นการอ่านสเปกรวมทั้งประโยค — เทสต์นี้แสดงว่าการหารนั้น
+    หักล้างตัวเองทิ้ง ตัวเลขที่ได้คือ z-score ของ body ดิบทุกประการ ไม่มีอะไรของ ATR
+    เหลืออยู่เลย ถ้ารวมสองแนวคิดเป็นฟิลด์เดียว คำถาม "ใหญ่เทียบความผันผวนไหม" จะหายไป
+    """
+    narrow, wide = features(one_big_bar()), features(one_big_bar(span=2.0))
+
+    assert (narrow.atr, wide.atr) == (2.0, 4.0)
+    assert narrow.body_atr == pytest.approx(1.0)
+    assert wide.body_atr == pytest.approx(0.5)
+    assert wide.body_z == pytest.approx(narrow.body_z)
+
+
+def test_the_body_score_ignores_direction_but_the_run_and_the_gap_do_not():
+    """กระจกเงาของชุดข้างบน — แท่งใหญ่ตัวเดิมกลายเป็นแท่งแดง แต่ "ใหญ่" เท่าเดิม
+
+    `RETAIL_CAPITULATION` กับ `BUYING_EXHAUSTION` ใช้ตัวเลขขนาดชุดเดียวกัน ต่างกันที่
+    ทิศซึ่งอ่านจาก `red_run`/`green_run` — ถ้า `body_atr`/`body_z` ดันมีทิศติดมาด้วย
+    สองปัจจัยนี้จะนับทิศซ้ำสองครั้ง
+    """
+    up, down = features(one_big_bar()), features(mirror(one_big_bar()))
+
+    assert down.body_z == pytest.approx(up.body_z)
+    assert down.body_atr == pytest.approx(up.body_atr)
+    assert (down.red_run, down.green_run) == (up.green_run, up.red_run)
+    assert down.gap_atr == pytest.approx(-up.gap_atr)
+
+
+def test_max_swings_below_one_is_refused_rather_than_quietly_returning_all_of_them():
+    """`points[-0:]` คือทั้งรายการ ไม่ใช่รายการว่าง — ความผิดพลาดแบบที่ Python ไม่ฟ้อง"""
+    with pytest.raises(ValueError, match="max_swings"):
+        features(zigzag(), max_swings=0)
 
 
 # ── features — เส้นกรอบแนวโน้ม ────────────────────────────────────────────────
@@ -398,7 +469,11 @@ def test_every_feature_mirrors_when_the_series_flips():
     a, b = features(up), features(down)
 
     assert b.atr == pytest.approx(a.atr)
-    assert b.body_atr_z == pytest.approx(a.body_atr_z)
+    assert b.body_atr == pytest.approx(a.body_atr)
+    # ชุดนี้ body เท่ากันทุกแท่ง z-score จึงไม่นิยามทั้งสองฝั่ง — เขียนเป็น `is None`
+    # ตรงๆ ไม่ใช่ `approx` เทียบกัน เพราะ `None == approx(None)` ผ่านโดยไม่ได้ตรวจอะไร
+    # ค่าจริงของมันมีเทสต์แยกอยู่ที่ `..._scores_exactly_root_nineteen`
+    assert a.body_z is None and b.body_z is None
 
     assert [p.index for p in b.swing_lows] == [p.index for p in a.swing_highs]
     assert [p.price for p in b.swing_lows] == pytest.approx(
