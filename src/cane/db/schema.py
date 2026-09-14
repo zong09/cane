@@ -468,7 +468,7 @@ decisions = Table(
     Column("zone", ZONE_T, nullable=False),
     Column("state", STATE_T, nullable=False),
     #: **ไม่มีคอลัมน์ `signal`** — spec/02:64 ให้ชื่อจริงในโค้ดเป็นบูลีนสองตัว
-    #: ส่วน spec/07:142 เขียน `signal` เฉยๆ ไม่เคยระบุค่าที่มันเก็บ
+    #: ส่วน spec/07 §บันทึกการตัดสินใจ เขียน `signal` เฉยๆ ไม่เคยระบุค่าที่มันเก็บ
     Column("long_signal", Boolean, nullable=False),
     Column("short_signal", Boolean, nullable=False),
     Column("side", SIDE_T),
@@ -505,7 +505,7 @@ decisions = Table(
     #: CHECK ไม่ได้ (ข้ามตาราง) จึงอยู่ที่ `repo.decisions.validate_record()`
     Column("skip_reason", Text),
     #: NULL ทั้งชุดบน spot — ตลาดนั้น**ไม่มี** funding ซึ่งคนละความหมายกับ "ดึงไม่ได้"
-    #: (decisions #26, spec/07:19)
+    #: (decisions #26, spec/07 §funding rate)
     Column("funding_rate", FUNDING_RATE),
     Column("funding_next_ts", BigInteger),
     Column("funding_unavailable_reason", Text),
@@ -612,7 +612,7 @@ decision_verdicts = Table(
     Column("confidence", PCT),
     Column("evidence_bars", postgresql.ARRAY(BigInteger)),
     Column("rationale", Text),
-    #: มาจาก cache หรือเรียกจริง (spec/07:145) — ต่างกันตอนไล่ค่าใช้จ่ายและตอนไล่บั๊ก
+    #: มาจาก cache หรือเรียกจริง (spec/07 §บันทึกการตัดสินใจ) — ต่างกันตอนไล่ค่าใช้จ่ายและตอนไล่บั๊ก
     Column("cached", Boolean, nullable=False),
     Column("created_ts", BigInteger, nullable=False),
     ForeignKeyConstraint(
@@ -628,7 +628,7 @@ decision_verdicts = Table(
 )
 
 
-#: ผลการตรวจ risk **ทีละชั้น** (spec/07:149) เรียงตาม `seq`
+#: ผลการตรวจ risk **ทีละชั้น** (spec/07 §บันทึกการตัดสินใจ) เรียงตาม `seq`
 #:
 #: spec/08:39 ตรวจเรียง `kill_switch` → `daily_loss` → `liq_buffer` และชั้นแรกที่ไม่ผ่าน
 #: ปฏิเสธทั้งไม้ → **ชั้นที่ไม่มีในตารางคือหลักฐานว่าลำดับถูกเคารพ** ไม่ใช่ข้อมูลที่หายไป
@@ -709,9 +709,9 @@ decision_orders = Table(
 )
 
 
-#: ผลของ flip สองขาในแท่งนี้ (spec/07:143) — หนึ่งแถวต่อ decision
+#: ผลของ flip สองขาในแท่งนี้ (spec/07 §บันทึกการตัดสินใจ) — หนึ่งแถวต่อ decision
 #:
-#: `residual_side` ไม่ได้อยู่ในบล็อก `flip{}` ของ spec/07:143 แต่ spec/03:79 สั่งให้บันทึก
+#: `residual_side` ไม่ได้อยู่ในบล็อก `flip{}` ของ spec/07 §บันทึกการตัดสินใจ แต่ spec/03:79 สั่งให้บันทึก
 #: **ฝั่งของ residual** ด้วย · ของค้างที่ไม่รู้ฝั่งคือของค้างที่คนปิดด้วยมือไม่ได้
 #: **ตารางนี้ไม่มีแถวของไม้ spot** — ไม่มี flip บน spot (decisions #26, spec/03:20)
 decision_flip = Table(
@@ -737,7 +737,7 @@ decision_flip = Table(
 )
 
 
-#: stop order ของแท่งนี้ (spec/07:148) — cold start ทางที่ 2 และการขยับ Slow Trail
+#: stop order ของแท่งนี้ (spec/07 §บันทึกการตัดสินใจ) — cold start ทางที่ 2 และการขยับ Slow Trail
 #:
 #: `missing` คือการทำตาม spec/08:80 ที่ห้ามวาง stop ใหม่เงียบๆ ทับตอนหา stop เดิมไม่เจอ
 #: ต้องเทียบกับ `positions()` แล้วบันทึกให้ชัดว่ามันหายไป
@@ -806,7 +806,7 @@ DECISION_TABLES = (
 EXIT_REASONS = ("signal", "stop", "liquidation", "manual")
 
 
-#: fill ที่เกิดจริงที่ปลายทาง (spec/07:186) — `decisions` เก็บว่าระบบ*ตั้งใจ*ทำอะไร
+#: fill ที่เกิดจริงที่ปลายทาง (spec/07 §บันทึกการตัดสินใจ) — `decisions` เก็บว่าระบบ*ตั้งใจ*ทำอะไร
 #: ตารางนี้เก็บว่าเกิดอะไรขึ้นจริง ราคาที่ได้ ค่าธรรมเนียมที่ถูกหัก
 #:
 #: **`UNIQUE (profile, dedupe_key)` คือหัวใจ** — reconcile อ่านสถานะจริงทุกแท่ง แล้วเห็น
