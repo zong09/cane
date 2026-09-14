@@ -397,10 +397,10 @@ CONFIG_TABLES = (
 # (decisions #11, spec/08:67) — บันทึกที่เขียนเฉพาะตอนมีออเดอร์คือบันทึกที่เข้าข้างตัวเอง
 # เห็นแต่ตอนที่ระบบทำอะไร ไม่เห็นตอนที่มันเลือกจะไม่ทำ
 
-#: สีของ Action Zone — เจ็ดค่า (spec/02:32-38) · หัวข้อในสเปกเขียน "6 สี" ซึ่งนับเฉพาะ
+#: สีของ Action Zone — เจ็ดค่า (spec/02 §นิยามโซนทั้ง 6 สี) · หัวข้อในสเปกเขียน "6 สี" ซึ่งนับเฉพาะ
 #: สีจริง `BLACK` คือแท่งที่ไม่เข้าเงื่อนไขใดเลย (เช่น `FastMA == SlowMA`) ซึ่งเกิดได้
 #: และต้องบันทึกได้ · ระบบเทรดจริงใช้แค่ `GREEN`/`RED` แต่ต้องคำนวณครบเพราะ golden
-#: test เทียบสีทีละแท่งกับ TradingView (spec/02:40)
+#: test เทียบสีทีละแท่งกับ TradingView (spec/02 §นิยามโซนทั้ง 6 สี)
 ZONE_T = postgresql.ENUM(
     "GREEN",
     "BLUE",
@@ -413,8 +413,8 @@ ZONE_T = postgresql.ENUM(
     create_type=False,
 )
 
-#: สถานะของสัญญาณ (spec/02:64) · `UNSET` = ยังไม่เคยเกิด `longcond`/`shortcond` เลย
-#: ซึ่งไม่ใช่ค่าที่หายไป แต่เป็นสถานะจริงของช่วงต้นชุดข้อมูล (spec/02:76-82)
+#: สถานะของสัญญาณ (spec/02 §ชื่อใน Pine ↔ ชื่อในโค้ด) · `UNSET` = ยังไม่เคยเกิด `longcond`/`shortcond` เลย
+#: ซึ่งไม่ใช่ค่าที่หายไป แต่เป็นสถานะจริงของช่วงต้นชุดข้อมูล (spec/02 §สามจุดที่พลาดง่ายตอน port)
 STATE_T = postgresql.ENUM("BULLISH", "BEARISH", "UNSET", name="state_t", create_type=False)
 
 #: ฝั่งของ **ไม้** · `order_side_t` ด้านล่างคือฝั่งของ **ออเดอร์** — สองชุดนี้คนละเรื่อง
@@ -467,7 +467,7 @@ decisions = Table(
     Column("close_px", PRICE, nullable=False),
     Column("zone", ZONE_T, nullable=False),
     Column("state", STATE_T, nullable=False),
-    #: **ไม่มีคอลัมน์ `signal`** — spec/02:64 ให้ชื่อจริงในโค้ดเป็นบูลีนสองตัว
+    #: **ไม่มีคอลัมน์ `signal`** — spec/02 §ชื่อใน Pine ↔ ชื่อในโค้ด ให้ชื่อจริงในโค้ดเป็นบูลีนสองตัว
     #: ส่วน spec/07 §บันทึกการตัดสินใจ เขียน `signal` เฉยๆ ไม่เคยระบุค่าที่มันเก็บ
     Column("long_signal", Boolean, nullable=False),
     Column("short_signal", Boolean, nullable=False),
@@ -522,7 +522,7 @@ decisions = Table(
     CheckConstraint("market IN ('usdtm_perp', 'spot')", name="ck_decisions_market"),
     # ชุดนี้ตรงกับ `TIMEFRAME_MS` ใน data/ohlcv.py และกับ `ck_config_settings_timeframe`
     CheckConstraint("timeframe IN ('1h', '1d')", name="ck_decisions_timeframe"),
-    # แท่งเดียวเป็นสัญญาณสองฝั่งพร้อมกันไม่ได้ (spec/02:44-46 นิยามสัญญาณจาก state ก่อนหน้า)
+    # แท่งเดียวเป็นสัญญาณสองฝั่งพร้อมกันไม่ได้ (spec/02 §สัญญาณ นิยามสัญญาณจาก state ก่อนหน้า)
     CheckConstraint(
         "NOT (long_signal AND short_signal)", name="ck_decisions_signal_exclusive"
     ),
