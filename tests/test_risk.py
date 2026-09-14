@@ -201,7 +201,7 @@ def test_the_switch_stays_latched_when_read_through_a_brand_new_connection(db_en
 
 @pytest.mark.db
 def test_pressing_the_button_again_never_fails_and_keeps_the_first_reason(db):
-    """spec/10:186 · การกดหยุดฉุกเฉินซ้ำต้องไม่เคยล้มเหลว
+    """spec/10 §เขียน · การกดหยุดฉุกเฉินซ้ำต้องไม่เคยล้มเหลว
 
     **ครั้งแรกชนะ** — สาเหตุแรกคือสาเหตุที่อธิบายเหตุการณ์ · ถ้าครั้งที่สองเขียนทับ
     เหตุผลจะกลายเป็น "คนกดซ้ำ" ซึ่งไม่ได้บอกอะไรเลยว่าเกิดอะไรขึ้นตอนแรก
