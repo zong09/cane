@@ -1,4 +1,4 @@
-"""trade ledger — fill จริงและ funding ที่ถูกหักไปแล้ว (spec/07:186)
+"""trade ledger — fill จริงและ funding ที่ถูกหักไปแล้ว (spec/07 §บันทึกการตัดสินใจ)
 
 Revision ID: 0006
 Revises: 0005
