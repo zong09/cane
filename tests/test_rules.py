@@ -230,6 +230,18 @@ def test_a_plan_without_an_open_leg_must_say_why():
         BarPlan(open_side="long", skip_reason="no_signal")
 
 
+def test_a_plan_with_no_open_leg_cannot_ask_for_the_judge():
+    """`decide()` ไม่มีวันสร้าง BarPlan แบบนี้ — ด่านนี้กันชั้นที่ประกอบมันเอง
+
+    ข้อนี้เป็น invariant ที่ `decide()` เคารพอยู่แล้ว การทดสอบผ่าน `decide()` จึงไม่
+    เคยแตะมันเลย · แต่ `BarPlan` เป็นชนิดข้อมูลสาธารณะที่ใบ 09 (cold start) กับชั้น
+    ไปป์ไลน์จะประกอบเอง — ถ้ามันยอมให้ "ไม่เปิดไม้แต่เรียก Judge" ผ่าน เงินค่า LLM
+    จะถูกจ่ายไปกับไม้ที่ไม่มีวันถูกเปิด และไม่มีอะไรฟ้อง
+    """
+    with pytest.raises(ValueError, match="Judge"):
+        BarPlan(close_side="long", needs_judge=True, skip_reason="short_disabled")
+
+
 def test_a_flip_that_reopens_the_same_side_is_refused():
     with pytest.raises(ValueError, match="กลับข้าง"):
         BarPlan(close_side="long", open_side="long")
