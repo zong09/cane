@@ -62,7 +62,7 @@ class Verdict:
     """คำตัดสินของ Judge ต่อ factor หนึ่งตัว (spec/04:50-58)
 
     `confidence` ใช้สำหรับให้คนอ่านย้อนหลังเท่านั้น **ห้ามผูกกับขนาดไม้**
-    (decisions #12, spec/05:52) · `cached` แยก "มาจาก cache" ออกจาก "เรียกจริง"
+    (decisions #12, spec/05 §`base_pct` ต้องเป็นค่าคงที่) · `cached` แยก "มาจาก cache" ออกจาก "เรียกจริง"
     """
 
     factor: str

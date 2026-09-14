@@ -11,7 +11,7 @@
 ฝั่ง long ใช้ bucket 100 / เพดาน 50 / leverage 1 · ฝั่ง short ใช้ bucket 60 / เพดาน 40
 / leverage 2 (ตรงกับ `config/paper.toml` ของจริง) · ถ้าสองฝั่งใช้ตัวเลขเหมือนกัน เทสต์
 จะผ่านทั้งที่โค้ดอ่าน `bucket_quote_long` มาใช้กับไม้ฝั่ง short — ซึ่งเป็นความผิดพลาด
-ที่ spec/05:24 เตือนไว้ตรงๆ ("ทุกตัวในสูตรมาจากฝั่งเดียวกันหมด ห้ามผสม")
+ที่ spec/05 §สูตร เตือนไว้ตรงๆ ("ทุกตัวในสูตรมาจากฝั่งเดียวกันหมด ห้ามผสม")
 """
 
 from __future__ import annotations
@@ -81,7 +81,7 @@ def test_every_factor_count_on_both_sides_matches_the_hand_computed_table(n, sid
 
 
 def test_each_factor_adds_exactly_twenty_points_before_any_cap():
-    """ตารางของ spec/05:30-36 · ไม่มีกรณีพิเศษที่กระโดดไป 100 เมื่อครบสามปัจจัย
+    """ตารางของ spec/05 §สูตร · ไม่มีกรณีพิเศษที่กระโดดไป 100 เมื่อครบสามปัจจัย
 
     ทางเลือกนั้นถูกปฏิเสธไว้ในสเปกเพราะมันทำให้สูตรมีข้อยกเว้นที่อธิบายด้วยหลักการ
     ไม่ได้ · เพดาน 100 ยังอยู่ในโค้ดแต่แตะไม่ถึงในรูปปัจจุบัน (base_pct สูงสุด 20
@@ -96,7 +96,7 @@ def test_each_factor_adds_exactly_twenty_points_before_any_cap():
 
 
 def test_the_documented_sixty_five_to_eighty_range_is_what_the_formula_actually_gives():
-    """spec/05:44 · เจ้าของตัดสินว่ายอมรับ 65–80 ไม่ใช่ 80–100 ของเอกสารต้นทาง
+    """spec/05 §ตัวเลข 80–100 ในเอกสารต้นทาง — ตัดสินแล้ว · เจ้าของตัดสินว่ายอมรับ 65–80 ไม่ใช่ 80–100 ของเอกสารต้นทาง
 
     ตรึงปลายทั้งสองข้างของช่วงไว้ เพราะข้อนี้เป็นการตัดสินใจที่ถูกบันทึกไว้ในสเปก
     ถ้าใครขยับ `base_pct` ออกนอก 5–20 หรือแก้ตัวคูณ ตัวเลขคู่นี้จะเปลี่ยนเงียบๆ
@@ -133,7 +133,7 @@ def test_a_cap_that_merely_equals_the_formula_is_not_a_cap():
 
 
 def test_the_record_keeps_both_the_formula_value_and_the_final_one():
-    """spec/05:72 · ต้องแยกออกว่าไม้เล็กเพราะปัจจัยน้อย หรือเพราะชนเพดาน
+    """spec/05 §ขนาดไม้ของเส้นทาง cold start · ต้องแยกออกว่าไม้เล็กเพราะปัจจัยน้อย หรือเพราะชนเพดาน
 
     เก็บแค่ค่าสุดท้ายทำให้สองเหตุผลนี้หน้าตาเหมือนกันเป๊ะ: ไม้ 50% ที่มาจาก
     "สูตรให้ 65 แล้วถูกกด" กับที่มาจาก "สูตรให้ 50 พอดี" แยกไม่ออกอีกเลย
@@ -150,7 +150,7 @@ def test_leverage_one_makes_notional_equal_margin_exactly():
     """เส้นทาง spot · ADR 26 บังคับ leverage = 1 แล้วสูตรเดินเส้นเดียวกันเอง
 
     ไม่ต้องมี `if` ที่ไหนและโมดูลนี้ไม่รู้จักคำว่า spot เลย — ข้อนี้คือหลักฐานว่า
-    การไม่มีทางแยกนั้นถูกต้อง ไม่ใช่แค่ลืมเขียน (spec/05:56)
+    การไม่มีทางแยกนั้นถูกต้อง ไม่ใช่แค่ลืมเขียน (spec/05 §leverage อยู่ตรงไหนของสูตร)
     """
     spot = plan(2, "long", leverage=1.0)
     assert spot.notional == spot.margin
@@ -158,7 +158,7 @@ def test_leverage_one_makes_notional_equal_margin_exactly():
 
 
 def test_leverage_multiplies_notional_not_size_pct():
-    """spec/05:60 · ถ้าคูณที่ `size_pct` เพดานของ risk จะไม่มีความหมายอีกต่อไป
+    """spec/05 §leverage อยู่ตรงไหนของสูตร · ถ้าคูณที่ `size_pct` เพดานของ risk จะไม่มีความหมายอีกต่อไป
 
     สองไม้นี้ต่างกันที่ leverage อย่างเดียว — `size_pct` กับ `margin` ต้องเท่ากันเป๊ะ
     ส่วน `notional` กับ `qty` ต้องเป็นสองเท่า · ถ้า leverage ไปโผล่ที่ `size_pct`
@@ -203,7 +203,7 @@ def test_values_where_binary_floats_lose_a_whole_step(value, step, expected):
 
 
 def test_it_floors_and_never_rounds_to_nearest():
-    """spec/05:26 · "ปัดลงเสมอ — ปัดขึ้นแปลว่าเกินเพดานที่ตั้งไว้"
+    """spec/05 §สูตร · "ปัดลงเสมอ — ปัดขึ้นแปลว่าเกินเพดานที่ตั้งไว้"
 
     `33.3337 / 0.001` เป็น `33333.7` · ปัดลงได้ `33.333` ส่วนปัดใกล้สุดได้ `33.334`
     ซึ่งทำให้ไม้ใหญ่กว่าที่เพดานอนุญาตหนึ่งขั้น
