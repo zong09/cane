@@ -2,7 +2,7 @@
 
 สามเรื่องที่ไฟล์นี้เฝ้า:
 
-1. **แท่งที่ระบบเลือกจะไม่ทำอะไรต้องเขียนลงได้** (spec/08:67) — NOT NULL ที่เกินจริง
+1. **แท่งที่ระบบเลือกจะไม่ทำอะไรต้องเขียนลงได้** (spec/08 §กฎที่ห้ามผิดลำดับ) — NOT NULL ที่เกินจริง
    จะกลับหัวเจตนาทั้งใบ เทสต์แท่ง `no_signal` จึงเป็นเทสต์แรก ไม่ใช่เทสต์ขอบ
 2. **ข้อบังคับที่ย้ายขึ้นมาเป็นของ schema ต้องมีผลจริง** ทุก CHECK ที่นี่ยิงให้ล้ม
    ไม่ใช่แค่ประกาศไว้ใน migration แล้วเชื่อว่าใช้ได้
@@ -154,7 +154,7 @@ def quiet_bar(version_id, **overrides) -> DecisionRecord:
 
 
 def test_a_bar_that_did_nothing_is_written_and_read_back(db, live_version):
-    """เทสต์แรกของไฟล์คือเส้นทาง "ไม่ทำอะไร" เพราะมันคือเจตนาทั้งใบ (spec/08:67)"""
+    """เทสต์แรกของไฟล์คือเส้นทาง "ไม่ทำอะไร" เพราะมันคือเจตนาทั้งใบ (spec/08 §กฎที่ห้ามผิดลำดับ)"""
     decision_id = repo.insert_decision(db, quiet_bar(live_version), created_ts=T0 + 600)
 
     back = repo.decision_at(db, "live", PERP, BTC, "1d", T0)
@@ -788,7 +788,7 @@ def _perp_run(version_id) -> list[DecisionRecord]:
             ),
             unmanaged=(held,),
         ),
-        # 10 · กฎลุงโฉลก — ไม่ใช่แท่งสัญญาณ ปฏิเสธก่อนถึงชั้น risk (spec/08:37)
+        # 10 · กฎลุงโฉลก — ไม่ใช่แท่งสัญญาณ ปฏิเสธก่อนถึงชั้น risk (spec/08 §สิบสี่ขั้นของหนึ่งรอบ)
         bar(
             10,
             zone="GREEN",
@@ -822,7 +822,7 @@ def _perp_run(version_id) -> list[DecisionRecord]:
             ),
             unmanaged=(held,),
         ),
-        # 12 · ครบสาม factor → สูตรให้ 65 แต่ชนเพดาน 50 · **ย่อ ไม่ใช่ปฏิเสธ** (spec/08:58-60)
+        # 12 · ครบสาม factor → สูตรให้ 65 แต่ชนเพดาน 50 · **ย่อ ไม่ใช่ปฏิเสธ** (spec/08 §กฎที่ห้ามผิดลำดับ)
         bar(
             12,
             zone="GREEN",

@@ -45,7 +45,7 @@ SPEC_DIR = REPO / "docs" / "spec"
 SEARCH_ROOTS = ("src", "tests", "alembic", "docs/adr", "docs/spec")
 
 #: ไฟล์สเปกที่แปลงเป็นรูป `§หัวข้อ` ครบแล้ว — ดูหัวไฟล์ว่าทำไมชุดนี้โตทางเดียว
-SPEC_FILES_CONVERTED: frozenset[str] = frozenset({"00", "02", "05", "07", "10"})
+SPEC_FILES_CONVERTED: frozenset[str] = frozenset({"00", "02", "05", "07", "08", "10"})
 
 #: รูปเก่า: `spec/04:73` หรือ `spec/04:69-77`
 OLD_STYLE = re.compile(r"spec/(\d+[a-z]?):(\d+(?:-\d+)?)")

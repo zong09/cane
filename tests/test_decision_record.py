@@ -71,7 +71,7 @@ def entry_order(**overrides) -> OrderAttempt:
 
 
 def test_a_bar_that_did_nothing_must_say_why():
-    """แท่งที่ไม่เข้าไม้และไม่มีเหตุผล = บันทึกที่ตอบคำถาม "ทำไม" ไม่ได้ (spec/08:67)"""
+    """แท่งที่ไม่เข้าไม้และไม่มีเหตุผล = บันทึกที่ตอบคำถาม "ทำไม" ไม่ได้ (spec/08 §กฎที่ห้ามผิดลำดับ)"""
     with pytest.raises(ValueError, match="skip_reason เป็น None"):
         validate_record(record(skip_reason=None))
 
@@ -214,7 +214,7 @@ def test_only_one_layer_can_fail():
 
 
 def test_the_failing_layer_must_be_the_last_one_recorded():
-    """ชั้นแรกที่ไม่ผ่านปฏิเสธทั้งไม้ → ชั้นที่ตามหลังไม่ถูกเรียก (spec/08:39)"""
+    """ชั้นแรกที่ไม่ผ่านปฏิเสธทั้งไม้ → ชั้นที่ตามหลังไม่ถูกเรียก (spec/08 §สิบสี่ขั้นของหนึ่งรอบ)"""
     with pytest.raises(ValueError, match="ชั้นสุดท้าย"):
         validate_record(
             record(
@@ -291,7 +291,7 @@ def test_a_perp_decision_may_close_with_reduce_only():
 
 
 def test_a_dry_run_bar_computes_everything_but_sends_nothing():
-    """spec/06:80-84 — บันทึกครบ แต่ขั้น 13 ข้ามการยิง (spec/08:43)"""
+    """spec/06:80-84 — บันทึกครบ แต่ขั้น 13 ข้ามการยิง (spec/08 §สิบสี่ขั้นของหนึ่งรอบ)"""
     validate_record(
         record(
             dry_run=True,

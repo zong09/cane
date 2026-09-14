@@ -117,7 +117,7 @@ def upgrade() -> None:
             name="ck_verdict_cache_confidence_range",
         ),
     )
-    # อ่านทีละแท่ง ทีละฝั่ง — Judge ถาม 3 factor พร้อมกันต่อหนึ่งแท่ง (spec/08:31)
+    # อ่านทีละแท่ง ทีละฝั่ง — Judge ถาม 3 factor พร้อมกันต่อหนึ่งแท่ง (spec/08 §สิบสี่ขั้นของหนึ่งรอบ)
     # index นี้ทำให้การดึงทั้งสามตัวเป็นการอ่านช่วงเดียว ไม่ใช่สามครั้งแยกกัน
     op.create_index(
         "ix_verdict_cache_bar",
