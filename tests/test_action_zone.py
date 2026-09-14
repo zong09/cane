@@ -33,7 +33,7 @@ DAY = 86_400_000
 def bars(closes, *, first_open: int = 1_600_000_000_000, span: int = DAY):
     """แท่งที่มีแต่ราคาปิดเป็นสาระ — ที่เหลือใส่ให้สอดคล้องกันไว้เท่านั้น
 
-    สูตร Action Zone อ่านแค่ `close` (spec/02:10 — `xsrc = close`) ถ้าเทสต์ไหน
+    สูตร Action Zone อ่านแค่ `close` (spec/02 §พารามิเตอร์ — `xsrc = close`) ถ้าเทสต์ไหน
     ในอนาคตต้องพึ่ง high/low แปลว่าโมดูลเปลี่ยนขอบเขตไปแล้ว ไม่ใช่เทสต์ผิด
     """
     return [
@@ -113,7 +113,7 @@ def test_ema_of_nothing_is_nothing():
     ],
 )
 def test_every_zone_of_the_table(px, fast_ma, slow_ma, expected):
-    """หกโซนของ spec/02:32-38 · ระบบเทรดใช้แค่ GREEN/RED แต่ golden test เทียบครบ"""
+    """หกโซนของ spec/02 §นิยามโซนทั้ง 6 สี · ระบบเทรดใช้แค่ GREEN/RED แต่ golden test เทียบครบ"""
     assert zone_of(px, fast_ma, slow_ma) == expected
 
 
@@ -208,7 +208,7 @@ def test_state_is_unset_until_both_conditions_have_happened():
 
 
 def test_the_first_condition_of_the_series_is_never_a_signal():
-    """ผลตามมาของ `na` (spec/02:82) — ทั้งฝั่ง long และ short
+    """ผลตามมาของ `na` (spec/02 §สามจุดที่พลาดง่ายตอน port) — ทั้งฝั่ง long และ short
 
     แท่ง 1 เป็น `longcond` ตัวแรกของชุด แท่ง 5 เป็น `shortcond` ตัวแรก ทั้งสองแท่ง
     แท่งก่อนหน้ายังเป็น `UNSET` จึงไม่มีสัญญาณ
@@ -285,7 +285,7 @@ def test_golden_fixture_is_wired_up_once_it_exists():
     """ตัวสะดุด ไม่ใช่ golden test — golden test จริงยังเขียนไม่ได้
 
     เกณฑ์ปิดใบ #04 คือเทียบโซนทีละแท่งกับไฟล์ export จาก TradingView ≥500 แท่ง
-    ตรง 100% หลังตัด warm-up 130 แท่ง (spec/02:93 กับ 103) ตอนนี้ **ยังไม่มีไฟล์**
+    ตรง 100% หลังตัด warm-up 130 แท่ง (spec/02 §เกณฑ์ยืนยันความถูกต้อง กับ 103) ตอนนี้ **ยังไม่มีไฟล์**
     (ดู `fixtures/action_zone/README.md` ว่าต้อง export อะไรมา)
 
     loader ยังไม่เขียนโดยเจตนา — ชื่อคอลัมน์กับรูปแบบเวลาของไฟล์จริงต้องอ่านจากไฟล์
