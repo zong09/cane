@@ -974,3 +974,28 @@ verdict_cache = Table(
         "side",
     ),
 )
+
+
+#: สวิตช์หยุดฉุกเฉิน — **สภาพปัจจุบัน ไม่ใช่ประวัติ** (spec/10:130)
+#:
+#: หนึ่งในสองตารางของระบบที่เขียนทับได้ (ADR 23 ยกเว้นให้) · ประวัติว่าใครกดเมื่อไหร่
+#: อยู่ที่ `user_audit_log` ของใบ 20 ซึ่งแก้ไม่ได้
+#:
+#: **ข้อบังคับที่สำคัญที่สุดของตารางนี้ไม่ได้อยู่ในคำประกาศนี้** — trigger
+#: `kill_switch_guard` (migration 0008) ปฏิเสธการปลดสวิตช์เมื่อผู้กระทำไม่ใช่
+#: `cane_console` · SQLAlchemy ประกาศ trigger ไม่ได้ ที่นี่จึงอ่านเหมือนตารางธรรมดา
+#: ทั้งที่ไม่ใช่ · อย่าเชื่อว่าเห็นทุกอย่างจากไฟล์นี้
+kill_switch = Table(
+    "kill_switch",
+    metadata,
+    Column("profile", PROFILE_T, primary_key=True),
+    Column("latched", Boolean, nullable=False),
+    Column("latched_by", Text),
+    Column("latched_ts", BigInteger),
+    Column("reason", Text),
+    Column("updated_ts", BigInteger, nullable=False),
+    CheckConstraint(
+        "latched = false OR (latched_ts IS NOT NULL AND reason IS NOT NULL)",
+        name="ck_kill_switch_latched_has_a_story",
+    ),
+)
