@@ -919,3 +919,58 @@ funding_charges = Table(
 
 #: ledger ทั้งชุด — ตารางข้อเท็จจริง เขียนได้ครั้งเดียว (ADR 23)
 LEDGER_TABLES = (fills, funding_charges)
+
+
+#: คำตัดสินหนึ่งครั้งต่อแท่ง — คีย์คือสิ่งที่ทำให้ "เรียกซ้ำได้คำตอบเดิม" เป็นจริง
+#: (spec/04:62-76) · ที่มาของแต่ละช่องและเหตุผลที่มี `market` แต่ไม่มี `profile`
+#: อยู่ในหัวไฟล์ `alembic/versions/0007_verdict_cache.py`
+#:
+#: **ไม่ใช่ตัวเดียวกับ `decision_verdicts`** ตัวนั้นคือ "แท่งนี้ตัดสินใจโดยเห็นอะไร"
+#: ผูกกับ `decision_id` ตัวนี้คือ "คำถามนี้เคยถูกถามแล้ว" ผูกกับตัวแท่ง · แถวใน
+#: `decision_verdicts` มีได้หลายแถวที่ชี้กลับมาที่แถวเดียวกันของที่นี่ เพราะไม้
+#: ที่ retry ในแท่งเดิมอ่าน cache ตัวเดิมซ้ำ
+verdict_cache = Table(
+    "verdict_cache",
+    metadata,
+    Column("market", Text, primary_key=True),
+    Column("symbol", Text, primary_key=True),
+    Column("timeframe", Text, primary_key=True),
+    Column("bar_close_ts", BigInteger, primary_key=True),
+    Column("side", SIDE_T, primary_key=True),
+    Column("factor", Text, primary_key=True),
+    Column("prompt_hash", Text, primary_key=True),
+    Column("present", Boolean, nullable=False),
+    #: ให้คนตรวจย้อนหลังเท่านั้น **ห้ามผูกกับขนาดไม้** (ADR 12, spec/04:58)
+    Column("confidence", PCT),
+    Column("evidence_bars", postgresql.ARRAY(BigInteger)),
+    Column("rationale", Text),
+    Column("created_ts", BigInteger, nullable=False),
+    CheckConstraint(
+        "market IN ('usdtm_perp', 'spot')", name="ck_verdict_cache_market"
+    ),
+    CheckConstraint("timeframe IN ('1h', '1d')", name="ck_verdict_cache_timeframe"),
+    CheckConstraint(
+        "(side = 'long' AND factor IN "
+        "('CHANNEL_BREAKOUT', 'RETAIL_CAPITULATION', 'HIGHER_LOW'))"
+        " OR (side = 'short' AND factor IN "
+        "('CHANNEL_BREAKDOWN', 'BUYING_EXHAUSTION', 'LOWER_HIGH'))",
+        name="ck_verdict_cache_factor_matches_side",
+    ),
+    CheckConstraint(
+        "present = false"
+        " OR (evidence_bars IS NOT NULL AND array_length(evidence_bars, 1) > 0)",
+        name="ck_verdict_cache_present_needs_evidence",
+    ),
+    CheckConstraint(
+        "confidence IS NULL OR (confidence >= 0 AND confidence <= 1)",
+        name="ck_verdict_cache_confidence_range",
+    ),
+    Index(
+        "ix_verdict_cache_bar",
+        "market",
+        "symbol",
+        "timeframe",
+        "bar_close_ts",
+        "side",
+    ),
+)
