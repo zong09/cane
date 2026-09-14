@@ -24,7 +24,8 @@
 ## คีย์อยู่ใน `.env` ตาม ADR 25 ไม่ลง DB
 
 ชื่อตัวแปรตามแบบเดียวกับคีย์ exchange ที่มีอยู่แล้ว (`CANE_BINANCE_API_KEY`) ·
-**ยังไม่มีใน `.env.example` เพราะยังไม่ได้ตกลงกับเจ้าของว่าจะใช้ชื่อนี้**
+อยู่ใน `.env.example` แล้วตั้งแต่ใบ gateway config **แต่ชื่อนี้ยังไม่เคยผ่านการตกลง
+กับเจ้าของ** — ถ้าจะเปลี่ยน ต้องแก้ที่นี่ `.env.example` และเทสต์ที่อ้าง `API_KEY_ENV`
 """
 
 from __future__ import annotations
@@ -60,6 +61,16 @@ class AnthropicJudgeClient:
                 f"ไม่พบ {API_KEY_ENV} — ใส่ใน .env แล้วสั่งงานด้วย `uv run --env-file .env ...`"
             )
         self._client: Any | None = None
+
+    @property
+    def model_id(self) -> str:
+        """ตัวตนของ "โมเดลที่ตัดสิน" ที่จะเข้า `prompt_hash`
+
+        ที่นี่เท่ากับชื่อโมเดลเปล่าเพราะปลายทางมีที่เดียวคือ `api.anthropic.com` —
+        ต่างจาก `openai_client.py` ที่ต้องรวม host เข้าไปด้วยเพราะชื่อโมเดลเดียวกัน
+        บน gateway คนละตัวเป็นคนละน้ำหนักได้
+        """
+        return self.model
 
     def ask(
         self, *, system: str, user: str, schema: dict[str, object]
