@@ -23,14 +23,12 @@ import urllib.error
 import pytest
 
 from cane.confluence import VERDICT_JSON_SCHEMA, prompt_hash
-from cane.confluence.anthropic_client import API_KEY_ENV as ANTHROPIC_API_KEY_ENV
 from cane.confluence.openai_client import (
     API_KEY_ENV,
     BASE_URL_ENV,
     MODEL_ENV,
     OpenAICompatJudgeClient,
 )
-from cane.confluence.provider import judge_client_from_env
 
 GATEWAY = "http://localhost:11434/v1"
 MODEL = "qwen3:32b"
@@ -149,13 +147,16 @@ def test_the_request_asks_for_the_schema_through_response_format(monkeypatch):
     assert "SYS" not in json.dumps(body["response_format"])
 
 
-def test_the_request_sets_temperature_zero_and_omits_anthropic_only_fields(monkeypatch):
-    """`temperature` ตั้งได้ที่ฝั่งนี้จึงตั้ง · `effort` เป็นของ Anthropic ห้ามหลุดมา
+def test_the_request_carries_only_fields_the_endpoint_knows(monkeypatch):
+    """`temperature: 0` ต้องมี · ช่องที่ปลายทางไม่รู้จักต้องไม่มี
 
-    **และห้ามมี `max_tokens`** — เอกสารของ DashScope/QwenCloud สั่งให้เว้นไว้เมื่อเปิด
+    **ห้ามมี `max_tokens`** — เอกสารของ DashScope/QwenCloud สั่งให้เว้นไว้เมื่อเปิด
     structured output เพราะเพดานที่ตัดกลาง JSON ให้คำตอบที่ parse ไม่ได้ ไม่ใช่คำตอบ
     ที่สั้นลง · มันจะกลายเป็น `bad_schema` ที่ดูเหมือนโมเดลตอบไม่เป็น ทั้งที่เป็น
     เพดานที่เราตั้งเอง
+
+    `effort` กับ `output_config` ถูกตรวจไว้เพราะเป็นรูปของผู้ให้บริการรายอื่นที่เคย
+    อยู่ใน repo นี้ · ช่องแปลกปลอมใน body ไม่ได้ถูกเมินเสมอไป บาง gateway ตอบ 400
     """
     client = OpenAICompatJudgeClient(base_url=GATEWAY, model=MODEL)
     _, request = _ask(monkeypatch, client)
@@ -237,27 +238,20 @@ def test_missing_config_fails_loudly_instead_of_guessing(monkeypatch):
     assert OpenAICompatJudgeClient.from_env().model_id == f"{GATEWAY}|{MODEL}"
 
 
-def test_the_presence_of_a_base_url_is_what_picks_the_adapter(monkeypatch):
-    """กฎการเลือก: มี `CANE_LLM_BASE_URL` = ตัวนี้ · ไม่มี = Anthropic
+def test_the_key_is_optional_but_the_other_two_are_not(monkeypatch):
+    """gateway ที่ localhost ไม่ต้องใช้คีย์ — `from_env()` ต้องยอมให้ขาดได้เฉพาะคีย์
 
-    **ต้องตรวจทั้งสองขา** — ขาเดียวพิสูจน์ไม่ได้ว่ามีการเลือกเกิดขึ้นจริง โค้ดที่
-    คืนตัวนี้เสมอก็ผ่านขาแรกได้เหมือนกัน
-
-    ขา Anthropic ตรวจได้ในสภาพแวดล้อมนี้ทั้งที่ไม่มี SDK ติดตั้ง เพราะ
-    `AnthropicJudgeClient.__init__` ล้มเรื่องคีย์**ก่อน**จะ import SDK (มันเป็น
-    lazy import ด้วยเหตุผลนี้พอดี) · ตัวที่แยกสองขาออกจากกันคือ **ชื่อตัวแปรใน
-    ข้อความ error** ไม่ใช่แค่ว่ามี exception — ถ้าเลือกผิดตัว มันจะบ่นถึง
-    `CANE_LLM_BASE_URL` แทน
+    ปลายทางกับชื่อโมเดลขาดไม่ได้เพราะเดาให้ไม่ได้ · ส่วนคีย์ **ขาดได้จริง** และถ้า
+    `from_env()` บังคับมันด้วย Ollama บนเครื่องตัวเองจะใช้ไม่ได้เลยทั้งที่ไม่มีอะไรผิด
     """
     monkeypatch.setenv(BASE_URL_ENV, GATEWAY)
     monkeypatch.setenv(MODEL_ENV, MODEL)
     monkeypatch.delenv(API_KEY_ENV, raising=False)
 
-    client = judge_client_from_env()
-    assert isinstance(client, OpenAICompatJudgeClient)
+    client = OpenAICompatJudgeClient.from_env()
     assert client.model_id == f"{GATEWAY}|{MODEL}"
 
-    monkeypatch.delenv(BASE_URL_ENV)
-    monkeypatch.delenv(ANTHROPIC_API_KEY_ENV, raising=False)
-    with pytest.raises(RuntimeError, match=ANTHROPIC_API_KEY_ENV):
-        judge_client_from_env()
+    fake = _FakeUrlopen(_ok_payload())
+    monkeypatch.setattr("urllib.request.urlopen", fake)
+    client.ask(system="SYS", user="USR", schema=VERDICT_JSON_SCHEMA)
+    assert fake.requests[0].get_header("Authorization") is None

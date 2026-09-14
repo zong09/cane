@@ -19,13 +19,6 @@ cane = "cane.cli:main"
 dev = [
     "pytest>=8.0",
 ]
-# adapter ที่คุยกับ Anthropic (`confluence/anthropic_client.py`) · เป็น extra ไม่ใช่
-# dependency หลัก เพราะ **ยังไม่เคยถูกติดตั้งหรือรันเลยสักครั้ง** ในสภาพแวดล้อมนี้
-# — ไม่มีคีย์ และยังไม่รู้ว่า Zscaler บล็อกทางไป Anthropic ด้วยไหม · การใส่ไว้ใน
-# deps หลักจะทำให้ `uv sync` ดึงแพ็กเกจที่ไม่มีเทสต์ไหนแตะเข้ามาเงียบๆ
-llm = [
-    "anthropic>=1.0",
-]
 
 [build-system]
 requires = ["hatchling"]
