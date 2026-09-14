@@ -97,7 +97,7 @@ def decide(
     market: str,
     allow_short: bool,
 ) -> BarPlan:
-    """ตารางเข้าไม้ของ spec/03:34-42 ทั้งตาราง บวกกฎไม้เรียวและ `allow_short`
+    """ตารางเข้าไม้ของ spec/03 §เข้าไม้ ทั้งตาราง บวกกฎไม้เรียวและ `allow_short`
 
     `state` มาจาก `ActionZone.state` (`BULLISH` / `BEARISH` / `UNSET`) ใช้ตัวเดียว
     เพื่อแยก `no_signal` ออกจาก `cane_rule` — ดูหัวไฟล์ว่าเส้นแบ่งอยู่ตรงไหนและ
@@ -129,14 +129,14 @@ def decide(
 
     wanted = "long" if long_signal else "short"
 
-    # ── ถือฝั่งเดียวกับสัญญาณอยู่แล้ว — ไม่มี pyramiding (spec/03:40-41) ──────
+    # ── ถือฝั่งเดียวกับสัญญาณอยู่แล้ว — ไม่มี pyramiding (spec/03 §เข้าไม้) ──────
     if position_side == wanted:
         return BarPlan(skip_reason="already_positioned")
 
     # ── ขาปิด ประเมินก่อนขาเปิดเสมอ (spec/03 "ลำดับความสำคัญ") ────────────────
     close_side = position_side if position_side == OPPOSITE[wanted] else None
 
-    # ── ขาเปิด · short ที่เปิดไม่ได้ยังต้องปิด long ให้แบน (spec/03:50) ────────
+    # ── ขาเปิด · short ที่เปิดไม่ได้ยังต้องปิด long ให้แบน (spec/03 §`allow_short = false`) ────────
     if wanted == "short" and not allow_short:
         return BarPlan(close_side=close_side, skip_reason="short_disabled")
 

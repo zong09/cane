@@ -336,7 +336,7 @@ class PaperBroker:
             )
         # บน spot ไปไม่ถึงค่า `short` — คำสั่ง `sell` ถูกส่งเข้าทางปิดเสมอที่
         # `_fill_market()` เพราะการขายบน spot คือการขายของที่ถืออยู่ ไม่ใช่การเปิด
-        # ฝั่งใหม่ (spec/03:22) · ตัวที่ปฏิเสธจริงจึงเป็นเส้นทาง ไม่ใช่ `if` ตรงนี้
+        # ฝั่งใหม่ (spec/03 §`spot` — long-only) · ตัวที่ปฏิเสธจริงจึงเป็นเส้นทาง ไม่ใช่ `if` ตรงนี้
         side = "long" if order.side == "buy" else "short"
 
         leverage = 1.0 if self.market == SPOT else self._leverage.get(sim.symbol, 0.0)

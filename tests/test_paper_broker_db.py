@@ -110,7 +110,7 @@ def test_a_perp_broker_without_a_funding_source_will_not_construct(db):
 
 
 def test_a_spot_broker_needs_no_funding_source_because_spot_has_no_funding(db):
-    """ไม่ใช่การผ่อนกฎ — spot ไม่มี funding อยู่จริง (spec/03:22, ADR 26)"""
+    """ไม่ใช่การผ่อนกฎ — spot ไม่มี funding อยู่จริง (spec/03 §`spot` — long-only, ADR 26)"""
     bars = FakeBars()
     bars.flat(SYMBOL, T0, 100.0)
     broker = PaperBroker(

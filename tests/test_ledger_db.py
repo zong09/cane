@@ -232,7 +232,7 @@ def test_a_fee_that_cannot_be_read_back_is_refused(db, values, why):
 @pytest.mark.parametrize(
     "market, reduce_only, leverage",
     [
-        # spot ไม่มีธง reduce_only อยู่จริง (spec/03:22)
+        # spot ไม่มีธง reduce_only อยู่จริง (spec/03 §`spot` — long-only)
         ("spot", "true", "1"),
         # spot ถูกบังคับ leverage = 1 ตั้งแต่ config (ADR 26)
         ("spot", "false", "3"),
@@ -277,7 +277,7 @@ def test_the_open_trade_is_found_from_the_ledger_not_from_memory(db):
 
 
 def test_a_partly_closed_trade_is_still_open(db):
-    """ของค้างจาก `flip_aborted` ยังเป็นไม้ที่เปิดอยู่ (spec/03:75, ADR 19)"""
+    """ของค้างจาก `flip_aborted` ยังเป็นไม้ที่เปิดอยู่ (spec/03 §โปรโตคอล flip — จุดที่พังแล้วเปิดสถานะสวนกัน, ADR 19)"""
     repo.record_fill(db, open_fill())
     repo.record_fill(db, close_fill(qty=1.5, position_qty_after=0.5))
 
@@ -341,7 +341,7 @@ def test_a_funding_row_that_does_not_know_the_amount_is_allowed_to_say_so(db):
 
 
 def test_spot_can_never_get_a_funding_row(db):
-    """spot ไม่มี funding อยู่จริง ไม่ใช่มีแล้วเป็นศูนย์ (spec/03:22, ADR 26)"""
+    """spot ไม่มี funding อยู่จริง ไม่ใช่มีแล้วเป็นศูนย์ (spec/03 §`spot` — long-only, ADR 26)"""
     with pytest.raises(IntegrityError) as caught:
         with db.begin_nested():
             db.execute(

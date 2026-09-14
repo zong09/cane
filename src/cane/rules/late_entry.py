@@ -22,7 +22,7 @@
 
 ## RR ≥ 2:1 — สเปกบังคับไว้แต่ไม่เคยนิยาม "เป้ากำไร"
 
-spec/03:135 กับ spec/00 §อยู่ในระบบ บังคับ RR ≥ 2:1 · ความเสี่ยงชัดเจน (`entry − Trail2`)
+spec/03 §ทางที่ 2 — `trailing` CDC ATR Trailing Stop กับ spec/00 §อยู่ในระบบ บังคับ RR ≥ 2:1 · ความเสี่ยงชัดเจน (`entry − Trail2`)
 แต่เป้ากำไรไม่มีนิยามอยู่ที่ไหน และ ADR 13 ตัดเป้าราคาออกจากระบบไปแล้ว ส่วนเส้นทาง
 ปกติก็ออกที่สัญญาณฝั่งตรงข้ามซึ่งไม่รู้ราคาล่วงหน้า
 
@@ -57,7 +57,7 @@ if TYPE_CHECKING:
 #: เส้นทางที่ config เลือกได้ · `None` หรือ `"skip"` = ไม่เข้าเส้นทางนี้ (fail-closed)
 ROUTES = ("wait_1h", "trailing")
 
-#: RR ขั้นต่ำของเส้นทาง `trailing` (spec/03:135, spec/00 §อยู่ในระบบ)
+#: RR ขั้นต่ำของเส้นทาง `trailing` (spec/03 §ทางที่ 2 — `trailing` CDC ATR Trailing Stop, spec/00 §อยู่ในระบบ)
 MIN_REWARD_TO_RISK = 2.0
 
 #: `decision_stop.action` ของใบ 03 — ชุดปิด ไม่ใช่ข้อความอิสระ
@@ -76,7 +76,7 @@ class ColdStartPlan:
 
     `stop_px` มีเฉพาะเส้นทาง `trailing` · เส้นทาง `wait_1h` ไม่เข้าไม้ที่แท่งนี้เลย
     มันบอกให้ผู้เรียกไปดูกราฟ 1 ชั่วโมงแล้วเดินตรรกะ Action Zone ตัวเดิมที่นั่น —
-    **ไม่ใช่สูตรใหม่** แค่เปลี่ยน timeframe (spec/03:129-132)
+    **ไม่ใช่สูตรใหม่** แค่เปลี่ยน timeframe (spec/03 §ทางที่ 1 — `wait_1h` ลง timeframe เล็ก)
     """
 
     side: str | None = None
@@ -93,7 +93,7 @@ class ColdStartPlan:
                 f"ได้ side={self.side!r} skip_reason={self.skip_reason!r}"
             )
         if self.route == "trailing" and self.side is not None and self.stop_px is None:
-            raise ValueError("เส้นทาง trailing ต้องมี stop เสมอ (spec/03:135)")
+            raise ValueError("เส้นทาง trailing ต้องมี stop เสมอ (spec/03 §ทางที่ 2 — `trailing` CDC ATR Trailing Stop)")
 
 
 def late_entry(
