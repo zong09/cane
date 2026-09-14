@@ -69,27 +69,28 @@ def test_smooth_of_one_returns_the_source_untouched():
     assert pine_ema(source, 1) == source
 
 
-def test_ema_follows_the_documented_recurrence():
-    """คำนวณมือ: alpha = 2/3 · 1 → 5/3 → 23/9"""
+def test_ema_follows_the_recurrence_after_the_sma_seed():
+    """คำนวณมือ: na · seed = (1+2)/2 = 1.5 · alpha = 2/3 → 2/3·3 + 1/3·1.5 = 2.5"""
     got = pine_ema([1.0, 2.0, 3.0], 2)
 
-    assert got == pytest.approx([1.0, 5 / 3, 23 / 9])
+    assert got[0] is None
+    assert got[1:] == pytest.approx([1.5, 2.5])
 
 
-def test_first_value_is_the_seed_and_is_never_na():
-    """**นี่คือข้อตกลงเรื่อง seed ที่ยังไม่ถูกยืนยันกับ TradingView**
+def test_the_seed_is_the_sma_and_the_head_is_na():
+    """**ข้อตกลงเรื่อง seed ที่ไฟล์จาก TradingView ยืนยันแล้ว** (เดิมตรงข้ามกับนี้)
 
-    คู่มือ Pine เขียน reference implementation ของ `ta.ema` ว่า seed ด้วยค่าแรกของ
-    source ตรงๆ (เท่ากับ `pandas.ewm(adjust=False)`) แต่มีแหล่งที่บอกว่าฟังก์ชัน
-    built-in seed ด้วย SMA และคืน `na` ก่อนครบ `length` แท่ง — อ่านโค้ดชี้ขาดไม่ได้
+    เทสต์ตัวก่อนหน้าที่นี่ตรึงข้อตกลงเก่าไว้ — seed ด้วยค่าแรกของ source ตามที่คู่มือ
+    Pine เขียน — พร้อมโน้ตว่า "ถ้า golden test บอกว่าผิด การที่มันแตกคือเจตนา" ·
+    ไฟล์ export บอกว่าผิดจริง: เส้น 12 คาบเว้นไว้ 11 แท่ง เส้น 26 คาบเว้นไว้ 25 แท่ง
+    และค่าแรกตรงกับ SMA ของ `length` แท่งแรกถึงหลักที่ CSV พิมพ์ออกมา
 
-    เทสต์นี้ **ตรึงข้อตกลงที่เลือกไว้** ไม่ได้อ้างว่าถูก ถ้า golden test บอกว่าผิด
-    เทสต์นี้คือตัวที่ต้องแก้พร้อมกับ `pine_ema()` และการที่มันแตกคือเจตนา
+    ข้อนี้ถือหลักฐานนั้นในรูปที่เล็กพอจะอ่านด้วยตา · golden test ข้างล่างถือตัวไฟล์
     """
     source = [42.0, 10.0, 10.0]
 
-    assert pine_ema(source, 26)[0] == 42.0
-    assert all(value is not None for value in pine_ema(source, 26))
+    assert pine_ema(source, 3) == [None, None, pytest.approx(62 / 3)]
+    assert pine_ema(source, 26) == [None, None, None]
 
 
 def test_ema_rejects_a_period_below_one():
@@ -147,12 +148,16 @@ def test_ties_fall_through_to_black(px, fast_ma, slow_ma):
 CLOSES = [100, 101, 102, 103, 102, 101, 100, 99, 98, 98.6, 103, 104, 103, 105, 99, 95, 96, 101]
 
 #: (zone, state, longcond, shortcond, long_signal, short_signal) ต่อแท่ง
+#:
+#: สองแท่งแรกเป็น `BLACK` เพราะ SlowMA (3 คาบ) ยัง seed ไม่ได้ · แท่ง 4 เป็น `BLACK`
+#: เพราะ `px == slow_ma` พอดี (102.0 ทั้งคู่) ซึ่งไม่เข้าทั้ง `>` และ `<` — เป็น
+#: ช่องที่ `test_ties_fall_through_to_black` ตรึงไว้ โผล่มาเองในชุดจริง
 EXPECTED = [
+    ("BLACK", "UNSET", False, False, False, False),
     ("BLACK", "UNSET", False, False, False, False),
     ("GREEN", "UNSET", True, False, False, False),
     ("GREEN", "UNSET", False, False, False, False),
-    ("GREEN", "UNSET", False, False, False, False),
-    ("ORANGE", "UNSET", False, False, False, False),
+    ("BLACK", "UNSET", False, False, False, False),
     ("RED", "BEARISH", False, True, False, False),
     ("RED", "BEARISH", False, False, False, False),
     ("RED", "BEARISH", False, False, False, False),
@@ -167,7 +172,6 @@ EXPECTED = [
     ("RED", "BEARISH", False, False, False, False),
     ("GREEN", "BULLISH", True, False, True, False),
 ]
-
 
 def computed():
     return action_zones(bars(CLOSES), fast=2, slow=3, smooth=1)
@@ -192,7 +196,7 @@ def test_barssince_is_none_until_it_has_happened_once():
     got = computed()
 
     assert [z.bars_since_long for z in got] == [
-        None, 0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 1, 2, 0, 1, 2, 3, 0
+        None, None, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 0, 1, 2, 3, 0
     ]
     assert [z.bars_since_short for z in got] == [
         None, None, None, None, None, 0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 1, 2, 3
@@ -215,12 +219,12 @@ def test_state_is_unset_until_both_conditions_have_happened():
 def test_the_first_condition_of_the_series_is_never_a_signal():
     """ผลตามมาของ `na` (spec/02 §สามจุดที่พลาดง่ายตอน port) — ทั้งฝั่ง long และ short
 
-    แท่ง 1 เป็น `longcond` ตัวแรกของชุด แท่ง 5 เป็น `shortcond` ตัวแรก ทั้งสองแท่ง
-    แท่งก่อนหน้ายังเป็น `UNSET` จึงไม่มีสัญญาณ
+    แท่ง 2 เป็น `longcond` ตัวแรกของชุด (แท่ง 0-1 ยังไม่มี SlowMA) แท่ง 5 เป็น
+    `shortcond` ตัวแรก · ทั้งสองแท่ง แท่งก่อนหน้ายังเป็น `UNSET` จึงไม่มีสัญญาณ
     """
     got = computed()
 
-    assert got[1].longcond and not got[1].long_signal
+    assert got[2].longcond and not got[2].long_signal
     assert got[5].shortcond and not got[5].short_signal
 
 
@@ -430,15 +434,6 @@ def test_signals_are_a_strict_subset_of_the_zone_conditions(golden):
     assert all(z.shortcond for z in ours if z.short_signal)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "`pine_ema()` seed ด้วยค่าแรกของ source ไฟล์ชี้ว่า `ta.ema` seed ด้วย SMA "
-        "ของ `length` แท่งแรก — Fast EMA ต่าง 88 แท่ง (ถึงแท่งที่ 98) Slow EMA "
-        "ต่าง 253 แท่ง (ถึงแท่งที่ 277) ที่เกณฑ์ 1e-6 · แก้ใน commit ถัดไป "
-        "เทสต์นี้มาก่อนเพื่อให้เห็นว่าตัวเลขพวกนี้วัดมา ไม่ใช่เดา"
-    ),
-)
 def test_both_ema_lines_match_tradingview(golden):
     """เส้น EMA ของเราต้องตรงกับไฟล์ **ทุกแท่งที่ไฟล์มีค่า** ไม่ใช่แค่หลัง warm-up
 
