@@ -316,7 +316,7 @@ def test_the_liquidation_price_follows_the_isolated_margin_formula(db):
 
 
 def test_a_position_that_reaches_liquidation_is_closed_by_the_exchange(db):
-    """ทางออกที่ระบบไม่ได้สั่ง — ต้องแยกจาก `stop` ให้เห็น (spec/06:63)"""
+    """ทางออกที่ระบบไม่ได้สั่ง — ต้องแยกจาก `stop` ให้เห็น (spec/06 §`min_liq_buffer_pct` คือสิ่งเดียวที่กัน liquidation)"""
     bars = FakeBars()
     bars.flat(SYMBOL, T0, 100.0)
     broker = perp(db, bars)
