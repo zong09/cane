@@ -87,7 +87,13 @@ class ConfluenceVerdict:
         )
 
 
-def validate(verdict: ConfluenceVerdict, *, asked_factor: str, asked_side: str) -> None:
+def validate(
+    verdict: ConfluenceVerdict,
+    *,
+    asked_factor: str,
+    asked_side: str,
+    bar_count: int | None = None,
+) -> None:
     """ตรวจว่าคำตัดสินตอบคำถามที่ถามจริง · ไม่ผ่าน = `ValueError` ให้ผู้เรียก fallback
 
     ตรวจ `asked_*` ด้วยไม่ใช่ตรวจแค่ความสอดคล้องภายใน เพราะความล้มเหลวที่อันตราย
@@ -119,6 +125,14 @@ def validate(verdict: ConfluenceVerdict, *, asked_factor: str, asked_side: str) 
         )
     if any(bar < 0 for bar in verdict.evidence_bars):
         raise ValueError(f"evidence_bars ต้องเป็นดัชนีแท่งที่ไม่ติดลบ: {verdict.evidence_bars}")
+    # ขอบบนต้องตรวจด้วย ไม่ใช่แค่ขอบล่าง — ดัชนีที่โมเดลแต่งขึ้น (แท่ง 999 ของชุดที่มี
+    # 90 แท่ง) ผ่านทุกด่านอื่นได้หมดแล้วถูกเขียนลง cache ถาวร · ตอนอ่านย้อนหลังมันจะ
+    # ชี้ไปที่ความว่างเปล่าโดยที่ไม่มีอะไรเคยฟ้อง ซึ่งแย่กว่าการไม่มี evidence เลย
+    if bar_count is not None and any(bar >= bar_count for bar in verdict.evidence_bars):
+        raise ValueError(
+            f"evidence_bars อ้างถึงแท่งที่ไม่มีอยู่ (ชุดนี้มี {bar_count} แท่ง): "
+            f"{verdict.evidence_bars}"
+        )
 
 
 def absent(factor: str) -> ConfluenceVerdict:

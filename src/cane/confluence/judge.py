@@ -183,10 +183,16 @@ def render_context(bars: Sequence[Bar], feat: Features) -> str:
     `points` ของเส้นแนวโน้มพูดถึง ถ้าตารางเริ่มนับหนึ่งใหม่ ทุกเลขจะเลื่อนโดยไม่มี
     อะไรฟ้อง (ดูหัวไฟล์ `indicators/features.py`)
 
+    **ตารางยืดย้อนหลังไปคลุมทุกแท่งที่ feature อ้างถึงเสมอ** แม้จะเกิน `CONTEXT_BARS`
+    · จุดเหวี่ยงอยู่ห่างออกไปเท่าไหร่ก็ได้ (มันคือก้น/ยอดที่ยืนยันแล้ว ไม่ใช่ของที่อยู่
+    ใกล้ปลายเสมอ) ถ้าปล่อยให้หน้าต่างคงที่ตัดทิ้ง LLM จะเห็น `swing_lows` ชี้ไปที่แท่ง
+    ที่ไม่มีอยู่ในตารางที่มันอ่าน แล้ว `evidence_bars` ที่ตอบกลับมาจะอ้างถึงแท่งที่มัน
+    ไม่เคยเห็น — prompt ที่ยาวขึ้นแลกกับข้อนั้นเป็นการแลกที่คุ้ม
+
     ปัดทศนิยมคงที่และไม่ใส่เวลานาฬิกาใดๆ — ข้อความนี้ต้องเหมือนเดิมเป๊ะเมื่อป้อน
     แท่งชุดเดิม ไม่งั้น cache ที่คีย์ด้วย `bar_close_ts` จะตรงแต่เนื้อที่ส่งไปไม่ตรง
     """
-    start = max(0, len(bars) - CONTEXT_BARS)
+    start = min(max(0, len(bars) - CONTEXT_BARS), _earliest_cited(feat, len(bars)))
     rows = "\n".join(
         f"| {i} | {bars[i].open:.8g} | {bars[i].high:.8g} | "
         f"{bars[i].low:.8g} | {bars[i].close:.8g} | {bars[i].volume:.8g} |"
@@ -221,9 +227,16 @@ def judge_side(
     ไม่ใช่ข้อบังคับ และการทำ concurrency ตอนที่ยังไม่มีหลักฐานว่าช้าคือการเพิ่มทาง
     ให้บั๊กเข้ามาโดยไม่ได้อะไรตอบแทน
 
-    `conn` เป็นของผู้เรียก — แถวที่เขียนลง cache อยู่ในทรานแซกชันเดียวกับไม้นั้น
-    ถ้าไม้ถูกย้อนกลับ คำตัดสินก็หายไปด้วย ซึ่งถูกแล้ว เพราะการมีคำตัดสินค้างอยู่โดย
-    ไม่มีบันทึกการตัดสินใจคู่กันคือสถานะที่อธิบายไม่ได้
+    **`conn` เป็นของผู้เรียก และนั่นทำให้ cache ผูกกับชะตากรรมของทรานแซกชันนั้น** —
+    ข้อนี้เป็นการยอมรับข้อจำกัด ไม่ใช่คุณสมบัติที่ออกแบบมา · `verdict_cache` เป็น
+    ของระดับ**แท่ง** ไม่มี FK ไปที่ `decisions` เลย (ดูหัวไฟล์ migration 0007) แต่ถ้า
+    ทรานแซกชันของแท่งถูกย้อนกลับ — risk ปฏิเสธ หรือส่งออเดอร์ไม่สำเร็จ — คำตัดสินที่
+    เพิ่งจ่ายเงินซื้อมาจะหายไปด้วย แล้ว process ที่กลับมาในแท่งเดิม (เส้นทางที่ใบ 03
+    สร้างไว้ที่ `24f1953`) จะถามใหม่และจ่ายซ้ำ ซึ่งขัดกับ "ตัดสินครั้งเดียวจบ"
+
+    **ยังไม่แก้ที่นี่** การให้ cache มีทรานแซกชันสั้นของตัวเองเป็นการตัดสินใจของชั้น
+    ที่เป็นเจ้าของรอบการทำงานต่อแท่ง ซึ่งคือใบ 12 ไม่ใช่ไฟล์นี้ · เขียนไว้ให้เห็น
+    เพราะมันมองไม่เห็นจากลายเซ็นของฟังก์ชัน
     """
     if side not in FACTORS_BY_SIDE:
         raise ValueError(f"ฝั่งต้องเป็น long หรือ short ไม่ใช่ {side!r}")
@@ -250,7 +263,9 @@ def judge_side(
             continue
 
         try:
-            verdict = _ask_one(client, factor=factor, side=side, context=context)
+            verdict = _ask_one(
+                client, factor=factor, side=side, context=context, bar_count=len(bars)
+            )
         except _JudgeFailed as failure:
             # ล้มทั้งฝั่ง ดูหัวไฟล์ · ตัวที่ตอบไปแล้วยังอยู่ใน cache ไม่เสียเปล่า
             return _fallback(side, fingerprint, failure.reason)
@@ -277,7 +292,7 @@ class _JudgeFailed(Exception):
 
 
 def _ask_one(
-    client: LlmClient, *, factor: str, side: str, context: str
+    client: LlmClient, *, factor: str, side: str, context: str, bar_count: int
 ) -> ConfluenceVerdict:
     """ถาม LLM หนึ่งครั้งแล้วแปลงเป็นคำตัดสินที่ตรวจแล้ว
 
@@ -307,7 +322,9 @@ def _ask_one(
         raise _JudgeFailed("bad_schema") from error
 
     try:
-        validate(verdict, asked_factor=factor, asked_side=side)
+        validate(
+            verdict, asked_factor=factor, asked_side=side, bar_count=bar_count
+        )
     except ValueError as error:
         raise _JudgeFailed("bad_verdict") from error
     return verdict
@@ -334,6 +351,19 @@ def _fallback(side: str, fingerprint: str, reason: str) -> JudgeResult:
         fallback_reason=reason,
         prompt_hash=fingerprint,
     )
+
+
+def _earliest_cited(feat: Features, fallback: int) -> int:
+    """ดัชนีแท่งที่เก่าที่สุดที่ feature ตัวใดตัวหนึ่งอ้างถึง
+
+    ครอบทั้งจุดเหวี่ยงสองฝั่งและจุดที่ใช้ลากเส้นทั้งสองเส้น · ถ้าไม่อ้างถึงอะไรเลย
+    (ตลาดที่ยังไม่เคยเหวี่ยง) คืน `fallback` เพื่อให้ผู้เรียกใช้หน้าต่างปกติของมัน
+    """
+    cited = [point.index for point in (*feat.swing_lows, *feat.swing_highs)]
+    for line in (feat.resistance, feat.support):
+        if line is not None:
+            cited.extend(line.points)
+    return min(cited, default=fallback)
 
 
 def _features_json(feat: Features) -> dict[str, object]:
