@@ -480,7 +480,7 @@ decisions = Table(
     Column("leverage", PCT),
     Column("margin_mode", MARGIN_MODE_T),
     Column("judge_called", Boolean),
-    #: LLM ล้มเหลว = **ยังลงไม้ ที่ `base_pct`** (decisions #6, spec/04:87) ไม่ใช่ข้ามสัญญาณ
+    #: LLM ล้มเหลว = **ยังลงไม้ ที่ `base_pct`** (decisions #6, spec/04 §เมื่อ LLM ใช้การไม่ได้) ไม่ใช่ข้ามสัญญาณ
     #: จึงเป็นคอลัมน์ ไม่ใช่ค่าของ `skip_reason` · ถ้าไม่มีธงนี้ ตอนอ่านย้อนหลังจะแยกไม่ออก
     #: ระหว่าง "LLM บอกว่าไม่มีปัจจัย" กับ "LLM ตอบไม่ได้"
     Column("llm_fallback", Boolean),
@@ -530,7 +530,7 @@ decisions = Table(
         "cold_start IS NULL OR cold_start IN ('wait_1h', 'trailing', 'skip')",
         name="ck_decisions_cold_start",
     ),
-    # factor มีสามตัวต่อฝั่ง (spec/04:19-24) — ค่าที่เกินสามคือบั๊กของชั้น judge
+    # factor มีสามตัวต่อฝั่ง (spec/04 §หก factor — สามต่อฝั่ง) — ค่าที่เกินสามคือบั๊กของชั้น judge
     CheckConstraint(
         "factors_present IS NULL OR factors_present BETWEEN 0 AND 3",
         name="ck_decisions_factors_present",
@@ -598,14 +598,14 @@ def _decision_fk() -> tuple[Column, Column]:
 _DECISION_FK = "decisions.id"
 
 
-#: คำตัดสินของ Judge ต่อ factor — เขียนลงทุกตัว **ไม่ว่าผลจะเป็นอะไร** (spec/04:77)
+#: คำตัดสินของ Judge ต่อ factor — เขียนลงทุกตัว **ไม่ว่าผลจะเป็นอะไร** (spec/04 §ข้อบังคับเรื่องความคงเส้นคงวา)
 #: เป็นแถวจริงไม่ใช่ JSON ก้อน เพราะคอนโซลต้องกรองตาม factor และนับ compliance ต่อแท่ง
 decision_verdicts = Table(
     "decision_verdicts",
     metadata,
     *_decision_fk(),
     Column("factor", Text, primary_key=True),
-    #: ตัดสินเฉพาะ factor ของฝั่งที่กำลังจะเข้า ไม่มีการหักลบข้ามฝั่ง (spec/04:26)
+    #: ตัดสินเฉพาะ factor ของฝั่งที่กำลังจะเข้า ไม่มีการหักลบข้ามฝั่ง (spec/04 §หก factor — สามต่อฝั่ง)
     Column("side", SIDE_T, nullable=False),
     Column("present", Boolean, nullable=False),
     #: ใช้สำหรับให้คนอ่านย้อนหลังเท่านั้น **ห้ามผูกกับขนาดไม้** (decisions #12, spec/05 §`base_pct` ต้องเป็นค่าคงที่)
@@ -922,7 +922,7 @@ LEDGER_TABLES = (fills, funding_charges)
 
 
 #: คำตัดสินหนึ่งครั้งต่อแท่ง — คีย์คือสิ่งที่ทำให้ "เรียกซ้ำได้คำตอบเดิม" เป็นจริง
-#: (spec/04:69-77) · ที่มาของแต่ละช่องและเหตุผลที่มี `market` แต่ไม่มี `profile`
+#: (spec/04 §ข้อบังคับเรื่องความคงเส้นคงวา) · ที่มาของแต่ละช่องและเหตุผลที่มี `market` แต่ไม่มี `profile`
 #: อยู่ในหัวไฟล์ `alembic/versions/0007_verdict_cache.py`
 #:
 #: **ไม่ใช่ตัวเดียวกับ `decision_verdicts`** ตัวนั้นคือ "แท่งนี้ตัดสินใจโดยเห็นอะไร"
@@ -940,7 +940,7 @@ verdict_cache = Table(
     Column("factor", Text, primary_key=True),
     Column("prompt_hash", Text, primary_key=True),
     Column("present", Boolean, nullable=False),
-    #: ให้คนตรวจย้อนหลังเท่านั้น **ห้ามผูกกับขนาดไม้** (ADR 12, spec/04:58)
+    #: ให้คนตรวจย้อนหลังเท่านั้น **ห้ามผูกกับขนาดไม้** (ADR 12, spec/04 §สัญญาผลลัพธ์ (contract))
     Column("confidence", PCT),
     Column("evidence_bars", postgresql.ARRAY(BigInteger)),
     Column("rationale", Text),

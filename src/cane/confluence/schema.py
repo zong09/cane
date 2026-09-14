@@ -9,7 +9,7 @@
 ผิดได้ ตอบ `present = true` โดยไม่อ้างแท่งไหนเลยได้ · ถ้าตรวจใน `__post_init__` การ
 สร้างวัตถุจะพังกลางทางแล้วผู้เรียกต้องดัก `TypeError` ปนกับ `ValueError` ของจริง
 แยกเป็นฟังก์ชันทำให้ `judge.py` เขียนได้ตรงๆ ว่า "แปลงแล้วตรวจ ไม่ผ่านคือ fallback"
-ซึ่งเป็นเส้นทางที่สเปกสั่ง (spec/04:93-99) ไม่ใช่ข้อยกเว้นที่หลุดขึ้นไปข้างบน
+ซึ่งเป็นเส้นทางที่สเปกสั่ง (spec/04 §เมื่อ LLM ใช้การไม่ได้) ไม่ใช่ข้อยกเว้นที่หลุดขึ้นไปข้างบน
 
 ## `ConfluenceVerdict` ไม่ใช่ `Verdict` ของ `db/repo/decisions.py`
 
@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from cane.db.repo.decisions import Verdict
 
-#: factor ของแต่ละฝั่ง เรียงตาม spec/04:18-25 · **ชื่อต้องตรงกับ
+#: factor ของแต่ละฝั่ง เรียงตาม spec/04 §หก factor — สามต่อฝั่ง · **ชื่อต้องตรงกับ
 #: `ck_decision_verdicts_factor` ใน `db/schema.py`** ไม่งั้นเขียนลงตารางไม่ผ่าน
 #:
 #: ใบ 06 เขียน `SUPPORT_BREAKDOWN` แต่ทั้งสเปก glossary และ CHECK ของตารางเขียน
@@ -58,7 +58,7 @@ class ConfluenceVerdict:
     ดูเหตุผลที่แยกกันในหัวไฟล์
 
     `confidence` มีไว้ให้คนตรวจย้อนหลังเท่านั้น **ห้ามผูกกับขนาดไม้** (ADR 12,
-    spec/04:58) · `evidence_bars` คือดัชนีแท่งในชุดที่ถูกใส่ลง prompt ซึ่งต้องเป็น
+    spec/04 §สัญญาผลลัพธ์ (contract)) · `evidence_bars` คือดัชนีแท่งในชุดที่ถูกใส่ลง prompt ซึ่งต้องเป็น
     ชุดเดียวกับที่ `features()` อ่าน (ดูหัวไฟล์ `indicators/features.py`)
     """
 
@@ -101,7 +101,7 @@ def validate(
     `HIGHER_LOW` ที่ถูกเก็บลงช่องของ `CHANNEL_BREAKOUT` จะดูสมเหตุสมผลทุกประการ
     ตอนอ่านย้อนหลัง และไม่มีอะไรในระบบจับได้เลย
 
-    `present = True` ที่ไม่มี `evidence_bars` ถูกปฏิเสธตาม spec/04:55 — คำตัดสินที่
+    `present = True` ที่ไม่มี `evidence_bars` ถูกปฏิเสธตาม spec/04 §สัญญาผลลัพธ์ (contract) — คำตัดสินที่
     ชี้แท่งไม่ได้คือความเห็น ไม่ใช่หลักฐาน และไม่ควรมีผลต่อขนาดไม้
     """
     if asked_factor not in SIDE_OF_FACTOR:
@@ -109,7 +109,7 @@ def validate(
     if SIDE_OF_FACTOR[asked_factor] != asked_side:
         raise ValueError(
             f"factor {asked_factor!r} เป็นของฝั่ง {SIDE_OF_FACTOR[asked_factor]!r} "
-            f"ไม่ใช่ {asked_side!r} — ไม่มีการหักลบข้ามฝั่ง (spec/04:26)"
+            f"ไม่ใช่ {asked_side!r} — ไม่มีการหักลบข้ามฝั่ง (spec/04 §หก factor — สามต่อฝั่ง)"
         )
 
     if verdict.factor != asked_factor:
@@ -121,7 +121,7 @@ def validate(
     if verdict.present and not verdict.evidence_bars:
         raise ValueError(
             f"{asked_factor} ตอบว่ามีปัจจัยแต่ไม่อ้างแท่งไหนเลย — "
-            "evidence_bars ห้ามว่างเมื่อ present (spec/04:55)"
+            "evidence_bars ห้ามว่างเมื่อ present (spec/04 §สัญญาผลลัพธ์ (contract))"
         )
     if any(bar < 0 for bar in verdict.evidence_bars):
         raise ValueError(f"evidence_bars ต้องเป็นดัชนีแท่งที่ไม่ติดลบ: {verdict.evidence_bars}")
@@ -136,7 +136,7 @@ def validate(
 
 
 def absent(factor: str) -> ConfluenceVerdict:
-    """คำตัดสิน "ไม่มีปัจจัย" ที่ใช้ตอน LLM ล่ม (ADR 6, spec/04:91-99)
+    """คำตัดสิน "ไม่มีปัจจัย" ที่ใช้ตอน LLM ล่ม (ADR 6, spec/04 §เมื่อ LLM ใช้การไม่ได้)
 
     **ไม่ใช่คำตัดสินของ LLM** และห้ามเขียนลง cache — ถ้า timeout ครั้งเดียวกลายเป็น
     `present = false` ถาวรของแท่งนั้น ความเสถียรของผู้ให้บริการจะกลายเป็นตัวแปรของ
