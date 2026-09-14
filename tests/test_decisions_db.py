@@ -436,7 +436,7 @@ def test_an_order_the_venue_rejected_must_carry_the_error(db, live_version):
 
 
 def test_a_residual_must_carry_its_side(db, live_version):
-    """spec/03:79 บังคับให้บันทึกฝั่งของ residual — ของค้างที่ไม่รู้ฝั่งปิดด้วยมือไม่ได้"""
+    """spec/03 §โปรโตคอล flip — จุดที่พังแล้วเปิดสถานะสวนกัน บังคับให้บันทึกฝั่งของ residual — ของค้างที่ไม่รู้ฝั่งปิดด้วยมือไม่ได้"""
     decision_id = repo.insert_decision(db, quiet_bar(live_version))
 
     with pytest.raises(IntegrityError) as caught:
@@ -687,7 +687,7 @@ def _perp_run(version_id) -> list[DecisionRecord]:
             ),
             stop=Stop(action="placed", px=74_000.0, stop_order_id="v-stop-2"),
         ),
-        # 3 · สัญญาณเดิมซ้ำขณะถือไม้อยู่แล้ว — ไม่เปิดทับ (spec/03:28-35)
+        # 3 · สัญญาณเดิมซ้ำขณะถือไม้อยู่แล้ว — ไม่เปิดทับ (spec/03 §เข้าไม้)
         bar(3, zone="GREEN", state="BULLISH", long_signal=True, skip_reason="already_positioned"),
         # 4 · flip ครบสองขา · ทั้งสองขาเป็น `sell` เพราะโหมด one-way (spec/06 §Broker interface)
         bar(
@@ -735,7 +735,7 @@ def _perp_run(version_id) -> list[DecisionRecord]:
             ),
             stop=Stop(action="unchanged"),
         ),
-        # 5 · ขา 1 ไม่ fill ครบ → ยกเลิกขา 2 · ของค้างเกิดที่นี่ (spec/03:64, decisions #19)
+        # 5 · ขา 1 ไม่ fill ครบ → ยกเลิกขา 2 · ของค้างเกิดที่นี่ (spec/03 §โปรโตคอล flip — จุดที่พังแล้วเปิดสถานะสวนกัน, decisions #19)
         bar(
             5,
             zone="GREEN",
@@ -911,7 +911,7 @@ def _spot_run(version_id) -> list[DecisionRecord]:
             ),
         ),
         bar(3, zone="GREEN", state="BULLISH", long_signal=True, skip_reason="already_positioned"),
-        # 4 · สัญญาณแดงบน spot = **ขายออกให้แบน จบ** ไม่มีขาเปิดตาม (spec/03:20)
+        # 4 · สัญญาณแดงบน spot = **ขายออกให้แบน จบ** ไม่มีขาเปิดตาม (spec/03 §`spot` — long-only)
         bar(
             4,
             zone="RED",
@@ -950,7 +950,7 @@ def _spot_run(version_id) -> list[DecisionRecord]:
                 RiskCheck(seq=2, layer="daily_loss", passed=False, value=3.4, limit_value=3.0),
             ),
         ),
-        # 7 · cold start ทางที่ 1 แล้ว RR ไม่ถึง 2:1 (spec/03:135)
+        # 7 · cold start ทางที่ 1 แล้ว RR ไม่ถึง 2:1 (spec/03 §ทางที่ 2 — `trailing` CDC ATR Trailing Stop)
         bar(
             7,
             zone="GREEN",

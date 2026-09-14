@@ -222,7 +222,7 @@ def test_a_bar_the_normal_path_did_not_refuse_with_the_cane_rule_is_not_a_cold_s
 
 
 def test_config_that_does_not_open_the_route_leaves_the_cane_rule_standing():
-    """fail-closed · ไม่ระบุ = ไม่เข้าเส้นทางนี้ (spec/03:120)
+    """fail-closed · ไม่ระบุ = ไม่เข้าเส้นทางนี้ (spec/03 §การเลือกเส้นทาง)
 
     เหตุผลที่คืนคือ `cane_rule` ไม่ใช่ค่าใหม่ — กฎไม้เรียวยังเป็นตัวที่ปฏิเสธอยู่
     เส้นทางที่จะยกเว้นมันแค่ปิดอยู่
@@ -243,7 +243,7 @@ def test_wait_one_hour_picks_a_side_but_does_not_enter_on_this_bar():
     """ทางที่ 1 ไม่เข้าไม้ที่แท่งรายวันนี้ · มันบอกให้ไปดูกราฟ 1 ชั่วโมงต่อ
 
     **ไม่ใช่สูตรใหม่** — ตรรกะ Action Zone ตัวเดิมทั้งหมด เปลี่ยนแค่ timeframe
-    (spec/03:129-132) · ดังนั้นมันจึงไม่มี `stop_px` และไม่ต้องผ่านด่าน RR
+    (spec/03 §ทางที่ 1 — `wait_1h` ลง timeframe เล็ก) · ดังนั้นมันจึงไม่มี `stop_px` และไม่ต้องผ่านด่าน RR
     """
     got = call(route="wait_1h")
     assert got.side == "long"
@@ -343,7 +343,7 @@ def test_a_reward_that_does_not_reach_twice_the_risk_is_refused():
 
 
 def test_exactly_two_to_one_is_accepted_because_the_spec_says_at_least():
-    """spec/03:135 เขียน "อย่างน้อย 2 เท่า" — พอดีสองเท่าจึงผ่าน ไม่ใช่ตก
+    """spec/03 §ทางที่ 2 — `trailing` CDC ATR Trailing Stop เขียน "อย่างน้อย 2 เท่า" — พอดีสองเท่าจึงผ่าน ไม่ใช่ตก
 
     บังคับ RR ให้เป็น 2.0 เป๊ะด้วยการวาง `trail_slow` ที่ระยะครึ่งหนึ่งของ reward
     """
@@ -376,7 +376,7 @@ def test_no_trail_yet_means_no_stop_can_be_set_so_no_entry():
 
 
 def test_a_trailing_plan_without_a_stop_cannot_be_constructed():
-    """spec/03:135 บังคับ stop เสมอบนเส้นทางนี้ · invariant เขียนเป็นโค้ด"""
+    """spec/03 §ทางที่ 2 — `trailing` CDC ATR Trailing Stop บังคับ stop เสมอบนเส้นทางนี้ · invariant เขียนเป็นโค้ด"""
     with pytest.raises(ValueError, match="stop"):
         ColdStartPlan(side="long", route="trailing", stop_px=None)
 

@@ -32,11 +32,11 @@ Create Date: 2026-09-09
   **ขา 1 ของ flip ใช้ค่านี้** ไม่มีค่าแยก — flip คือการออกด้วยสัญญาณฝั่งตรงข้ามแล้วเข้า
   ฝั่งใหม่ต่อในแท่งเดียว เหตุของการออกจึงเป็นเหตุเดียวกันเป๊ะ การแยกค่าจะทำให้รายงาน
   "ออกเพราะสัญญาณ" นับขาดไปทุกครั้งที่มีการกลับข้าง
-- `stop` — stop order ที่วางไว้ที่ exchange ทำงาน (ADR 17, spec/03:156)
+- `stop` — stop order ที่วางไว้ที่ exchange ทำงาน (ADR 17, spec/03 §ทางที่ 2 — `trailing` CDC ATR Trailing Stop)
 - `liquidation` — exchange ปิดให้เองที่ราคา liquidation **แม้ยังไม่มีสัญญาณฝั่งตรงข้าม**
   (spec/06 §`min_liq_buffer_pct` คือสิ่งเดียวที่กัน liquidation) เป็นทางออกที่ระบบไม่ได้สั่ง จึงต้องแยกออกจาก `stop` ให้เห็น
 - `manual` — คนกด "ปิดไม้ฉุกเฉิน" (spec/06 §สิ่งที่คนกดได้ และไม่ได้) ซึ่งเป็นทางออกทางเดียวของของค้างจาก
-  `flip_aborted` ด้วย (spec/03:83)
+  `flip_aborted` ด้วย (spec/03 §โปรโตคอล flip — จุดที่พังแล้วเปิดสถานะสวนกัน)
 
 บังคับด้วย CHECK คู่กับ `leg` — ขาเปิดห้ามมีเหตุผลของการออก ขาปิดและขา stop ห้ามไม่มี
 ท่าเดียวกับ `ck_decision_orders_order_type` ของใบ 03 คือ `Text` + CHECK ไม่ใช่ ENUM ใหม่
@@ -58,7 +58,7 @@ constraint ยังเขียว:
 ของรายการ ไม่ใช่การออกแบบ** — fill ที่ไม่รู้ว่าเป็นของเหรียญไหน query ไม่ได้เลย
 
 `funding_charges` บังคับ `market = 'usdtm_perp'` เพราะ **spot ไม่มี funding อยู่จริง**
-ไม่ใช่มีแล้วเป็นศูนย์ (spec/03:22, ADR 26) — ให้ฐานปฏิเสธ แทนที่จะให้โค้ดชั้นบนคอยจำ
+ไม่ใช่มีแล้วเป็นศูนย์ (spec/03 §`spot` — long-only, ADR 26) — ให้ฐานปฏิเสธ แทนที่จะให้โค้ดชั้นบนคอยจำ
 
 **ตารางทั้งสองเป็นตารางข้อเท็จจริง** (ADR 23) → `cane_engine` ได้ `SELECT, INSERT`
 `cane_console` ได้ `SELECT` อย่างเดียว ไม่มี `UPDATE`/`DELETE` ให้ใคร
@@ -153,7 +153,7 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "(leg = 'open') = (exit_reason IS NULL)", name="ck_fills_exit_reason_by_leg"
         ),
-        # spot ไม่มีธง reduce_only อยู่จริง (spec/03:22) — ให้ฐานปฏิเสธ ไม่ใช่ให้โค้ดจำ
+        # spot ไม่มีธง reduce_only อยู่จริง (spec/03 §`spot` — long-only) — ให้ฐานปฏิเสธ ไม่ใช่ให้โค้ดจำ
         sa.CheckConstraint(
             "market <> 'spot' OR NOT reduce_only", name="ck_fills_spot_no_reduce_only"
         ),
@@ -188,7 +188,7 @@ def upgrade() -> None:
         sa.UniqueConstraint(
             "profile", "trade_id", "cycle_ts", name="uq_funding_charges_cycle"
         ),
-        # spot ไม่มี funding อยู่จริง ไม่ใช่มีแล้วเป็นศูนย์ (spec/03:22, ADR 26)
+        # spot ไม่มี funding อยู่จริง ไม่ใช่มีแล้วเป็นศูนย์ (spec/03 §`spot` — long-only, ADR 26)
         sa.CheckConstraint("market = 'usdtm_perp'", name="ck_funding_charges_market"),
         sa.CheckConstraint("position_qty > 0", name="ck_funding_charges_qty_positive"),
         # แถวนี้มีอยู่เพราะรอบ funding มาถึงตอนที่ยังถือไม้อยู่ — มันจึงต้องตอบให้ได้

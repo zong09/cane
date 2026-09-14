@@ -105,7 +105,7 @@ class OrderAttempt:
 
 @dataclass(frozen=True, slots=True)
 class Flip:
-    """ผลของการกลับข้างสองขาในแท่งเดียว (spec/03:53-83) — ไม่มีบน spot"""
+    """ผลของการกลับข้างสองขาในแท่งเดียว (spec/03 §โปรโตคอล flip — จุดที่พังแล้วเปิดสถานะสวนกัน) — ไม่มีบน spot"""
 
     close_qty_intended: float
     close_qty_filled: float
@@ -292,13 +292,13 @@ def _check_risk_sequence(record: DecisionRecord) -> None:
 def _check_market_rules(record: DecisionRecord) -> None:
     """สิ่งที่ตลาด spot **ไม่มี** (decisions #26)
 
-    spot ไม่มี flip เพราะสัญญาณแดงคือ "ขายออกให้แบน" จบ ไม่มีขาเปิดตาม (spec/03:20)
+    spot ไม่มี flip เพราะสัญญาณแดงคือ "ขายออกให้แบน" จบ ไม่มีขาเปิดตาม (spec/03 §`spot` — long-only)
     และไม่มี `reduceOnly` ให้ใช้ — ทั้งสองข้อผูกกับ `market` ของหัว ซึ่งลูกมองไม่เห็น
     """
     if record.market != "spot":
         return
     if record.flip is not None:
-        raise ValueError("ไม้ spot มี decision_flip ไม่ได้ — ไม่มี flip บน spot (spec/03:20)")
+        raise ValueError("ไม้ spot มี decision_flip ไม่ได้ — ไม่มี flip บน spot (spec/03 §`spot` — long-only)")
     for order in record.orders:
         if order.reduce_only:
             raise ValueError(

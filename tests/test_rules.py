@@ -112,7 +112,7 @@ def test_a_quiet_bar_is_no_signal_while_a_running_trend_is_the_cane_rule():
     assert plan(state="BULLISH").skip_reason == "cane_rule"
 
 
-# ── ตารางเข้าไม้ของ spec/03:34-42 ทั้งตาราง ───────────────────────────────────
+# ── ตารางเข้าไม้ของ spec/03 §เข้าไม้ ทั้งตาราง ───────────────────────────────────
 
 
 @pytest.mark.parametrize(
@@ -137,7 +137,7 @@ def test_a_quiet_bar_is_no_signal_while_a_running_trend_is_the_cane_rule():
 def test_the_entry_table_row_by_row(
     signal, position_side, close_side, open_side, skip_reason
 ):
-    """หกแถวของ spec/03:34-42 · "ไม่ทำอะไร" เมื่อถือฝั่งเดียวกันคือ **ไม่มี pyramiding**"""
+    """หกแถวของ spec/03 §เข้าไม้ · "ไม่ทำอะไร" เมื่อถือฝั่งเดียวกันคือ **ไม่มี pyramiding**"""
     got = plan(
         long_signal=signal == "long",
         short_signal=signal == "short",
@@ -165,7 +165,7 @@ def test_closing_never_asks_the_judge():
 
 
 def test_short_disabled_still_closes_the_long_but_opens_nothing():
-    """เกณฑ์ข้อ 3 · spec/03:50 — "ยังปิด long ตามสัญญาณ short แต่ไม่เปิดไม้ใหม่"
+    """เกณฑ์ข้อ 3 · spec/03 §`allow_short = false` — "ยังปิด long ตามสัญญาณ short แต่ไม่เปิดไม้ใหม่"
 
     พฤติกรรมกลับไปเหมือนระบบ long-only เดิมทุกประการ · และ **ไม่เรียก Judge**
     ซึ่งแปลว่าไม่จ่ายเงินค่า LLM สำหรับไม้ที่จะไม่มีวันถูกเปิด

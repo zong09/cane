@@ -559,7 +559,7 @@ decisions = Table(
         name="ck_decisions_spot_no_funding",
     ),
     # spot เป็น long-only — แดงบน spot คือ "ขายออกให้แบน" ไม่ใช่การเปิดไม้ short
-    # (decisions #26, spec/03:20)
+    # (decisions #26, spec/03 §`spot` — long-only)
     CheckConstraint(
         "market <> 'spot' OR side IS NULL OR side = 'long'",
         name="ck_decisions_spot_long_only",
@@ -711,9 +711,9 @@ decision_orders = Table(
 
 #: ผลของ flip สองขาในแท่งนี้ (spec/07 §บันทึกการตัดสินใจ) — หนึ่งแถวต่อ decision
 #:
-#: `residual_side` ไม่ได้อยู่ในบล็อก `flip{}` ของ spec/07 §บันทึกการตัดสินใจ แต่ spec/03:79 สั่งให้บันทึก
+#: `residual_side` ไม่ได้อยู่ในบล็อก `flip{}` ของ spec/07 §บันทึกการตัดสินใจ แต่ spec/03 §โปรโตคอล flip — จุดที่พังแล้วเปิดสถานะสวนกัน สั่งให้บันทึก
 #: **ฝั่งของ residual** ด้วย · ของค้างที่ไม่รู้ฝั่งคือของค้างที่คนปิดด้วยมือไม่ได้
-#: **ตารางนี้ไม่มีแถวของไม้ spot** — ไม่มี flip บน spot (decisions #26, spec/03:20)
+#: **ตารางนี้ไม่มีแถวของไม้ spot** — ไม่มี flip บน spot (decisions #26, spec/03 §`spot` — long-only)
 decision_flip = Table(
     "decision_flip",
     metadata,
@@ -729,7 +729,7 @@ decision_flip = Table(
         [_DECISION_FK, "decisions.profile"],
         name="fk_decision_flip_decision",
     ),
-    # ฝั่งเว้นได้เฉพาะตอนไม่มีของค้าง — spec/03:79 บังคับให้ของค้างมีฝั่งกำกับ
+    # ฝั่งเว้นได้เฉพาะตอนไม่มีของค้าง — spec/03 §โปรโตคอล flip — จุดที่พังแล้วเปิดสถานะสวนกัน บังคับให้ของค้างมีฝั่งกำกับ
     CheckConstraint(
         "residual_qty = 0 OR residual_side IS NOT NULL",
         name="ck_decision_flip_residual_needs_side",
