@@ -41,8 +41,16 @@ gateway คนละตัวเป็นคนละ quantization ได้ (ga
    ครบอยู่แล้ว จึงส่งผ่านเข้า `strict: true` ได้ตรงๆ ไม่ต้องแปลง
 3. **ไม่มี `effort`** — เป็นพารามิเตอร์ของ Anthropic ไม่มีในฝั่งนี้
 
-ใช้ `max_tokens` ไม่ใช่ `max_completion_tokens` เพราะ vLLM / Ollama / llama.cpp /
-OpenRouter รับตัวแรกกันหมด ส่วนตัวหลังเป็นของใหม่ฝั่ง OpenAI เองที่ยังไม่ทั่วถึง
+## **ไม่ส่ง `max_tokens` เลย** — ต่างจากฝั่ง Anthropic ที่บังคับให้ส่ง
+
+เอกสารของ DashScope/QwenCloud สั่งตรงๆ ว่า *"Leave `max_tokens` unset when structured
+output is enabled ... can truncate the JSON string mid-output, producing invalid JSON"*
+· เพดานที่ตัดกลาง JSON ไม่ได้ให้คำตอบที่สั้นลง มันให้ **คำตอบที่ parse ไม่ได้** ซึ่ง
+เดินต่อไปเป็น `bad_schema` → ทั้งฝั่งตกไป fallback · ตอน replay ของใบ 12 ที่ยิงติดกัน
+เป็นพันครั้ง อาการจะดูเหมือน "โมเดลตอบไม่เป็น" ทั้งที่เป็นเพดานที่เราตั้งเอง
+
+ของที่กันความยาวไม่ให้บานจริงๆ คือ schema ที่บังคับรูปคำตอบอยู่แล้ว ไม่ใช่เพดาน token
+· ถ้าวันหนึ่งต้องมีเพดานจริง ให้เพิ่มตอนนั้นพร้อมเหตุผล ไม่ใช่ตั้งเผื่อไว้ก่อน
 
 ## `strict: true` ไม่ใช่หลักประกัน — `validate()` ต่างหากที่เป็น
 
@@ -82,10 +90,6 @@ MODEL_ENV = "CANE_LLM_MODEL"
 #: ADR 25 — ความลับอยู่ใน `.env` ไม่ลงฐานข้อมูล · **เว้นว่างได้** เพราะ gateway ที่
 #: localhost (Ollama, vLLM, LM Studio) ไม่ต้องใช้คีย์ · เว้นว่าง = ไม่ส่ง header
 API_KEY_ENV = "CANE_LLM_API_KEY"
-
-#: เท่ากับฝั่ง Anthropic ด้วยเหตุผลเดียวกัน — คำตัดสินสั้นแต่การถูกตัดกลางประโยค
-#: ทำให้ JSON ไม่ครบรูป แล้วทั้งฝั่งตกไป `bad_schema`
-MAX_TOKENS = 4096
 
 #: โมเดล open-weight ที่รันบน CPU ตอบช้ากว่า API ที่โฮสต์ไว้มาก และ replay ของใบ 12
 #: ยิงติดกันเป็นพัน ๆ ครั้ง · ตั้งสั้นกว่านี้จะได้ `transport` ที่มาจากความช้า
@@ -133,7 +137,6 @@ class OpenAICompatJudgeClient:
         """ยิงหนึ่งคำถาม คืน dict ที่แกะจาก JSON แล้ว · พังแล้วยก exception"""
         body = {
             "model": self.model,
-            "max_tokens": MAX_TOKENS,
             "temperature": 0,
             "messages": [
                 {"role": "system", "content": system},

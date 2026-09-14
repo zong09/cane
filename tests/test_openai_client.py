@@ -150,7 +150,13 @@ def test_the_request_asks_for_the_schema_through_response_format(monkeypatch):
 
 
 def test_the_request_sets_temperature_zero_and_omits_anthropic_only_fields(monkeypatch):
-    """`temperature` ตั้งได้ที่ฝั่งนี้จึงตั้ง · `effort` เป็นของ Anthropic ห้ามหลุดมา"""
+    """`temperature` ตั้งได้ที่ฝั่งนี้จึงตั้ง · `effort` เป็นของ Anthropic ห้ามหลุดมา
+
+    **และห้ามมี `max_tokens`** — เอกสารของ DashScope/QwenCloud สั่งให้เว้นไว้เมื่อเปิด
+    structured output เพราะเพดานที่ตัดกลาง JSON ให้คำตอบที่ parse ไม่ได้ ไม่ใช่คำตอบ
+    ที่สั้นลง · มันจะกลายเป็น `bad_schema` ที่ดูเหมือนโมเดลตอบไม่เป็น ทั้งที่เป็น
+    เพดานที่เราตั้งเอง
+    """
     client = OpenAICompatJudgeClient(base_url=GATEWAY, model=MODEL)
     _, request = _ask(monkeypatch, client)
     body = _body_of(request)
@@ -161,6 +167,8 @@ def test_the_request_sets_temperature_zero_and_omits_anthropic_only_fields(monke
         {"role": "system", "content": "SYS"},
         {"role": "user", "content": "USR"},
     ]
+    assert "max_tokens" not in body
+    assert "max_completion_tokens" not in body
     assert "effort" not in body
     assert "output_config" not in body
     assert request.full_url == f"{GATEWAY}/chat/completions"
