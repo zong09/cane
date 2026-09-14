@@ -335,6 +335,24 @@ def test_long_and_short_on_the_same_bar_are_six_separate_rows(db):
     assert {v.side for v in short_side.verdicts} == {"short"}
 
 
+def test_the_factor_sets_of_the_two_sides_never_overlap():
+    """ตัวที่กัน "คำตัดสินสองฝั่งทับกัน" จริงคือข้อนี้ ไม่ใช่ `side` ในคีย์
+
+    spec/04:72 ให้เหตุผลว่า `side` ต้องอยู่ในคีย์เพราะไม่งั้นสองฝั่งจะทับกัน ·
+    เหตุผลนั้นไม่จริงในรูปปัจจุบัน — ชื่อ factor ไม่ซ้ำกันเลยสักตัว คำถามของฝั่ง long
+    จึงชนแถวของฝั่ง short ไม่ได้อยู่แล้ว **พิสูจน์ด้วยการกลายพันธุ์**: ถอด `side`
+    ออกจาก `WHERE` ของ `cache._match()` แล้วเทสต์ทั้งชุดยังเขียว
+
+    ถ้าวันหนึ่งมีใครใส่ชื่อซ้ำเข้าไปทั้งสองฝั่ง ข้อนี้จะดัง — และวันนั้น `side` ใน
+    คีย์จะกลายเป็นสิ่งจำเป็นจริงๆ ไม่ใช่ของที่คงไว้เพราะสเปกเขียนไว้
+    """
+    long_side, short_side = FACTORS_BY_SIDE["long"], FACTORS_BY_SIDE["short"]
+    assert not set(long_side) & set(short_side)
+    assert len(set(long_side) | set(short_side)) == 6
+    assert all(SIDE_OF_FACTOR[f] == "long" for f in long_side)
+    assert all(SIDE_OF_FACTOR[f] == "short" for f in short_side)
+
+
 @pytest.mark.db
 def test_the_same_pair_on_two_markets_does_not_share_one_verdict(db):
     """`market` ไม่ได้อยู่ในคีย์ที่ spec/04:70 เขียนไว้ เพราะข้อนั้นเขียนก่อน ADR 26
