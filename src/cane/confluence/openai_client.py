@@ -3,10 +3,10 @@
 ## สถานะของไฟล์นี้ อ่านก่อนเชื่ออะไรในนี้
 
 รูปคำขอเขียนตามเอกสารของ OpenAI chat-completions ที่ vLLM / Ollama / LM Studio /
-OpenRouter ประกาศว่ารองรับ **แต่ยังไม่ได้ยิงใส่ตัวจริงสักครั้ง** — วัดเมื่อ 2026-09-14
-ว่าจากเน็ตนี้ `openrouter.ai` ถูก Zscaler ดัก TLS (`api.anthropic.com` ไม่ถูกดัก) และยัง
-ไม่มี gateway ที่ localhost ให้ต่อ · ถือเป็นของที่ต้องทดสอบด้วยมือครั้งแรกที่มีปลายทาง
-ไม่ใช่ของที่ผ่านแล้ว — ท่าเดียวกับ `anthropic_client.py`
+OpenRouter / DashScope ประกาศว่ารองรับ **แต่ยังไม่ได้ยิงใส่ตัวจริงสักครั้ง** — วัดเมื่อ
+2026-09-14 ว่าจากเน็ตนี้ `openrouter.ai` กับ `dashscope.aliyuncs.com` ถูก Zscaler ดัก TLS
+(กำแพงเป็นรายโฮสต์ ไม่ใช่รายเครือข่าย) และยังไม่มี gateway ที่ localhost ให้ต่อ ·
+ถือเป็นของที่ต้องทดสอบด้วยมือครั้งแรกที่มีปลายทาง ไม่ใช่ของที่ผ่านแล้ว
 
 เทสต์ของไฟล์นี้พิสูจน์ **รูปของคำขอและการแปลงคำตอบ** ซึ่งทำได้โดยไม่ต้องมีเน็ต
 ส่วน "ปลายทางยอมรับคำขอรูปนี้ไหม" พิสูจน์ไม่ได้จนกว่าจะมีปลายทาง
@@ -18,7 +18,7 @@ OpenRouter ประกาศว่ารองรับ **แต่ยังไ
 และไม่ใช้ `openai` SDK เพราะทั้งไฟล์นี้ต้องการแค่ POST เดียวกับ JSON เดียว
 
 ผลที่ต้องการคือ: ย้ายไปเครื่องอื่นแล้ว **ตั้งสามตัวแปรใน `.env` ก็รันได้เลย** ไม่ต้อง
-`uv sync --extra` อะไรก่อน · ต่างจาก `anthropic_client.py` ที่ต้องมี extra `llm`
+ติดตั้งอะไรเพิ่มก่อน — ซึ่งเป็นทั้งหมดที่ "ใช้จาก config อย่างเดียว" หมายถึง
 
 ## `model_id` รวม `base_url` เข้าไปด้วย ไม่ใช่ชื่อโมเดลเปล่า
 
@@ -29,19 +29,18 @@ gateway คนละตัวเป็นคนละ quantization ได้ (ga
 อ่านคำตัดสินของโมเดลที่ไม่ใช่ตัวเดิมมาใช้ต่อเงียบๆ ซึ่งเป็นการหลอกแบบเดียวกับที่
 `0007_verdict_cache.py` ตั้งใจกัน
 
-## สามจุดที่คำขอต่างจากฝั่ง Anthropic โดยเจตนา
+## สองจุดของคำขอที่เขียนตามเอกสาร ไม่ใช่ตามความจำ
 
-1. **ส่ง `temperature: 0` ได้ และส่ง** — ต่างจาก Anthropic ที่ถอดพารามิเตอร์นี้ออกแล้ว
-   (ส่งไปได้ 400) · ที่นี่ตั้งได้จึงตั้ง ตามหลัก "ต่ำสุดเท่าที่ API รองรับ" · **แต่มัน
+1. **ส่ง `temperature: 0`** ตามหลัก "ต่ำสุดเท่าที่ API รองรับ" ของ spec/04:73 · **แต่มัน
    ไม่ได้รับประกัน determinism** — endpoint ที่ทำ batching รวมผลบวกทศนิยมคนละลำดับ
    ตามองค์ประกอบของ batch พอ logit ขยับ greedy ก็เลือกคนละ token ได้ · ตัวที่รับประกัน
    จริงยังเป็น `verdict_cache` เหมือนเดิม
-2. **structured output อยู่ที่ `response_format.json_schema`** ไม่ใช่ `output_config.format`
-   ของ Anthropic · `VERDICT_JSON_SCHEMA` มี `additionalProperties: false` กับ `required`
-   ครบอยู่แล้ว จึงส่งผ่านเข้า `strict: true` ได้ตรงๆ ไม่ต้องแปลง
-3. **ไม่มี `effort`** — เป็นพารามิเตอร์ของ Anthropic ไม่มีในฝั่งนี้
+2. **structured output อยู่ที่ `response_format.json_schema` พร้อม `strict: true`** ·
+   `VERDICT_JSON_SCHEMA` มี `additionalProperties: false` กับ `required` ครบอยู่แล้ว
+   จึงส่งผ่านเข้าไปได้ตรงๆ ไม่ต้องแปลง · โหมด `json_object` ใช้แทนไม่ได้ เพราะมัน
+   **บังคับให้มีคำว่า "JSON" ในข้อความ** ไม่งั้น 400 — prompt ของเราเป็นภาษาไทยล้วน
 
-## **ไม่ส่ง `max_tokens` เลย** — ต่างจากฝั่ง Anthropic ที่บังคับให้ส่ง
+## **ไม่ส่ง `max_tokens` เลย**
 
 เอกสารของ DashScope/QwenCloud สั่งตรงๆ ว่า *"Leave `max_tokens` unset when structured
 output is enabled ... can truncate the JSON string mid-output, producing invalid JSON"*
@@ -80,7 +79,7 @@ import urllib.request
 from typing import Any
 
 #: URL ฐานของ gateway พร้อม path เวอร์ชัน เช่น `http://localhost:11434/v1`
-#: **มีค่านี้ = ใช้ตัวนี้ ไม่มี = ใช้ Anthropic** (ดู `provider.py`)
+#: **ไม่มีค่าตั้งต้น** — ปลายทางที่เดาให้คือปลายทางที่ไม่มีใครเลือก
 BASE_URL_ENV = "CANE_LLM_BASE_URL"
 
 #: ชื่อโมเดลตามที่ gateway เรียก เช่น `qwen3:32b` · ไม่มีค่าตั้งต้นโดยเจตนา
