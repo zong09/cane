@@ -62,6 +62,28 @@ def bars(n: int = 30):
     ]
 
 
+def _slow_ramp(n: int):
+    """แท่งที่เหวี่ยงแรงช่วงต้นแล้วไต่ขึ้นเรียบๆ ช่วงท้าย
+
+    จุดเหวี่ยงที่ยืนยันได้จึงกระจุกอยู่ช่วงต้นของชุด ซึ่งเป็นรูปที่ทำให้หน้าต่างคงที่
+    ตัดมันทิ้ง — ตรงกันข้ามกับ `bars()` ที่เหวี่ยงสม่ำเสมอตลอดชุด
+    """
+    rows = []
+    for i in range(n):
+        mid = 100.0 + (i % 5) * 6.0 if i < 25 else 120.0 + (i - 25) * 0.2
+        rising = i % 2 == 0
+        body = 0.3 if rising else -0.3
+        rows.append((mid - body, mid + 1.0, mid - 1.0, mid + body))
+    return [
+        Bar(
+            open_ts=1_600_000_000_000 + i * DAY,
+            close_ts=1_600_000_000_000 + (i + 1) * DAY,
+            open=o, high=h, low=lo, close=c, volume=1.0,
+        )
+        for i, (o, h, lo, c) in enumerate(rows)
+    ]
+
+
 class FakeJudge:
     """`LlmClient` ปลอมที่นับการเรียก · ไม่ต่อเน็ต ไม่ต้องมีคีย์
 
@@ -164,6 +186,47 @@ def test_the_bar_numbers_the_llm_sees_are_the_ones_features_talks_about():
     assert f"แท่งที่ตัดสินคือ {feat.bar_index}" in text
 
 
+def test_a_pivot_older_than_the_context_window_still_appears_in_the_table():
+    """แท่งที่ feature อ้างถึงต้องอยู่ในตารางที่ LLM อ่านเสมอ แม้จะเก่ากว่าหน้าต่างปกติ
+
+    จุดเหวี่ยงคือก้น/ยอดที่ยืนยันแล้ว มันอยู่ห่างจากปลายเท่าไหร่ก็ได้ ไม่ได้อยู่ใกล้
+    ปลายเสมอ · ชุดข้อมูล 30 แท่งของเทสต์อื่นสั้นกว่า `CONTEXT_BARS` (40) จึงไม่มีทาง
+    เจอข้อนี้เลย — ต้องมีชุดที่ยาวกว่าถึงจะพิสูจน์ได้
+
+    ถ้าหน้าต่างคงที่ตัดจุดเหวี่ยงทิ้ง LLM จะเห็น `swing_lows` ชี้ไปที่แท่งที่ไม่มีอยู่
+    ในตารางที่มันอ่าน แล้ว `evidence_bars` ที่ตอบกลับมาจะอ้างถึงแท่งที่มันไม่เคยเห็น
+    """
+    series = _slow_ramp(120)
+    feat = features(series)
+    text = render_context(series, feat)
+
+    cited = [p.index for p in (*feat.swing_lows, *feat.swing_highs)]
+    for line in (feat.resistance, feat.support):
+        if line is not None:
+            cited.extend(line.points)
+    assert cited, "ชุดข้อมูลของเทสต์ต้องมีจุดเหวี่ยง"
+    assert min(cited) < len(series) - 40, "ต้องมีจุดที่เก่ากว่าหน้าต่างปกติ ไม่งั้นข้อนี้ว่าง"
+
+    for index in cited:
+        assert f"| {index} |" in text, f"แท่ง {index} ถูกอ้างถึงแต่ไม่อยู่ในตาราง"
+
+
+def test_an_invented_bar_index_is_refused_rather_than_cached_forever():
+    """ดัชนีที่โมเดลแต่งขึ้นผ่านทุกด่านอื่นได้หมด ถ้าไม่ตรวจขอบบน
+
+    แท่ง 999 ของชุดที่มี 30 แท่งจะถูกเขียนลง cache ถาวรแล้วชี้ไปที่ความว่างเปล่า
+    ตอนอ่านย้อนหลัง ซึ่งแย่กว่าการไม่มี evidence เลย
+    """
+    verdict = ConfluenceVerdict(
+        factor="HIGHER_LOW", side="long", present=True, evidence_bars=(999,)
+    )
+    validate(verdict, asked_factor="HIGHER_LOW", asked_side="long")  # ไม่บอกจำนวนแท่ง = ไม่ตรวจ
+    with pytest.raises(ValueError, match="ไม่มีอยู่"):
+        validate(
+            verdict, asked_factor="HIGHER_LOW", asked_side="long", bar_count=30
+        )
+
+
 def test_the_context_is_byte_identical_for_the_same_bars():
     """cache คีย์ด้วย `bar_close_ts` ถ้าเนื้อที่ส่งไปไม่นิ่ง คีย์ตรงแต่คำถามไม่ตรง"""
     series = bars()
@@ -223,6 +286,7 @@ def test_a_cached_verdict_keeps_every_field_not_just_the_yes_or_no(db):
         (lambda f, s: {**_good_reply(f, s), "side": "short"}, "bad_verdict"),
         (lambda f, s: {**_good_reply(f, s), "confidence": 1.4}, "bad_verdict"),
         (lambda f, s: {**_good_reply(f, s), "evidence_bars": []}, "bad_verdict"),
+        (lambda f, s: {**_good_reply(f, s), "evidence_bars": [999]}, "bad_verdict"),
     ],
     ids=[
         "missing_fields",
@@ -231,6 +295,7 @@ def test_a_cached_verdict_keeps_every_field_not_just_the_yes_or_no(db):
         "answered_a_different_side",
         "confidence_out_of_range",
         "present_without_evidence",
+        "cited_a_bar_that_does_not_exist",
     ],
 )
 def test_a_malformed_answer_falls_back_for_the_whole_side_and_says_why(
@@ -244,6 +309,10 @@ def test_a_malformed_answer_falls_back_for_the_whole_side_and_says_why(
     `answered_a_different_factor` คือเคสที่อันตรายที่สุดของทั้งชุด: คำตอบถูกต้องทุก
     ประการยกเว้นว่ามันตอบคำถามอื่น ถ้าไม่มีด่านนี้มันจะถูกเก็บลงช่องของ factor ที่ถาม
     แล้วดูสมเหตุสมผลตลอดไป
+
+    `cited_a_bar_that_does_not_exist` เดินผ่าน `judge_side` จริงเพื่อพิสูจน์ว่า
+    `bar_count` ถูกส่งต่อไปถึง `validate()` — การทดสอบ `validate()` ตรงๆ อย่างเดียว
+    ผ่านได้แม้ `judge_side` จะลืมส่งค่านั้นไป
     """
     result = _run(db, FakeJudge(broken))
 
