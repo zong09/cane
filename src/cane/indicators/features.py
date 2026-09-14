@@ -177,21 +177,44 @@ def wilder_atr(bars: Sequence[Bar], length: int = ATR_PERIOD) -> float:
     คืน `float` ตัวเดียวเพราะไม่มีใครต้องการเส้น ATR ทั้งเส้น — ถ้าใบ 09 ต้องการ
     ค่อยแยกตัวที่คืนทั้งเส้นออกมาตอนนั้น ไม่ใช่เดาไว้ก่อน
     """
-    if length < 1:
-        raise ValueError(f"คาบของ ATR ต้อง >= 1 ไม่ใช่ {length}")
     if len(bars) < length:
         raise ValueError(
             f"ATR คาบ {length} ต้องมีอย่างน้อย {length} แท่ง มีมา {len(bars)}"
         )
+    last = wilder_atr_series(bars, length)[-1]
+    assert last is not None  # ยาวพอแล้วตามด่านข้างบน
+    return last
+
+
+def wilder_atr_series(bars: Sequence[Bar], length: int = ATR_PERIOD) -> list[float | None]:
+    """ATR **ทุกแท่ง** · `None` ช่วงอุ่นเครื่อง = `na` ของ Pine ไม่ใช่ "ยังไม่มีข้อมูล"
+
+    ใบ 05 เขียนไว้ว่า "ถ้าใบ 09 ต้องการค่อยแยกตัวที่คืนทั้งเส้นออกมาตอนนั้น" — ใบ 09
+    ต้องการจริง เพราะ CDC ATR Trailing Stop เป็นสูตร recursive ที่ต้องเดินทีละแท่ง
+    · `wilder_atr()` กลายเป็นตัวห่อบางๆ ของฟังก์ชันนี้ **สูตรจึงยังมีชุดเดียว**
+
+    `length - 1` แท่งแรกเป็น `None` เพราะ RMA ต้องมี TR ครบ `length` ตัวก่อนจะ seed
+    ได้ · Pine ก็คืน `na` ตรงนั้นเหมือนกัน แล้ว `SL = factor * na` เป็น `na` ทำให้
+    `Trail` ของแท่งเหล่านั้นเป็น `na` ตามไปด้วย — ผู้พอร์ตต้องรักษาข้อนี้ ไม่ใช่
+    เติมศูนย์ให้เต็มเส้น
+    """
+    if length < 1:
+        raise ValueError(f"คาบของ ATR ต้อง >= 1 ไม่ใช่ {length}")
+
+    out: list[float | None] = [None] * len(bars)
+    if len(bars) < length:
+        return out
 
     trs = [
         true_range(bar, bars[i - 1].close if i else None)
         for i, bar in enumerate(bars)
     ]
     atr = sum(trs[:length]) / length
-    for tr in trs[length:]:
-        atr = (atr * (length - 1) + tr) / length
-    return atr
+    out[length - 1] = atr
+    for i in range(length, len(trs)):
+        atr = (atr * (length - 1) + trs[i]) / length
+        out[i] = atr
+    return out
 
 
 def pivot_lows(

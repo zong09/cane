@@ -23,6 +23,7 @@ from cane.indicators.features import (
     pivot_lows,
     true_range,
     wilder_atr,
+    wilder_atr_series,
 )
 
 __all__ = [
@@ -47,5 +48,6 @@ __all__ = [
     "pivot_lows",
     "true_range",
     "wilder_atr",
+    "wilder_atr_series",
     "zone_of",
 ]
