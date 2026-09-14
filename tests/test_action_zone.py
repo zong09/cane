@@ -3,15 +3,16 @@
 **ไฟล์นี้ไม่แตะฐานข้อมูลและไม่ต่อเน็ต** ต้องรันได้ใต้ `-m "not db"` เสมอ
 (ธรรมเนียมเดียวกับ `test_ohlcv.py` และ `test_decision_record.py`)
 
-golden test เทียบ TradingView คือเกณฑ์ปิดใบ แต่มันตรวจได้แค่ *ตรรกะของโซน* กับ
-*การจัดแถวข้อมูล* — สองอย่างที่ใบเรียกว่าจุดตายมันตรวจไม่ได้เลย:
+ไฟล์นี้เคยเขียนว่า golden test ตรวจสองอย่างนี้ไม่ได้ — **ไฟล์จริงพิสูจน์ว่าผิดทั้งคู่**
+(ดูบล็อก golden test ท้ายไฟล์) จดไว้เพราะข้อสันนิษฐานทั้งสองเคยเป็นเหตุผลที่ไม่ยอม
+export ไฟล์มาตรวจ:
 
-- **การ seed EMA** ค่าที่ TradingView export ออกมาถูก seed จากประวัติที่ยาวกว่าไฟล์
-  มาก พอตัด warm-up 130 แท่งแล้วอิทธิพลของ seed เหลือราว `(25/27)**130` ≈ 4e-5
-  มองไม่เห็นในระดับสี
-- **`state` / `long_signal` / `short_signal`** สคริปต์ต้นทางไม่ได้ `plot()` ค่าพวกนี้
-  (`bullish`/`bearish`/`buy`/`sell`) จึง **ไม่มีอยู่ในไฟล์ export** ต่อให้ได้ CSV มา
-  ก็เทียบไม่ได้อยู่ดี
+- **การ seed EMA** เดาไว้ว่าตัด warm-up 130 แท่งแล้วอิทธิพลของ seed เหลือ ≈ 4e-5
+  มองไม่เห็น · จริงคือไฟล์ **เว้นช่องว่างไว้ 11 กับ 25 แท่ง** ตรงกับ `length - 1`
+  พอดี ซึ่งชี้ขาดว่า `ta.ema` seed ด้วย SMA ไม่ใช่ค่าแรกของ source
+- **`long_signal` / `short_signal`** เดาไว้ว่าสคริปต์ไม่ได้ `plot()` ค่าพวกนี้ · จริง
+  คือมีคอลัมน์ `Buy Signal` กับ `Sell Signal` อยู่ในไฟล์ · ที่ไม่มีจริงคือ `state`
+  กับสีแท่ง (`barcolor` ไม่ถูก export) ซึ่ง oracle ข้างล่างยังเป็นตัวตรวจอยู่
 
 ตารางที่ `test_full_sequence_matches_oracle` ใช้ ถูกสร้างจาก oracle ที่เขียนขึ้นใหม่
 จากไฟล์ Pine โดยตรงคนละรูปแบบกับ `action_zone.py` (series ทั้งเส้น + `barssince`
@@ -20,12 +21,16 @@ golden test เทียบ TradingView คือเกณฑ์ปิดใบ 
 
 from __future__ import annotations
 
+import csv
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 
 from cane.data import Bar
 from cane.indicators import action_zones, pine_ema, zone_of
+from cane.indicators.action_zone import FAST_PERIOD, SLOW_PERIOD
 
 DAY = 86_400_000
 
@@ -276,27 +281,192 @@ def test_default_periods_run_on_a_realistic_length():
     assert {z.state for z in got} <= {"BULLISH", "BEARISH", "UNSET"}
 
 
-# ── golden test — ประตูปิดใบ ยังไม่มีไฟล์ ────────────────────────────────────
+# ── golden test — เทียบกับไฟล์ export จริงจาก TradingView ─────────────────────
 
 GOLDEN_DIR = Path(__file__).parent / "fixtures" / "action_zone"
 
+#: ช่วงหัวชุดข้อมูลที่ตัดทิ้งตอนเทียบ (`5 × slow`) — **ไม่ใช่** `MIN_CLOSED_BARS`
+#: ดูหัวไฟล์ของ `action_zone.py` ว่าทำไมสองเลขนี้คนละเรื่องกัน
+WARMUP_BARS = 130
 
-def test_golden_fixture_is_wired_up_once_it_exists():
-    """ตัวสะดุด ไม่ใช่ golden test — golden test จริงยังเขียนไม่ได้
 
-    เกณฑ์ปิดใบ #04 คือเทียบโซนทีละแท่งกับไฟล์ export จาก TradingView ≥500 แท่ง
-    ตรง 100% หลังตัด warm-up 130 แท่ง (spec/02 §เกณฑ์ยืนยันความถูกต้อง กับ 103) ตอนนี้ **ยังไม่มีไฟล์**
-    (ดู `fixtures/action_zone/README.md` ว่าต้อง export อะไรมา)
+class GoldenRow(NamedTuple):
+    """หนึ่งแถวของไฟล์ export — `None` คือช่องว่างจริงในไฟล์ (`na` ของ Pine)"""
 
-    loader ยังไม่เขียนโดยเจตนา — ชื่อคอลัมน์กับรูปแบบเวลาของไฟล์จริงต้องอ่านจากไฟล์
-    ไม่ใช่เดา · เทสต์นี้ทำให้ "ไฟล์มาแล้วแต่ไม่มีใครต่อสาย" กลายเป็นเทสต์แดง
-    ไม่ใช่ความเงียบ
+    bar: Bar
+    fast_ema: float | None
+    slow_ema: float | None
+    buy: bool
+    sell: bool
+
+
+def load_golden(path: Path) -> list[GoldenRow]:
+    """อ่านไฟล์ export ของ TradingView — ดู `fixtures/action_zone/README.md`
+
+    ใช้ `csv.reader` ไม่ใช่ `DictReader` เพราะไฟล์จริง**มีชื่อคอลัมน์ซ้ำ**
+    (`Buy/Sell Ribbon` โผล่สองครั้ง จาก `plot()` สองเส้นที่ตั้งชื่อเหมือนกัน) และ
+    `DictReader` จะยุบคู่ที่ซ้ำให้เหลือตัวท้ายเงียบๆ · จับคู่ชื่อ→ดัชนีเองโดยเอา
+    **ตัวแรก** ที่เจอ แล้วอ่านด้วยดัชนี ชื่อซ้ำจึงไม่ทำให้อ่านผิดคอลัมน์
+
+    เวลาในไฟล์เป็น `YYYY-MM-DD` ของแท่ง **เปิด** ตามธรรมเนียมของ TradingView ·
+    `Bar.close_ts` จึงเป็นเวลาเปิด + หนึ่งวัน ซึ่งคือสิ่งที่ `closed_as_of()` คืน
+
+    `Buy Signal` / `Sell Signal` เป็น `0`/`1` **ไม่ใช่ช่องว่าง** ต่างจากเส้น EMA ที่
+    ช่องว่างคือ `na` จริงๆ — `flag()` จึงยืนยันรูปแบบทุกแถวแทนที่จะแปลงเงียบๆ
+    (`Buy more signals` / `Sell more signals` ว่างทั้งคอลัมน์ โหมดนั้นปิดอยู่)
     """
-    found = sorted(GOLDEN_DIR.glob("*.csv")) if GOLDEN_DIR.is_dir() else []
+    with path.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.reader(handle))
+
+    header, body = rows[0], rows[1:]
+    at: dict[str, int] = {}
+    for index, name in enumerate(header):
+        at.setdefault(name, index)
+
+    def number(row: list[str], name: str) -> float | None:
+        text = row[at[name]].strip()
+        return float(text) if text else None
+
+    def flag(row: list[str], name: str) -> bool:
+        text = row[at[name]].strip()
+        assert text in {"0", "1"}, f"{name} มีค่า {text!r} ที่ไม่ใช่ 0/1"
+        return text == "1"
+
+    out: list[GoldenRow] = []
+    for row in body:
+        opened = datetime.strptime(row[at["time"]], "%Y-%m-%d").replace(
+            tzinfo=timezone.utc
+        )
+        open_ts = int(opened.timestamp() * 1000)
+        out.append(
+            GoldenRow(
+                bar=Bar(
+                    open_ts=open_ts,
+                    close_ts=open_ts + DAY,
+                    open=float(row[at["open"]]),
+                    high=float(row[at["high"]]),
+                    low=float(row[at["low"]]),
+                    close=float(row[at["close"]]),
+                    volume=float(row[at["Volume"]]),
+                ),
+                fast_ema=number(row, "Fast EMA"),
+                slow_ema=number(row, "Slow EMA"),
+                buy=flag(row, "Buy Signal"),
+                sell=flag(row, "Sell Signal"),
+            )
+        )
+    return out
+
+
+@pytest.fixture(scope="module")
+def golden() -> list[GoldenRow]:
+    found = sorted(GOLDEN_DIR.glob("*.csv"))
     if not found:
         pytest.skip("ยังไม่มีไฟล์ export จาก TradingView — ใบ #04 ปิดไม่ได้")
+    assert len(found) == 1, f"มีไฟล์ golden มากกว่าหนึ่ง: {[p.name for p in found]}"
+    return load_golden(found[0])
 
-    raise AssertionError(
-        f"มีไฟล์ golden แล้ว ({', '.join(p.name for p in found)}) "
-        "แต่ยังไม่มี loader — ต้องเขียน golden test ตัวจริงและตัด warm-up 130 แท่ง"
-    )
+
+def test_golden_file_is_long_enough_to_close_the_ticket(golden):
+    """เกณฑ์ปิดใบคือ ≥500 แท่ง *หลังตัด warm-up* — ต้องวัดก่อนจะเชื่อข้อถัดไป
+
+    ถ้าวันหนึ่งมีคน export ไฟล์สั้นมาทับ เทสต์โซนข้างล่างจะยัง "ผ่าน" ทั้งที่
+    พิสูจน์อะไรไม่ได้แล้ว ข้อนี้คือตัวที่ดังแทน
+    """
+    assert len(golden) - WARMUP_BARS >= 500
+
+
+def test_every_zone_matches_tradingview_after_warmup(golden):
+    """โซนของเราต้องตรงกับ TradingView **ทุกแท่ง** หลังตัด warm-up 130 แท่ง
+
+    เทียบกับ `zone_of(close, Fast EMA, Slow EMA)` ของ *ค่าจากไฟล์* ไม่ใช่ของเรา ·
+    `barcolor()` ไม่ถูก export ออกมา แต่โซนเป็นฟังก์ชันบริสุทธิ์ของสามค่านั้นเมื่อ
+    `smooth = 1` (ตรึงไว้ที่ `test_zone_is_reproducible_from_the_two_ema_lines_alone`)
+    สิ่งที่ข้อนี้ตรวจจริงๆ จึงคือ **EMA ของเราพาโซนไปทางเดียวกับของเขาไหม**
+    """
+    ours = action_zones([row.bar for row in golden])
+
+    mismatched = [
+        (index, zone_of(row.bar.close, row.fast_ema, row.slow_ema), ours[index].zone)
+        for index, row in enumerate(golden)
+        if index >= WARMUP_BARS and row.fast_ema is not None and row.slow_ema is not None
+    ]
+    mismatched = [item for item in mismatched if item[1] != item[2]]
+
+    assert not mismatched, f"โซนไม่ตรง {len(mismatched)} แท่ง: {mismatched[:5]}"
+
+
+def test_buy_and_sell_signals_match_tradingview(golden):
+    """`Buy Signal` / `Sell Signal` ในไฟล์คือ `long_signal` / `short_signal` ของเรา
+
+    หัวไฟล์นี้เคยเขียนว่าสัญญาณ "ไม่มีอยู่ในไฟล์ export" — **ผิด** · สคริปต์ต้นทาง
+    `plot()` มันไว้จริง ไฟล์จึงตรวจได้ทั้งเงื่อนไขโซนและกฎ `bearish[1]` ที่เป็น
+    จุดตายข้อที่ 1 ของใบนี้ ซึ่งเป็นส่วนที่ oracle ในไฟล์นี้ตรวจให้ไม่ได้
+
+    เทียบเป็น **เซ็ตของดัชนีทั้งไฟล์ ไม่ตัด warm-up** โดยเจตนา — `barssince` ที่ยัง
+    เป็น `na` มีผลเฉพาะช่วงหัว การตัดหัวทิ้งจะทำให้ข้อที่อยากตรวจที่สุดหลุดไป
+    """
+    ours = action_zones([row.bar for row in golden])
+
+    assert {i for i, z in enumerate(ours) if z.long_signal} == {
+        i for i, row in enumerate(golden) if row.buy
+    }
+    assert {i for i, z in enumerate(ours) if z.short_signal} == {
+        i for i, row in enumerate(golden) if row.sell
+    }
+
+
+def test_signals_are_a_strict_subset_of_the_zone_conditions(golden):
+    """กันการ "ตรงเพราะบังเอิญ" ของข้อบน — ถ้า `long_signal` กลายเป็น `longcond`
+
+    ในไฟล์นี้ `longcond` เกิด 117 ครั้งแต่ `Buy Signal` เกิด 38 ครั้ง · ถ้าใครทำกฎ
+    `bearish[1]` หายไป ข้อบนจะดังอยู่แล้ว ข้อนี้บอกว่ามันดัง**เพราะอะไร**
+    """
+    ours = action_zones([row.bar for row in golden])
+
+    assert sum(z.long_signal for z in ours) < sum(z.longcond for z in ours)
+    assert sum(z.short_signal for z in ours) < sum(z.shortcond for z in ours)
+    assert all(z.longcond for z in ours if z.long_signal)
+    assert all(z.shortcond for z in ours if z.short_signal)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "`pine_ema()` seed ด้วยค่าแรกของ source ไฟล์ชี้ว่า `ta.ema` seed ด้วย SMA "
+        "ของ `length` แท่งแรก — Fast EMA ต่าง 88 แท่ง (ถึงแท่งที่ 98) Slow EMA "
+        "ต่าง 253 แท่ง (ถึงแท่งที่ 277) ที่เกณฑ์ 1e-6 · แก้ใน commit ถัดไป "
+        "เทสต์นี้มาก่อนเพื่อให้เห็นว่าตัวเลขพวกนี้วัดมา ไม่ใช่เดา"
+    ),
+)
+def test_both_ema_lines_match_tradingview(golden):
+    """เส้น EMA ของเราต้องตรงกับไฟล์ **ทุกแท่งที่ไฟล์มีค่า** ไม่ใช่แค่หลัง warm-up
+
+    นี่คือข้อที่ชี้ขาดเรื่องการ seed ซึ่งหัวไฟล์ของ `action_zone.py` ค้างไว้ ·
+    เทียบตรงๆ กับ `pine_ema()` ไม่ผ่าน `action_zones()` เพื่อให้ที่เกิดเหตุชัด
+
+    เกณฑ์ `1e-6` เทียบกับราคา BTC หลักหมื่น = ราว 1e-10 เชิงสัดส่วน — แน่นพอที่
+    การ seed ต่างกันจะหลุด แต่ไม่แน่นจนไปดังเพราะการปัดเศษของ CSV
+    """
+    closes = [row.bar.close for row in golden]
+
+    for name, period, theirs in (
+        ("Fast EMA", FAST_PERIOD, [row.fast_ema for row in golden]),
+        ("Slow EMA", SLOW_PERIOD, [row.slow_ema for row in golden]),
+    ):
+        ours = pine_ema(closes, period)
+        off = [
+            i
+            for i, (mine, their) in enumerate(zip(ours, theirs, strict=True))
+            if their is not None and (mine is None or abs(mine - their) > 1e-6)
+        ]
+        assert not off, f"{name} ต่างจากไฟล์ {len(off)} แท่ง แท่งแรกคือ {off[:3]}"
+
+        blank = [i for i, their in enumerate(theirs) if their is None]
+        assert blank == list(range(period - 1)), (
+            f"{name} ในไฟล์ว่าง {len(blank)} แท่ง ไม่ใช่ {period - 1} "
+            "— ข้อสันนิษฐานเรื่องความยาวช่วงอุ่นเครื่องผิด"
+        )
+        assert [i for i, mine in enumerate(ours) if mine is None] == blank, (
+            f"{name}: ช่วงที่เราคืน `None` ไม่ตรงกับช่องว่างในไฟล์"
+        )
