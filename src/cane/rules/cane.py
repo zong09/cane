@@ -51,7 +51,7 @@ OPPOSITE = {"long": "short", "short": "long"}
 class BarPlan:
     """แท่งนี้ต้องทำอะไร · `close_side` ถูกประเมินก่อน `open_side` เสมอ (ดูหัวไฟล์)
 
-    `needs_judge` เป็นเท็จเมื่อไม่มีขาเปิด — spec/04:105 บอกว่า "ขาปิดของ flip ไม่เรียก
+    `needs_judge` เป็นเท็จเมื่อไม่มีขาเปิด — spec/04 §เมื่อ LLM ใช้การไม่ได้ บอกว่า "ขาปิดของ flip ไม่เรียก
     Judge เลย การปิดไม่ต้องการขนาดไม้ ปิดคือปิดทั้งหมดเสมอ" · ความล้มเหลวของ LLM
     จึงไม่มีวันขวางการปิดสถานะ ซึ่งเป็นคุณสมบัติที่ต้องอ่านออกจากตรงนี้ ไม่ใช่ต้อง
     ไปไล่ดูว่าใครเรียก Judge บ้าง
@@ -85,7 +85,7 @@ class BarPlan:
                 f"ได้ open_side={self.open_side!r} skip_reason={self.skip_reason!r}"
             )
         if self.needs_judge and self.open_side is None:
-            raise ValueError("ไม่มีขาเปิดแล้วเรียก Judge ไปทำไม (spec/04:105)")
+            raise ValueError("ไม่มีขาเปิดแล้วเรียก Judge ไปทำไม (spec/04 §เมื่อ LLM ใช้การไม่ได้)")
 
 
 def decide(

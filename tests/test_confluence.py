@@ -147,7 +147,7 @@ def _rows(db) -> int:
 
 
 def test_the_two_sides_are_separate_prompt_sets_not_one_with_words_swapped():
-    """spec/04:78-82 · `prompts/long/` กับ `prompts/short/` เป็นคนละไฟล์
+    """spec/04 §prompt แยกสองชุด · `prompts/long/` กับ `prompts/short/` เป็นคนละไฟล์
 
     ถ้าเป็น template เดียวที่สลับคำ การแก้ถ้อยคำฝั่ง short จะล้าง cache ฝั่ง long
     ไปด้วยทุกครั้ง — `prompt_hash` ที่ต่างกันโดยธรรมชาติคือสิ่งที่กันข้อนั้น
@@ -161,7 +161,7 @@ def test_swapping_the_model_invalidates_the_cache_by_itself():
     """สเปกไม่ได้สั่งข้อนี้ · การเปลี่ยนโมเดลมีผลต่อคำตอบไม่น้อยกว่าการแก้ถ้อยคำ
 
     ถ้า `model_id` ไม่อยู่ใน hash การสลับโมเดลจะอ่านคำตัดสินของโมเดลเก่ามาใช้ต่อ
-    เงียบๆ ซึ่งเป็นการ "หลอก" ข้อเดียวกับที่ spec/04:71 ตั้งใจกัน
+    เงียบๆ ซึ่งเป็นการ "หลอก" ข้อเดียวกับที่ spec/04 §ข้อบังคับเรื่องความคงเส้นคงวา ตั้งใจกัน
     """
     assert prompt_hash("long", "model-a") != prompt_hash("long", "model-b")
 
@@ -261,7 +261,7 @@ def test_a_cached_verdict_keeps_every_field_not_just_the_yes_or_no(db):
     """`confidence` กับ `rationale` ต้องรอดข้ามรอบด้วย — มันคือของที่คนอ่านย้อนหลัง
 
     ถ้า cache เก็บแต่ `present` บันทึกของแท่งที่อ่านจาก cache จะอธิบายตัวเองไม่ได้
-    ทั้งที่ตอนตัดสินจริงมีเหตุผลครบ (spec/04:58)
+    ทั้งที่ตอนตัดสินจริงมีเหตุผลครบ (spec/04 §สัญญาผลลัพธ์ (contract))
     """
     client = FakeJudge()
     _run(db, client)
@@ -392,7 +392,7 @@ def test_long_and_short_on_the_same_bar_are_six_separate_rows(db):
     ตรวจ **ผลลัพธ์** ว่าสองฝั่งบนแท่งเดียวกันได้หกแถวแยกกันและถูกถามหกครั้ง ไม่ได้
     ตรวจว่ากลไกไหนเป็นตัวแยก · ตัวที่แยกจริงคือชื่อ factor ที่ไม่ซ้ำกันเลยสักตัว
     (ดู `test_the_factor_sets_of_the_two_sides_never_overlap`) ส่วน `side` ในคีย์
-    อยู่ตรงนั้นเพราะ PK คู่กับ CHECK ที่ผูก factor↔side ตาม spec/04:75
+    อยู่ตรงนั้นเพราะ PK คู่กับ CHECK ที่ผูก factor↔side ตาม spec/04 §ข้อบังคับเรื่องความคงเส้นคงวา
 
     ข้อนี้จะดังไม่ว่ากลไกไหนพัง ซึ่งเป็นเหตุผลที่มันตรวจผลลัพธ์ไม่ใช่ตรวจกลไก —
     ถ้าไม้ฝั่งหนึ่งถูกคิดขนาดจากปัจจัยของอีกฝั่ง บันทึกจะดูปกติทุกประการ
@@ -412,7 +412,7 @@ def test_long_and_short_on_the_same_bar_are_six_separate_rows(db):
 def test_the_factor_sets_of_the_two_sides_never_overlap():
     """ตัวที่กัน "คำตัดสินสองฝั่งทับกัน" จริงคือข้อนี้ ไม่ใช่ `side` ในคีย์
 
-    spec/04:75 บอกว่า `side` อยู่ในคีย์เพราะ PK+CHECK **ไม่ใช่** เพราะสองฝั่งจะทับกัน ·
+    spec/04 §ข้อบังคับเรื่องความคงเส้นคงวา บอกว่า `side` อยู่ในคีย์เพราะ PK+CHECK **ไม่ใช่** เพราะสองฝั่งจะทับกัน ·
     ทับกันไม่ได้อยู่แล้ว — ชื่อ factor ไม่ซ้ำกันเลยสักตัว คำถามของฝั่ง long
     จึงชนแถวของฝั่ง short ไม่ได้อยู่แล้ว **พิสูจน์ด้วยการกลายพันธุ์**: ถอด `side`
     ออกจาก `WHERE` ของ `cache._match()` แล้วเทสต์ทั้งชุดยังเขียว
@@ -429,7 +429,7 @@ def test_the_factor_sets_of_the_two_sides_never_overlap():
 
 @pytest.mark.db
 def test_the_same_pair_on_two_markets_does_not_share_one_verdict(db):
-    """`market` อยู่ในคีย์ตาม spec/04:74 เพราะ ADR 26 ทำให้มันเป็นมิติของ symbol
+    """`market` อยู่ในคีย์ตาม spec/04 §ข้อบังคับเรื่องความคงเส้นคงวา เพราะ ADR 26 ทำให้มันเป็นมิติของ symbol
 
     ตอนนี้ `BTC/USDT` บน spot กับบน perp เป็นคนละแท่งจริง (`bars` มี market ใน PK)
     ถ้าคีย์ไม่มี market ไม้ spot จะได้คำตัดสินที่คำนวณจากแท่ง perp มาใช้เงียบๆ
@@ -459,7 +459,7 @@ def test_the_long_and_short_spellings_the_ticket_disagrees_on(db):
 
 @pytest.mark.db
 def test_the_table_refuses_a_present_verdict_with_no_evidence_on_its_own(db):
-    """เขียนผ่าน repo ตรงๆ ข้าม `validate()` — ฐานต้องยังปฏิเสธ (spec/04:55)"""
+    """เขียนผ่าน repo ตรงๆ ข้าม `validate()` — ฐานต้องยังปฏิเสธ (spec/04 §สัญญาผลลัพธ์ (contract))"""
     from sqlalchemy.exc import IntegrityError
 
     key = verdict_cache_repo.CacheKey(

@@ -10,7 +10,7 @@
 
 ## เทสต์กระจกเงา — ข้อที่พิสูจน์ว่าฝั่ง short เป็นภาพสะท้อนจริง
 
-spec/04:24 เขียนว่าฝั่ง short "คือภาพสะท้อนของมันทีละข้อ ไม่ใช่ชุดกฎใหม่" ข้อความนั้น
+spec/04 §หก factor — สามต่อฝั่ง เขียนว่าฝั่ง short "คือภาพสะท้อนของมันทีละข้อ ไม่ใช่ชุดกฎใหม่" ข้อความนั้น
 ตรวจได้ก็ต่อเมื่อมีเทสต์ที่พลิกชุดข้อมูลทั้งชุดแล้วยืนยันว่าทุก feature พลิกตาม —
 `test_every_feature_mirrors_when_the_series_flips` คือข้อนั้น ถ้าวันหนึ่งมีใครเพิ่ม
 feature ฝั่งเดียวเข้ามา เทสต์นี้จะเป็นตัวที่ดัง ไม่ใช่ code review
@@ -449,7 +449,7 @@ def test_the_floor_is_fitted_through_the_confirmed_lows_and_is_a_separate_line()
 
 
 def test_no_feature_is_a_boolean_because_the_verdict_belongs_to_the_llm():
-    """spec/04:5-11 ยกคำว่า "สำเร็จ / ขนาดใหญ่ / ชัดเจน" ให้ LLM ตัดสิน
+    """spec/04 §ทำไมต้องใช้ LLM ยกคำว่า "สำเร็จ / ขนาดใหญ่ / ชัดเจน" ให้ LLM ตัดสิน
 
     `bool` ที่โผล่มาใน `Features` คือ threshold ที่ถูกย้ายกลับมาอยู่ในโค้ด — เทสต์นี้
     คือด่านที่จับมัน ไม่ใช่การอ่านโค้ดตอน review
@@ -459,7 +459,7 @@ def test_no_feature_is_a_boolean_because_the_verdict_belongs_to_the_llm():
 
 
 def test_every_feature_mirrors_when_the_series_flips():
-    """พลิกชุดข้อมูลทั้งชุดรอบศูนย์ → ทุก feature ต้องพลิกตาม (spec/04:24)
+    """พลิกชุดข้อมูลทั้งชุดรอบศูนย์ → ทุก feature ต้องพลิกตาม (spec/04 §หก factor — สามต่อฝั่ง)
 
     ATR กับขนาด body ไม่ขึ้นกับทิศ จึงต้อง **เท่าเดิม** ส่วนยอด/ก้น, สีของแท่ง และ
     ทิศของ gap ต้องสลับข้างกันหมด · ข้อนี้คือหลักฐานว่าฝั่ง short เป็นภาพสะท้อนจริง
