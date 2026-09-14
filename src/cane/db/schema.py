@@ -262,7 +262,7 @@ config_symbols = Table(
     CheckConstraint(
         "market <> 'spot' OR NOT allow_short", name="ck_config_symbols_spot_no_short"
     ),
-    # `leverage = 1` ไม่ใช่ NULL เพราะสูตร `notional = margin × leverage` (spec/05:16)
+    # `leverage = 1` ไม่ใช่ NULL เพราะสูตร `notional = margin × leverage` (spec/05 §สูตร)
     # ต้องเดินเส้นทางเดียวทั้งสองตลาด — ตัวคูณที่เป็นหนึ่งทำให้ notional = margin เอง
     CheckConstraint(
         "market <> 'spot' OR leverage = 1", name="ck_config_symbols_spot_no_leverage"
@@ -491,8 +491,8 @@ decisions = Table(
     #: ตอบว่า "input จริงหรือเปล่า" · ไม่มีค่า `base_only` เพราะเส้นทาง fallback รันสูตร
     #: confluence ตัวเดิมด้วย `factors_present = 0`
     Column("size_rule", Text),
-    #: ก่อนเพดาน / หลังเพดาน (spec/05:16-17) · `capped` แยก "ไม้เล็กเพราะปัจจัยน้อย"
-    #: ออกจาก "ไม้เล็กเพราะชนเพดาน" (spec/05:68)
+    #: ก่อนเพดาน / หลังเพดาน (spec/05 §สูตร) · `capped` แยก "ไม้เล็กเพราะปัจจัยน้อย"
+    #: ออกจาก "ไม้เล็กเพราะชนเพดาน" (spec/05 §เพดานทับ)
     Column("size_pct_formula", PCT),
     Column("size_pct_final", PCT),
     Column("capped", Boolean),
@@ -608,7 +608,7 @@ decision_verdicts = Table(
     #: ตัดสินเฉพาะ factor ของฝั่งที่กำลังจะเข้า ไม่มีการหักลบข้ามฝั่ง (spec/04:26)
     Column("side", SIDE_T, nullable=False),
     Column("present", Boolean, nullable=False),
-    #: ใช้สำหรับให้คนอ่านย้อนหลังเท่านั้น **ห้ามผูกกับขนาดไม้** (decisions #12, spec/05:52)
+    #: ใช้สำหรับให้คนอ่านย้อนหลังเท่านั้น **ห้ามผูกกับขนาดไม้** (decisions #12, spec/05 §`base_pct` ต้องเป็นค่าคงที่)
     Column("confidence", PCT),
     Column("evidence_bars", postgresql.ARRAY(BigInteger)),
     Column("rationale", Text),

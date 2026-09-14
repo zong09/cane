@@ -1060,7 +1060,7 @@ def test_a_twenty_bar_run_reads_back_as_a_complete_sequence(
     )
     assert [len(r.risk_checks) for r in spot if r.risk_checks] == [2, 2]
 
-    # ชนเพดานแยกจากปัจจัยน้อยได้ (spec/05:68)
+    # ชนเพดานแยกจากปัจจัยน้อยได้ (spec/05 §เพดานทับ)
     capped = [r for r in perp if r.capped]
     assert len(capped) == 1
     assert (capped[0].size_pct_formula, capped[0].size_pct_final) == (65.0, 50.0)
