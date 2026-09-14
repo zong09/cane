@@ -161,7 +161,7 @@ def test_swapping_the_model_invalidates_the_cache_by_itself():
     """สเปกไม่ได้สั่งข้อนี้ · การเปลี่ยนโมเดลมีผลต่อคำตอบไม่น้อยกว่าการแก้ถ้อยคำ
 
     ถ้า `model_id` ไม่อยู่ใน hash การสลับโมเดลจะอ่านคำตัดสินของโมเดลเก่ามาใช้ต่อ
-    เงียบๆ ซึ่งเป็นการ "หลอก" ข้อเดียวกับที่ spec/04:60 ตั้งใจกัน
+    เงียบๆ ซึ่งเป็นการ "หลอก" ข้อเดียวกับที่ spec/04:71 ตั้งใจกัน
     """
     assert prompt_hash("long", "model-a") != prompt_hash("long", "model-b")
 
@@ -387,10 +387,15 @@ def test_one_bad_factor_takes_the_whole_side_down_not_just_itself(db):
 
 @pytest.mark.db
 def test_long_and_short_on_the_same_bar_are_six_separate_rows(db):
-    """เกณฑ์ข้อ 3 · spec/04:72 — แท่งเดียวกันเป็นได้ทั้งจุดปิด long และจุดเปิด short
+    """เกณฑ์ข้อ 3 · แท่งเดียวกันเป็นได้ทั้งจุดปิด long และจุดเปิด short
 
-    ถ้า `side` ไม่อยู่ในคีย์ คำตัดสินของสองฝั่งจะทับกันเงียบๆ แล้วไม้ฝั่งหนึ่งจะถูก
-    คิดขนาดจากปัจจัยของอีกฝั่ง โดยที่บันทึกดูปกติทุกประการ
+    ตรวจ **ผลลัพธ์** ว่าสองฝั่งบนแท่งเดียวกันได้หกแถวแยกกันและถูกถามหกครั้ง ไม่ได้
+    ตรวจว่ากลไกไหนเป็นตัวแยก · ตัวที่แยกจริงคือชื่อ factor ที่ไม่ซ้ำกันเลยสักตัว
+    (ดู `test_the_factor_sets_of_the_two_sides_never_overlap`) ส่วน `side` ในคีย์
+    อยู่ตรงนั้นเพราะ PK คู่กับ CHECK ที่ผูก factor↔side ตาม spec/04:75
+
+    ข้อนี้จะดังไม่ว่ากลไกไหนพัง ซึ่งเป็นเหตุผลที่มันตรวจผลลัพธ์ไม่ใช่ตรวจกลไก —
+    ถ้าไม้ฝั่งหนึ่งถูกคิดขนาดจากปัจจัยของอีกฝั่ง บันทึกจะดูปกติทุกประการ
     """
     client = FakeJudge()
     long_side = _run(db, client, "long")
@@ -407,13 +412,13 @@ def test_long_and_short_on_the_same_bar_are_six_separate_rows(db):
 def test_the_factor_sets_of_the_two_sides_never_overlap():
     """ตัวที่กัน "คำตัดสินสองฝั่งทับกัน" จริงคือข้อนี้ ไม่ใช่ `side` ในคีย์
 
-    spec/04:72 ให้เหตุผลว่า `side` ต้องอยู่ในคีย์เพราะไม่งั้นสองฝั่งจะทับกัน ·
-    เหตุผลนั้นไม่จริงในรูปปัจจุบัน — ชื่อ factor ไม่ซ้ำกันเลยสักตัว คำถามของฝั่ง long
+    spec/04:75 บอกว่า `side` อยู่ในคีย์เพราะ PK+CHECK **ไม่ใช่** เพราะสองฝั่งจะทับกัน ·
+    ทับกันไม่ได้อยู่แล้ว — ชื่อ factor ไม่ซ้ำกันเลยสักตัว คำถามของฝั่ง long
     จึงชนแถวของฝั่ง short ไม่ได้อยู่แล้ว **พิสูจน์ด้วยการกลายพันธุ์**: ถอด `side`
     ออกจาก `WHERE` ของ `cache._match()` แล้วเทสต์ทั้งชุดยังเขียว
 
     ถ้าวันหนึ่งมีใครใส่ชื่อซ้ำเข้าไปทั้งสองฝั่ง ข้อนี้จะดัง — และวันนั้น `side` ใน
-    คีย์จะกลายเป็นสิ่งจำเป็นจริงๆ ไม่ใช่ของที่คงไว้เพราะสเปกเขียนไว้
+    คีย์จะกลายเป็นสิ่งจำเป็นจริงๆ ไม่ใช่แค่ของที่อยู่ใน PK
     """
     long_side, short_side = FACTORS_BY_SIDE["long"], FACTORS_BY_SIDE["short"]
     assert not set(long_side) & set(short_side)
@@ -424,7 +429,7 @@ def test_the_factor_sets_of_the_two_sides_never_overlap():
 
 @pytest.mark.db
 def test_the_same_pair_on_two_markets_does_not_share_one_verdict(db):
-    """`market` ไม่ได้อยู่ในคีย์ที่ spec/04:70 เขียนไว้ เพราะข้อนั้นเขียนก่อน ADR 26
+    """`market` อยู่ในคีย์ตาม spec/04:74 เพราะ ADR 26 ทำให้มันเป็นมิติของ symbol
 
     ตอนนี้ `BTC/USDT` บน spot กับบน perp เป็นคนละแท่งจริง (`bars` มี market ใน PK)
     ถ้าคีย์ไม่มี market ไม้ spot จะได้คำตัดสินที่คำนวณจากแท่ง perp มาใช้เงียบๆ
