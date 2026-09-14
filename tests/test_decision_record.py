@@ -271,7 +271,7 @@ def test_a_spot_decision_cannot_open_a_short():
 
 
 def test_a_perp_decision_may_close_with_reduce_only():
-    """ขาปิดของ flip บน perp ใช้ `reduceOnly` เป็นเรื่องปกติ (spec/06:129)"""
+    """ขาปิดของ flip บน perp ใช้ `reduceOnly` เป็นเรื่องปกติ (spec/06 §กันสั่งซ้ำ (reconciliation))"""
     validate_record(
         record(
             skip_reason="flip_aborted",
@@ -291,7 +291,7 @@ def test_a_perp_decision_may_close_with_reduce_only():
 
 
 def test_a_dry_run_bar_computes_everything_but_sends_nothing():
-    """spec/06:80-84 — บันทึกครบ แต่ขั้น 13 ข้ามการยิง (spec/08 §สิบสี่ขั้นของหนึ่งรอบ)"""
+    """spec/06 §dry_run — บันทึกครบ แต่ขั้น 13 ข้ามการยิง (spec/08 §สิบสี่ขั้นของหนึ่งรอบ)"""
     validate_record(
         record(
             dry_run=True,

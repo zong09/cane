@@ -313,7 +313,7 @@ def _check_market_rules(record: DecisionRecord) -> None:
 
 
 def _check_dry_run(record: DecisionRecord) -> None:
-    """`dry_run` = คำนวณครบและเขียนบันทึกครบ แต่ **ไม่ส่งคำสั่งจริง** (spec/06:80-84)
+    """`dry_run` = คำนวณครบและเขียนบันทึกครบ แต่ **ไม่ส่งคำสั่งจริง** (spec/06 §dry_run)
 
     ขั้น 13 ของ spec/08 §สิบสี่ขั้นของหนึ่งรอบ ข้ามการเปิดสถานะ → ออเดอร์เปิดที่ `sent = True` บนแท่ง
     dry run คือหลักฐานว่ามีคำสั่งหลุดออกไปจริง ซึ่งเป็นเรื่องที่ต้องดังตอนเขียน
@@ -370,7 +370,7 @@ def insert_decision(
     """เขียนหัวและลูกทั้งหมดในทรานแซกชันของผู้เรียก — คืน `id` ของหัว
 
     **ไม่ commit** และ **ไม่มี `ON CONFLICT`** — กุญแจธรรมชาติไม่ unique โดยเจตนา
-    แถวที่สองของแท่งเดิมคือหลักฐานของ restart ไม่ใช่แถวซ้ำที่ต้องกลืน (spec/06:127)
+    แถวที่สองของแท่งเดิมคือหลักฐานของ restart ไม่ใช่แถวซ้ำที่ต้องกลืน (spec/06 §กันสั่งซ้ำ (reconciliation))
     """
     validate_record(record)
     stamp = now_ms() if created_ts is None else created_ts

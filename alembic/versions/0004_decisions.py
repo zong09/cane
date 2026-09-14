@@ -169,7 +169,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("id", "profile", name="uq_decisions_id_profile"),
     )
     # กุญแจธรรมชาติ **ไม่ unique** โดยเจตนา — แถวที่สองของกุญแจเดียวกันคือหลักฐานของ
-    # restart กลางแท่ง ไม่ใช่ข้อเท็จจริงซ้ำ (spec/06:127)
+    # restart กลางแท่ง ไม่ใช่ข้อเท็จจริงซ้ำ (spec/06 §กันสั่งซ้ำ (reconciliation))
     op.create_index(
         "ix_decisions_natural",
         "decisions",

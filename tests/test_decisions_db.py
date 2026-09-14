@@ -72,7 +72,7 @@ def live_settings():
     """config ของ live ที่ **ยิงคำสั่งจริงได้ และมีทั้งเหรียญ perp และ spot**
 
     `config/live.toml` ให้ทั้งสองอย่างไม่ได้: มันตั้ง `dry_run = true` (ค่าตั้งต้นคือ
-    true แม้ใน live ตาม spec/06:82) และมีเหรียญ perp ตัวเดียว · เหรียญ spot อยู่ใน
+    true แม้ใน live ตาม spec/06 §dry_run) และมีเหรียญ perp ตัวเดียว · เหรียญ spot อยู่ใน
     `paper.toml` ซึ่ง `ck_config_settings_paper_dry_run` บังคับ `dry_run = true` ตายตัว
     → เส้นทางเข้าไม้/flip/order_error ของ spot จะบันทึกไม่ได้เลยถ้าโหลดไฟล์ดิบมาใช้
     """
@@ -277,7 +277,7 @@ def test_the_repository_normalises_the_symbol_like_every_other_table(db, live_ve
 
 
 def test_a_restart_inside_the_same_bar_keeps_both_rows(db, live_version):
-    """กุญแจธรรมชาติ **ไม่ unique** — แถวที่สองคือหลักฐานของ restart (spec/06:127)
+    """กุญแจธรรมชาติ **ไม่ unique** — แถวที่สองคือหลักฐานของ restart (spec/06 §กันสั่งซ้ำ (reconciliation))
 
     ถ้าใส่ UNIQUE + upsert แถวแรกจะถูกทับ แล้วคนอ่านย้อนหลังจะสรุปว่า "ไม่มีออเดอร์
     ถูกส่ง" ซึ่งกลับหัวความจริง
@@ -317,7 +317,7 @@ def test_insert_refuses_a_record_that_breaks_an_invariant(db, live_version):
 def test_utc_day_moves_exactly_at_midnight_utc(
     db, live_version, bar_close_ts, expected_offset
 ):
-    """`max_daily_loss_pct` reset เที่ยงคืน **UTC** (spec/06:57)
+    """`max_daily_loss_pct` reset เที่ยงคืน **UTC** (spec/06 §`max_daily_loss_pct` นับอย่างไร)
 
     แท่งที่ปิด 00:00:00.000 ตกไปวันใหม่ ส่วนแท่งที่ปิด 23:59:59.999 ยังเป็นวันเดิม —
     คอลัมน์นี้เป็นทางเดียวที่ query ต่อวันเขียนได้โดยไม่เอา `datetime` เข้ามาใน `src/`
@@ -689,7 +689,7 @@ def _perp_run(version_id) -> list[DecisionRecord]:
         ),
         # 3 · สัญญาณเดิมซ้ำขณะถือไม้อยู่แล้ว — ไม่เปิดทับ (spec/03:28-35)
         bar(3, zone="GREEN", state="BULLISH", long_signal=True, skip_reason="already_positioned"),
-        # 4 · flip ครบสองขา · ทั้งสองขาเป็น `sell` เพราะโหมด one-way (spec/06:94)
+        # 4 · flip ครบสองขา · ทั้งสองขาเป็น `sell` เพราะโหมด one-way (spec/06 §Broker interface)
         bar(
             4,
             zone="RED",
@@ -1065,6 +1065,6 @@ def test_a_twenty_bar_run_reads_back_as_a_complete_sequence(
     assert len(capped) == 1
     assert (capped[0].size_pct_formula, capped[0].size_pct_final) == (65.0, 50.0)
 
-    # dry run คำนวณครบทุกขั้นแต่ไม่มีคำสั่งหลุดออกไป (spec/06:80-84)
+    # dry run คำนวณครบทุกขั้นแต่ไม่มีคำสั่งหลุดออกไป (spec/06 §dry_run)
     assert paper[0].size_pct_final == 50.0
     assert paper[0].orders[0].sent is False

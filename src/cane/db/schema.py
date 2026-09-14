@@ -418,15 +418,15 @@ ZONE_T = postgresql.ENUM(
 STATE_T = postgresql.ENUM("BULLISH", "BEARISH", "UNSET", name="state_t", create_type=False)
 
 #: ฝั่งของ **ไม้** · `order_side_t` ด้านล่างคือฝั่งของ **ออเดอร์** — สองชุดนี้คนละเรื่อง
-#: การ flip จาก long ไป short ในโหมด one-way คือ `sell` สองครั้ง (spec/06:94) ถ้าใช้ชุด
+#: การ flip จาก long ไป short ในโหมด one-way คือ `sell` สองครั้ง (spec/06 §Broker interface) ถ้าใช้ชุด
 #: เดียวกันทั้งสองความหมาย บันทึกจะอ่านเหมือนเปิด short ซ้ำสองไม้
 SIDE_T = postgresql.ENUM("long", "short", name="side_t", create_type=False)
 
 #: ฝั่งของออเดอร์ที่ยิงเข้า venue
 ORDER_SIDE_T = postgresql.ENUM("buy", "sell", name="order_side_t", create_type=False)
 
-#: ขาของออเดอร์ในหนึ่งแท่ง (spec/06:124) · `stop` อยู่ในชุดด้วยเพราะ cold start ทางที่ 2
-#: วาง `stop_market` ไว้ที่ venue ในแท่งเดียวกับที่เปิดไม้ (spec/06:129, decisions #17)
+#: ขาของออเดอร์ในหนึ่งแท่ง (spec/06 §กันสั่งซ้ำ (reconciliation)) · `stop` อยู่ในชุดด้วยเพราะ cold start ทางที่ 2
+#: วาง `stop_market` ไว้ที่ venue ในแท่งเดียวกับที่เปิดไม้ (spec/06 §กันสั่งซ้ำ (reconciliation), decisions #17)
 LEG_T = postgresql.ENUM("open", "close", "stop", name="leg_t", create_type=False)
 
 
@@ -434,7 +434,7 @@ LEG_T = postgresql.ENUM("open", "close", "stop", name="leg_t", create_type=False
 #:
 #: **ไม่มี UNIQUE บน `(profile, market, symbol, timeframe, bar_close_ts)` โดยเจตนา** —
 #: process ที่ตายกลางแท่งแล้วกลับมาในแท่งเดิมจะส่ง `clientOrderId` เดิมซ้ำแล้ว venue
-#: ปฏิเสธ (spec/06:127) · สองแถวของกุญแจเดียวกันจึง**ไม่ใช่**ข้อเท็จจริงเดียวกัน แถวที่สอง
+#: ปฏิเสธ (spec/06 §กันสั่งซ้ำ (reconciliation)) · สองแถวของกุญแจเดียวกันจึง**ไม่ใช่**ข้อเท็จจริงเดียวกัน แถวที่สอง
 #: คือหลักฐานของ restart · ถ้าใส่ UNIQUE แล้ว upsert แถวแรกจะถูกทับ แล้วคนอ่านย้อนหลัง
 #: จะสรุปว่า "ไม่มีออเดอร์ถูกส่ง" ซึ่งกลับหัวความจริง · คอนโซลเลือกแถวล่าสุดไปแสดง
 #: และรู้ตัวว่าเลือก
@@ -453,7 +453,7 @@ decisions = Table(
     Column("symbol", Text, nullable=False),
     Column("timeframe", Text, nullable=False),
     Column("bar_close_ts", BigInteger, nullable=False),
-    #: ขอบวัน UTC ของ risk (spec/06:57) — `max_daily_loss_pct` reset เที่ยงคืน UTC
+    #: ขอบวัน UTC ของ risk (spec/06 §`max_daily_loss_pct` นับอย่างไร) — `max_daily_loss_pct` reset เที่ยงคืน UTC
     #: ไม่ใช่เวลาท้องถิ่น · คอลัมน์นี้ทำให้ query ต่อวันเขียนได้โดยไม่ต้องเอา
     #: `datetime` เข้ามาใน `src/` (decisions #22)
     Column("utc_day", Integer, Computed("bar_close_ts / 86400000", persisted=True)),
@@ -633,7 +633,7 @@ decision_verdicts = Table(
 #: spec/08 §สิบสี่ขั้นของหนึ่งรอบ ตรวจเรียง `kill_switch` → `daily_loss` → `liq_buffer` และชั้นแรกที่ไม่ผ่าน
 #: ปฏิเสธทั้งไม้ → **ชั้นที่ไม่มีในตารางคือหลักฐานว่าลำดับถูกเคารพ** ไม่ใช่ข้อมูลที่หายไป
 #: ไม้บน spot มีสองแถว เพราะไม่มี liquidation จึง**ไม่เรียก** ชั้น `liq_buffer` เลย
-#: ไม่ใช่เรียกแล้วผ่านเสมอ (decisions #26, spec/06:50)
+#: ไม่ใช่เรียกแล้วผ่านเสมอ (decisions #26, spec/06 §ตัวไหนย่อ ตัวไหนปฏิเสธ ตัวไหนตรวจตอนโหลด)
 #:
 #: invariant "มีได้ไม่เกินหนึ่งแถวที่ `passed = false` และต้องเป็น `seq` สูงสุด" กับ
 #: "`seq` เรียง 1..n ไม่มีช่อง" เป็นกฎข้ามแถว CHECK เขียนไม่ได้ → `validate_record()`
@@ -663,7 +663,7 @@ decision_risk_checks = Table(
 
 #: ออเดอร์ที่พยายามส่งในแท่งนี้ — **หลายแถวต่อหนึ่ง decision**
 #:
-#: flip ยิงสองขาในแท่งเดียว (ปิดแล้วเปิด, spec/06:129) และ cold start ทางที่ 2 เพิ่มขา
+#: flip ยิงสองขาในแท่งเดียว (ปิดแล้วเปิด, spec/06 §กันสั่งซ้ำ (reconciliation)) และ cold start ทางที่ 2 เพิ่มขา
 #: `stop` เข้ามาอีก · คีย์เป็น surrogate เพราะขาเดียวกันซ้ำได้ตอน retry จึงไม่มีชุด
 #: คอลัมน์ธรรมชาติที่เป็นกุญแจได้
 decision_orders = Table(
@@ -674,7 +674,7 @@ decision_orders = Table(
     Column("profile", PROFILE_T, nullable=False),
     Column("leg", LEG_T, nullable=False),
     #: ฝั่งของออเดอร์ ไม่ใช่ฝั่งของไม้ — flip long→short ในโหมด one-way คือ `sell`
-    #: สองครั้ง (spec/06:94)
+    #: สองครั้ง (spec/06 §Broker interface)
     Column("order_side", ORDER_SIDE_T, nullable=False),
     Column("order_type", Text, nullable=False),
     #: ของ perp เท่านั้น (decisions #26) — บังคับที่ `validate_record()` ไม่ใช่ CHECK
@@ -682,7 +682,7 @@ decision_orders = Table(
     Column("reduce_only", Boolean, nullable=False),
     Column("qty", PRICE, nullable=False),
     Column("stop_px", PRICE),
-    #: กำหนดจาก (symbol, แท่ง, ขา) แบบ deterministic ก่อนพยายามส่ง (spec/06:127) จึงมี
+    #: กำหนดจาก (symbol, แท่ง, ขา) แบบ deterministic ก่อนพยายามส่ง (spec/06 §กันสั่งซ้ำ (reconciliation)) จึงมี
     #: ค่าอยู่แม้แถวที่พังก่อนส่ง — เป็นตัวที่ทำให้ restart ในแท่งเดิมถูก venue ปฏิเสธ
     Column("client_order_id", Text, nullable=False),
     Column("sent", Boolean, nullable=False),
