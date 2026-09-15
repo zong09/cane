@@ -173,13 +173,16 @@ def enrol_submit(
 ) -> Response:
     now = now_ms()
     with db.begin() as conn:
-        user_id = auth_tokens.consume(conn, token=token, kind="invite", now=now)
-        if user_id is None:
+        # **ยังไม่ใช้ตั๋วตรงนี้** — รหัสจากแอปที่พิมพ์ผิดไม่ควรเผาลิงก์ทิ้ง · ตั๋วถูกใช้
+        # เมื่อผูกสำเร็จเท่านั้น ซึ่งทำให้ "ลองใหม่" เป็นการยิง `POST` เดิมซ้ำได้เฉยๆ
+        user = _user_for_invite(conn, token, now)
+        if user is None:
             return templates.TemplateResponse(
                 request, "pages/enrol_dead.html", {}, status_code=404
             )
-        user = users_repo.by_id(conn, user_id)
 
+        # รหัสผ่านต้องลงก่อน `enrol_totp()` เพราะตัวนั้นเปลี่ยนสถานะเป็น `active`
+        # และ `ck_users_active_means_fully_enrolled` ปฏิเสธ active ที่ยังไม่มีรหัสผ่าน
         fresh_password = password.strip() or None
         if fresh_password is not None:
             service.enrol(conn, user=user, password=fresh_password, now=now)
@@ -188,10 +191,8 @@ def enrol_submit(
         ok = service.confirm_enrolment(
             conn, user=user, secret=secret, codes=codes, code=code.strip(), now=now
         )
-        if not ok:
-            # ตั๋วถูกใช้ไปแล้วในทรานแซกชันนี้ · ออกใบใหม่ให้ทันทีเพราะความผิดพลาด
-            # ของการพิมพ์รหัสไม่ควรทำให้คนที่ถูกเชิญต้องไปขอลิงก์ใหม่จากคนอื่น
-            auth_tokens.issue(conn, user_id=user_id, kind="invite", token=token, now=now)
+        if ok:
+            auth_tokens.consume(conn, token=token, kind="invite", now=now)
 
     if not ok:
         return templates.TemplateResponse(
@@ -202,7 +203,7 @@ def enrol_submit(
                 "secret": secret,
                 "uri": totp.provisioning_uri(secret, user.email),
                 "email": user.email,
-                "needs_password": user.password_hash is None,
+                "needs_password": user.password_hash is None and fresh_password is None,
                 "error": "รหัสจากแอปไม่ตรง — ลองใหม่อีกครั้ง",
             },
             status_code=400,

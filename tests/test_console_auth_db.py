@@ -299,3 +299,41 @@ def test_the_invite_link_is_the_only_way_a_pending_owner_becomes_usable(db, app)
 
         # ลิงก์ใช้ได้ครั้งเดียว
         assert client.get(f"/enrol/{token}").status_code == 404
+
+
+def test_a_wrong_code_on_the_invite_page_does_not_burn_the_link(db, app):
+    """พิมพ์รหัสผิดแล้วต้องลองใหม่ด้วยลิงก์ใบเดิมได้
+
+    ครั้งแรกเขียนโค้ดนี้ให้ใช้ตั๋วตั้งแต่ต้น `POST` แล้วออกตั๋วใบใหม่ด้วย token เดิม
+    เมื่อรหัสผิด — ซึ่งชน `uq_auth_tokens_token_hash` เป็น 500 · ตอนนี้ตั๋วถูกใช้
+    เมื่อผูกสำเร็จเท่านั้น เส้นทางตั้งเครื่องครั้งแรกจึงทนการพิมพ์ผิดได้
+    """
+    from cane.db.repo import auth_tokens
+
+    user_id = users_repo.create(
+        db,
+        email="typo@example.com",
+        name="คนที่พิมพ์ผิด",
+        role="OWNER",
+        created_ts=now_ms(),
+        password_hash=auth_secrets.hash_password(PASSWORD),
+    )
+    token = auth_secrets.new_token()
+    auth_tokens.issue(db, user_id=user_id, kind="invite", token=token, now=now_ms())
+
+    with TestClient(app) as client:
+        page = client.get(f"/enrol/{token}")
+        secret = page.text.split('name="secret" value="')[1].split('"')[0]
+
+        missed = client.post(
+            f"/enrol/{token}", data={"secret": secret, "code": "000000"}
+        )
+        assert missed.status_code == 400
+        assert users_repo.by_id(db, user_id).status == "pending"
+
+        done = client.post(
+            f"/enrol/{token}", data={"secret": secret, "code": code_now(secret)}
+        )
+        assert done.status_code == 200
+        assert users_repo.by_id(db, user_id).status == "active"
+        assert client.get(f"/enrol/{token}").status_code == 404

@@ -58,6 +58,9 @@ def create_app(
     app.include_router(engine_routes.router)
     app.include_router(session.router)
 
+    # `StepUpFailed` สืบทอดจาก `HTTPException` และ Starlette เลือก handler โดยไล่ตาม
+    # `type(exc).__mro__` → ตัวที่เจาะจงกว่าต้องถูกลงทะเบียน**ก่อน** ตัวกว้าง ไม่งั้น
+    # รหัส step-up ที่ผิดจะถูกพาไปหน้า login แทนที่จะได้ modal ใบเดิมคืนมา
     @app.exception_handler(StepUpFailed)
     async def _step_up_failed_reopens_the_modal(request: Request, exc: StepUpFailed):
         """รหัสผิดต้องได้ modal ใบเดิมพร้อมกล่องเตือน ไม่ใช่ JSON ที่ htmx ทิ้ง
