@@ -18,12 +18,20 @@
   {% if engine.blocked_reason %}
   <div class="engine__reason">{{ engine.blocked_reason }}</div>
   {% endif %}
+  {#
+    เลือกปุ่มจาก `should_run` (เจตนา) ไม่ใช่จาก `status` (สภาพจริง) · ผลข้างเคียงคือ
+    `crashed` ได้ปุ่ม **stop** ทั้งที่ spec/10 §1 บอกว่า engine ที่พังให้คนกดสตาร์ทเอง
+    — จงใจคงไว้จนกว่า `Supervisor` จะแยก "เพิ่ง spawn" ออกจาก "ตายแล้ว" ได้:
+    ระหว่างสองสามวินาทีแรกหลัง `launch()` สถานะก็เป็น `crashed` เหมือนกัน ปุ่ม start
+    ตรงนั้นจะพาไป `launch()` รอบสองแล้วได้ process ตัวที่สอง ซึ่งเป็นช่องเดียวกับที่
+    ใบ 18 ปิดไปแล้วหนึ่งรอบ · `hx-disabled-elt` กันการกดรัว แต่กัน API ไม่ได้
+  #}
   {% if engine.should_run %}
-  <button class="engine__btn engine__btn--stop" type="button"
+  <button class="engine__btn engine__btn--stop" type="button" hx-disabled-elt="this"
           hx-post="/api/{{ mode }}/engine/stop"
           hx-target="#engine-card" hx-swap="outerHTML">stop engine</button>
   {% else %}
-  <button class="engine__btn engine__btn--start" type="button"
+  <button class="engine__btn engine__btn--start" type="button" hx-disabled-elt="this"
           hx-post="/api/{{ mode }}/engine/start"
           hx-target="#engine-card" hx-swap="outerHTML">start engine</button>
   {% endif %}

@@ -35,6 +35,11 @@ The bot has an entry point now: `cane engine run --profile {live|paper}` is the 
 loop, normally started by the console's supervisor rather than by hand. The trading pipeline
 inside that loop is still being built.
 
+`cane serve` brings the console up. Its shell is in place — layout, the profile/engine cards,
+and the live↔paper mode switch all work against the real supervisor — but each screen's body
+is still to come, and **there is no authentication yet**: keep it on `127.0.0.1` until the auth
+ticket lands.
+
 | Component | Status |
 | --- | --- |
 | `config/` — fail-closed validation, every problem reported with its field path | ✅ |
@@ -48,7 +53,8 @@ inside that loop is still being built.
 | Position sizing + the discipline rules + cold start | ⬜ |
 | Risk limits, kill switch, broker, reconciliation | ⬜ |
 | Per-bar-close runner that fills the decision record in | ⬜ |
-| Console (FastAPI + Jinja2 + HTMX) and notifications | ⬜ |
+| Console shell — layout, sidebar, profile/engine cards, mode switch, `cane serve` | ✅ |
+| Console screens, authentication, and notifications | ⬜ |
 
 🟡 Action Zone is ported and unit-tested, but its acceptance gate has not run: closing it
 requires a bar-by-bar match against a TradingView export of the same symbol, and nobody has
@@ -172,8 +178,11 @@ src/cane/
   data/         OHLCV, funding rate, ccxt client per market (writes to `bars` / `funding_observations`)
   db/           engine (role per connection), schema, type boundary
     repo/       one module per domain; returns the project's frozen dataclasses
+  engine/       per-profile subprocess, heartbeat, and the console-side supervisor
+  api/          the console's FastAPI app, routes, and the seams auth will replace
+  web/          Jinja2 templates and static assets for the console
   log.py        credential redaction for logs
-  cli.py        the `cane` command; today it only carries `cane db seed`
+  cli.py        the `cane` command: `db seed`, `engine run`, `serve`
 alembic/        migrations, one per domain; the DSN comes from the environment
 docker-compose.yml  PostgreSQL for dev and tests
 config/         paper / live profiles

@@ -121,11 +121,10 @@ def _serve(args: argparse.Namespace) -> int:
         logging.Formatter("%(asctime)s %(levelname)s %(name)s · %(message)s")
     )
     logging.basicConfig(level=logging.INFO, handlers=[log.install(handler)])
-    # uvicorn ติดตั้ง handler ของตัวเอง ซึ่งเลี่ยง RedactingFilter ไปทั้งชุด
-    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
-        for existing in logging.getLogger(name).handlers:
-            log.install(existing)
 
+    # `log_config=None` คือส่วนที่ทำให้ log ของ uvicorn ผ่าน RedactingFilter ด้วย:
+    # ถ้าปล่อยให้ uvicorn ตั้ง config ของตัวเอง มันจะติด handler ของมันเองแล้วปิด
+    # propagate ซึ่งแปลว่า log ฝั่งเว็บทั้งชุดเลี่ยงตัวกรองไป
     uvicorn.run(create_app(), host=args.host, port=args.port, log_config=None)
     return 0
 
