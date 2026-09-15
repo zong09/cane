@@ -1029,3 +1029,210 @@ engine_state = Table(
         name="ck_engine_state_heartbeat_is_epoch_ms",
     ),
 )
+
+
+# ── ผู้ใช้และการยืนยันตัวตน (spec/09) ─────────────────────────────────────────
+#
+# **ครึ่งหนึ่งของข้อบังคับของโดเมนนี้ไม่ได้อยู่ในคำประกาศข้างล่าง** เหมือน
+# `kill_switch` และ `engine_state` — migration 0010 ถือ GRANT ระดับคอลัมน์
+# (คอนโซลเปลี่ยน `users.email` ไม่ได้ · เนื้อของ `role_permissions` แก้ไม่ได้ ·
+# `user_audit_log` กับ `login_attempts` ไม่มี UPDATE/DELETE ให้ใคร) กับ trigger
+# สองตัว (OWNER คนสุดท้าย · คอลัมน์ OWNER ของตารางสิทธิ์)
+
+#: `pending` / `active` / `suspended` — spec/09 §2. บัญชี role และสถานะ
+USER_STATUS_T = postgresql.ENUM(
+    "pending", "active", "suspended", name="user_status_t", create_type=False
+)
+
+#: ลิงก์ใช้ครั้งเดียวสามชนิดที่เป็นกลไกเดียวกัน — spec/09
+AUTH_TOKEN_KIND_T = postgresql.ENUM(
+    "invite", "reset_2fa", "reset_password", name="auth_token_kind_t", create_type=False
+)
+
+#: 5 role · แถวถูก seed ใน migration เพราะโค้ดอ้างชื่อพวกนี้ตรงๆ ไม่ใช่ค่าที่คนแก้
+roles = Table(
+    "roles",
+    metadata,
+    Column("id", Integer, Identity(always=True), primary_key=True),
+    Column("name", Text, nullable=False),
+    UniqueConstraint("name", name="uq_roles_name"),
+)
+
+#: 13 สิทธิ์ · `cap` คือชื่อจริงในโค้ดและใน DB ไม่ใช่คำบรรยาย (spec/09)
+permissions = Table(
+    "permissions",
+    metadata,
+    Column("id", Integer, Identity(always=True), primary_key=True),
+    Column("cap", Text, nullable=False),
+    Column("note", Text, nullable=False),
+    UniqueConstraint("cap", name="uq_permissions_cap"),
+)
+
+#: บัญชีผู้ใช้ · `password_hash` argon2id · `totp_secret_enc` เป็น **ciphertext**
+#: ไม่ใช่ hash เพราะ TOTP ต้องถอดกลับมาคำนวณได้ (ADR 25)
+#:
+#: `ck_users_active_means_fully_enrolled` คือข้อบังคับ "ยังไม่ผูก 2FA เข้าไม่ได้เลย"
+#: ในรูปที่โค้ดลืมตรวจไม่ได้ — สภาพ `active` ที่ยังไม่มี TOTP เป็นไปไม่ได้ในฐาน
+users = Table(
+    "users",
+    metadata,
+    Column("id", Integer, Identity(always=True), primary_key=True),
+    Column("email", Text, nullable=False),
+    Column("name", Text, nullable=False),
+    Column("role_id", Integer, nullable=False),
+    Column("status", USER_STATUS_T, nullable=False, server_default=text("'pending'")),
+    Column("password_hash", Text),
+    Column("totp_secret_enc", Text),
+    Column("totp_enrolled_ts", BigInteger),
+    Column("totp_last_counter", BigInteger),
+    Column("last_login_ts", BigInteger),
+    Column("created_ts", BigInteger, nullable=False),
+    UniqueConstraint("email", name="uq_users_email"),
+    ForeignKeyConstraint(["role_id"], ["roles.id"], name="fk_users_role"),
+    CheckConstraint(
+        "status <> 'active' OR "
+        "(password_hash IS NOT NULL AND totp_enrolled_ts IS NOT NULL)",
+        name="ck_users_active_means_fully_enrolled",
+    ),
+    CheckConstraint("email = lower(email)", name="ck_users_email_is_lowercase"),
+)
+
+#: ตารางสิทธิ์เป็น **ข้อมูลที่มีเวอร์ชัน** ไม่ใช่ค่าคงที่ในโค้ด (spec/09) ·
+#: แก้ = สร้างเวอร์ชันใหม่แล้วเลื่อนตัวชี้ แบบเดียวกับ `config_versions` (ADR 18)
+permission_versions = Table(
+    "permission_versions",
+    metadata,
+    Column("id", Integer, Identity(always=True), primary_key=True),
+    Column("created_ts", BigInteger, nullable=False),
+    Column("created_by_user_id", Integer),
+    Column("is_active", Boolean, nullable=False, server_default=text("false")),
+    ForeignKeyConstraint(
+        ["created_by_user_id"], ["users.id"], name="fk_permission_versions_author"
+    ),
+    Index(
+        "uq_permission_versions_one_active",
+        "is_active",
+        unique=True,
+        postgresql_where=text("is_active"),
+    ),
+)
+
+#: `version_id` เป็นส่วนของกุญแจ ไม่ใช่คอลัมน์ประกอบ — spec/09 ระบุไว้ตรงตัว
+role_permissions = Table(
+    "role_permissions",
+    metadata,
+    Column("version_id", Integer, primary_key=True),
+    Column("role_id", Integer, primary_key=True),
+    Column("permission_id", Integer, primary_key=True),
+    Column("allowed", Boolean, nullable=False),
+    ForeignKeyConstraint(
+        ["version_id"], ["permission_versions.id"], name="fk_role_permissions_version"
+    ),
+    ForeignKeyConstraint(["role_id"], ["roles.id"], name="fk_role_permissions_role"),
+    ForeignKeyConstraint(
+        ["permission_id"], ["permissions.id"], name="fk_role_permissions_permission"
+    ),
+)
+
+#: 10 รหัส สร้างพร้อมกันตอนผูก TOTP · ใช้ได้ครั้งละหนึ่งแล้วตายถาวร
+#: `retired_ts` แยกจาก `used_ts` เพราะ "ถูกใช้" กับ "ถูกแทนที่ด้วยชุดใหม่"
+#: เป็นคนละเรื่องตอนอ่านย้อนหลัง
+backup_codes = Table(
+    "backup_codes",
+    metadata,
+    Column("id", BigInteger, Identity(always=True), primary_key=True),
+    Column("user_id", Integer, nullable=False),
+    Column("code_hash", Text, nullable=False),
+    Column("created_ts", BigInteger, nullable=False),
+    Column("used_ts", BigInteger),
+    Column("retired_ts", BigInteger),
+    ForeignKeyConstraint(["user_id"], ["users.id"], name="fk_backup_codes_user"),
+    UniqueConstraint("user_id", "code_hash", name="uq_backup_codes_one_per_user"),
+)
+
+#: `token_hash` ไม่ใช่ token · `mode` อยู่ที่นี่ไม่ใช่ในคุกกี้ เพราะ spec/09
+#: ห้ามเชื่ออะไรที่ฝั่งผู้ใช้ตั้งเองได้ และห้ามแคชสถานะไว้นอกตารางนี้
+sessions = Table(
+    "sessions",
+    metadata,
+    Column("id", BigInteger, Identity(always=True), primary_key=True),
+    Column("user_id", Integer, nullable=False),
+    Column("token_hash", Text, nullable=False),
+    Column("ip", Text),
+    Column("user_agent", Text),
+    Column("mode", PROFILE_T, nullable=False, server_default=text("'paper'")),
+    Column("created_ts", BigInteger, nullable=False),
+    Column("last_seen_ts", BigInteger, nullable=False),
+    Column("expires_ts", BigInteger, nullable=False),
+    Column("revoked_ts", BigInteger),
+    UniqueConstraint("token_hash", name="uq_sessions_token_hash"),
+    ForeignKeyConstraint(["user_id"], ["users.id"], name="fk_sessions_user"),
+    CheckConstraint("expires_ts > created_ts", name="ck_sessions_expiry_is_ahead"),
+    Index("ix_sessions_user", "user_id"),
+)
+
+#: คำเชิญ / reset 2FA / ตั้งรหัสผ่านใหม่ — กลไกเดียวกัน ต่างกันแค่ `kind`
+#: ปลดล็อกให้ทำอะไร (spec/09) · การออกใหม่ฆ่าลิงก์เดิมด้วย `retired_ts`
+auth_tokens = Table(
+    "auth_tokens",
+    metadata,
+    Column("id", BigInteger, Identity(always=True), primary_key=True),
+    Column("user_id", Integer, nullable=False),
+    Column("kind", AUTH_TOKEN_KIND_T, nullable=False),
+    Column("token_hash", Text, nullable=False),
+    Column("created_ts", BigInteger, nullable=False),
+    Column("expires_ts", BigInteger, nullable=False),
+    Column("used_ts", BigInteger),
+    Column("retired_ts", BigInteger),
+    UniqueConstraint("token_hash", name="uq_auth_tokens_token_hash"),
+    ForeignKeyConstraint(["user_id"], ["users.id"], name="fk_auth_tokens_user"),
+    CheckConstraint("expires_ts > created_ts", name="ck_auth_tokens_expiry_is_ahead"),
+)
+
+#: ตัวนับของการล็อกบัญชี · `user_id` **nullable** เพราะอีเมลที่ไม่มีบัญชีก็ต้องถูกนับ
+#: ไม่งั้นการที่หน้าจอ "ไม่ล็อก" กลายเป็นคำตอบว่าอีเมลนี้ไม่มีในระบบ
+login_attempts = Table(
+    "login_attempts",
+    metadata,
+    Column("id", BigInteger, Identity(always=True), primary_key=True),
+    Column("email", Text, nullable=False),
+    Column("user_id", Integer),
+    Column("ok", Boolean, nullable=False),
+    Column("ip", Text),
+    Column("ts", BigInteger, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"], name="fk_login_attempts_user"),
+    Index("ix_login_attempts_email_ts", "email", "ts"),
+)
+
+#: ใคร ทำอะไร กับใคร เมื่อไหร่ จาก IP ไหน และผ่าน step-up หรือไม่ (spec/09)
+#:
+#: `detail` ผ่าน `cane.log.redact()` **ก่อน** ลงมาที่นี่ — ตารางนี้ลบไม่ได้
+#: ค่าที่หลุดลงมาแล้วอยู่ถาวร · การกรองตอนอ่านคือการหวังว่าทุกเส้นทางการอ่านจะจำกรอง
+user_audit_log = Table(
+    "user_audit_log",
+    metadata,
+    Column("id", BigInteger, Identity(always=True), primary_key=True),
+    Column("actor_user_id", Integer),
+    Column("action", Text, nullable=False),
+    Column("target", Text),
+    Column("detail", postgresql.JSONB),
+    Column("ip", Text),
+    Column("step_up_verified", Boolean, nullable=False),
+    Column("ts", BigInteger, nullable=False),
+    ForeignKeyConstraint(
+        ["actor_user_id"], ["users.id"], name="fk_user_audit_log_actor"
+    ),
+    Index("ix_user_audit_log_ts", "ts"),
+)
+
+#: ลำดับการลบสำหรับเทสต์ที่ต้องล้างโดเมนนี้ — ลูกก่อนแม่
+AUTH_TABLES = (
+    user_audit_log,
+    login_attempts,
+    auth_tokens,
+    sessions,
+    backup_codes,
+    role_permissions,
+    permission_versions,
+    users,
+)

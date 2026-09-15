@@ -5,7 +5,13 @@ description = "บอทเทรด CDC Action Zone บน USDT-M perp"
 requires-python = ">=3.11"
 dependencies = [
     "alembic>=1.19.1",
+    # auth (ใบ 20) · argon2id สำหรับรหัสผ่านกับ backup code · cryptography สำหรับ
+    # ciphertext ของ TOTP secret — ADR 25 บอกว่า dump ของ DB อย่างเดียวต้องใช้ไม่ได้
+    # `cryptography` ติดมากับ ccxt อยู่แล้ว แต่ประกาศตรงนี้เพราะโค้ดเรา import มันเอง
+    # (นโยบายเดียวกับที่ `confluence/openai_client.py` ไม่ยอมใช้ `requests`)
+    "argon2-cffi>=23.1",
     "ccxt>=4.5.77",
+    "cryptography>=42.0",
     "psycopg[binary]>=3.3.5",
     "pydantic>=2.9",
     "sqlalchemy>=2.0.52",
