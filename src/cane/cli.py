@@ -27,6 +27,9 @@ from cane.engine import loop
 #: "ค่าผิด" กับ "ต่อ DB ไม่ได้" ไม่ใช่เรื่องเดียวกัน
 EXIT_INVALID_CONFIG = 2
 
+#: ยาวสำคัญกว่าความซับซ้อน · argon2 รับภาระที่เหลือ
+MIN_PASSWORD_LEN = 12
+
 
 def _seed(args: argparse.Namespace) -> int:
     try:
@@ -129,6 +132,87 @@ def _serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def _seed_permissions(args: argparse.Namespace) -> int:
+    """ใส่ตารางสิทธิ์ตั้งต้นเป็นเวอร์ชันแรกแล้วเปิดใช้ (spec/09)
+
+    แยกจาก migration โดยเจตนา — สเปกบอกว่า matrix เป็น **ข้อมูล** ที่คอนโซลแก้ได้
+    ไม่ใช่โครงสร้าง · ฐานที่ migrate แล้วแต่ยังไม่รันคำสั่งนี้ปฏิเสธทุก action
+    เพราะไม่มีเวอร์ชัน active ให้เทียบ ซึ่งคือ fail-closed ที่ถูกต้อง
+    """
+    from cane.auth.matrix import DEFAULT_MATRIX
+    from cane.db.repo import permissions as perms
+    from cane.db.types import now_ms
+
+    engine = make_engine(role="console")
+    try:
+        with engine.begin() as conn:
+            current = perms.active_version(conn)
+            if current is not None and perms.matrix_of(conn, current.id) == DEFAULT_MATRIX:
+                print(f"ตารางสิทธิ์: ไม่มีอะไรเปลี่ยน ยังใช้เวอร์ชัน {current.id} อยู่")
+                return 0
+            version_id = perms.insert_version(conn, DEFAULT_MATRIX, created_ts=now_ms())
+            perms.activate(conn, version_id)
+    finally:
+        engine.dispose()
+
+    print(f"ตารางสิทธิ์: เปิดใช้เวอร์ชัน {version_id} (13 สิทธิ์ × 5 role)")
+    return 0
+
+
+def _create_owner(args: argparse.Namespace) -> int:
+    """OWNER คนแรก — ไม่ได้มาจากคำเชิญเพราะยังไม่มีใคร login ได้ (spec/09)
+
+    สร้างเป็น `pending` แล้วพิมพ์ลิงก์ผูก 2FA ออกมา · **ไม่มีเส้นทางไหนข้าม 2FA ได้**
+    รวมทั้งเส้นนี้ — นั่นคือเหตุผลทั้งหมดที่มันไม่สร้างบัญชี `active` ให้เลย
+
+    **รหัสผ่านไม่รับทาง argv** เพราะ argv ของ process อ่านได้จาก `ps` และค้างอยู่ใน
+    ประวัติของ shell · ถามผ่าน getpass แทน
+    """
+    import getpass
+
+    from cane.auth.secrets import hash_password, new_token
+    from cane.db.repo import auth_tokens
+    from cane.db.repo import users as users_repo
+    from cane.db.types import now_ms
+
+    password = getpass.getpass("รหัสผ่านตั้งต้น: ")
+    if len(password) < MIN_PASSWORD_LEN:
+        print(
+            f"รหัสผ่านสั้นเกินไป ต้องอย่างน้อย {MIN_PASSWORD_LEN} อักษร", file=sys.stderr
+        )
+        return EXIT_INVALID_CONFIG
+    if password != getpass.getpass("พิมพ์อีกครั้ง: "):
+        print("รหัสผ่านสองครั้งไม่ตรงกัน", file=sys.stderr)
+        return EXIT_INVALID_CONFIG
+
+    now = now_ms()
+    token = new_token()
+    engine = make_engine(role="console")
+    try:
+        with engine.begin() as conn:
+            if users_repo.by_email(conn, args.email) is not None:
+                print(f"มีบัญชีอีเมลนี้อยู่แล้ว: {args.email}", file=sys.stderr)
+                return EXIT_INVALID_CONFIG
+            user_id = users_repo.create(
+                conn,
+                email=args.email,
+                name=args.name,
+                role="OWNER",
+                created_ts=now,
+                password_hash=hash_password(password),
+            )
+            auth_tokens.issue(
+                conn, user_id=user_id, kind="invite", token=token, now=now
+            )
+    finally:
+        engine.dispose()
+
+    print(f"สร้างบัญชี OWNER แล้ว (ยังเป็น pending จนกว่าจะผูก 2FA)")
+    print(f"เปิดลิงก์นี้เพื่อผูกแอป Authenticator — ใช้ได้ครั้งเดียว อายุ 72 ชั่วโมง:")
+    print(f"  {args.base_url.rstrip('/')}/enrol/{token}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cane", description="เครื่องมือของบอท cane")
     commands = parser.add_subparsers(dest="group", required=True)
@@ -187,6 +271,37 @@ def build_parser() -> argparse.ArgumentParser:
             "นี้ จึงรัน worker เดียวและไม่มี --reload"
         ),
     )
+    auth_cmds = commands.add_parser(
+        "auth", help="ผู้ใช้และสิทธิ์ (ตั้งเครื่องครั้งแรก)"
+    ).add_subparsers(dest="command", required=True)
+
+    seed_perms = auth_cmds.add_parser(
+        "seed-permissions",
+        help="ใส่ตารางสิทธิ์ตั้งต้นเป็นเวอร์ชันแรกแล้วเปิดใช้",
+        description=(
+            "ฐานที่ยังไม่รันคำสั่งนี้ปฏิเสธทุก action เพราะไม่มีเวอร์ชัน active "
+            "ให้เทียบ · รันซ้ำที่ค่าเดิมเป๊ะจะไม่สร้างเวอร์ชันใหม่"
+        ),
+    )
+    seed_perms.set_defaults(run=_seed_permissions)
+
+    create_owner = auth_cmds.add_parser(
+        "create-owner",
+        help="สร้าง OWNER คนแรก แล้วพิมพ์ลิงก์ผูก 2FA",
+        description=(
+            "บัญชีที่ได้เป็น `pending` · ยังเข้าคอนโซลไม่ได้จนกว่าจะผูก 2FA "
+            "ผ่านลิงก์ที่พิมพ์ออกมา — ไม่มีเส้นทางไหนข้าม 2FA ได้ รวมทั้งเส้นนี้"
+        ),
+    )
+    create_owner.add_argument("--email", required=True)
+    create_owner.add_argument("--name", required=True)
+    create_owner.add_argument(
+        "--base-url",
+        default="http://127.0.0.1:8000",
+        help="ที่อยู่ของคอนโซล สำหรับประกอบลิงก์ผูก 2FA",
+    )
+    create_owner.set_defaults(run=_create_owner)
+
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
     serve.set_defaults(run=_serve)

@@ -8,7 +8,7 @@
   "เพิ่งสั่งไป = กำลังขึ้น" เพราะ engine ที่ตายตั้งแต่ยังไม่ทันเต้นครั้งแรกก็หน้าตา
   เหมือนกันเป๊ะ และป้ายที่บอกว่ากำลังขึ้นทั้งที่มันตายแล้วคือป้ายที่ไม่มีใครไปกดสตาร์ท
 #}
-<div id="engine-card" class="engine engine--{{ engine.status }} engine--{{ mode }}"
+<div id="engine-card"{% if oob %} hx-swap-oob="true"{% endif %} class="engine engine--{{ engine.status }} engine--{{ mode }}"
      hx-get="/partials/engine"
      hx-trigger="{% if just_changed %}load delay:1200ms, {% endif %}every 5s"
      hx-swap="outerHTML">
@@ -27,13 +27,13 @@
     ใบ 18 ปิดไปแล้วหนึ่งรอบ · `hx-disabled-elt` กันการกดรัว แต่กัน API ไม่ได้
   #}
   {% if engine.should_run %}
-  <button class="engine__btn engine__btn--stop" type="button" hx-disabled-elt="this"
-          hx-post="/api/{{ mode }}/engine/stop"
-          hx-target="#engine-card" hx-swap="outerHTML">stop engine</button>
+  <button class="engine__btn engine__btn--stop" type="button"
+          hx-get="/partials/stepup/{{ mode }}/stop"
+          hx-target="#modal-slot" hx-swap="innerHTML">stop engine</button>
   {% else %}
-  <button class="engine__btn engine__btn--start" type="button" hx-disabled-elt="this"
-          hx-post="/api/{{ mode }}/engine/start"
-          hx-target="#engine-card" hx-swap="outerHTML">start engine</button>
+  <button class="engine__btn engine__btn--start" type="button"
+          hx-get="/partials/stepup/{{ mode }}/start"
+          hx-target="#modal-slot" hx-swap="innerHTML">start engine</button>
   {% endif %}
   <div class="engine__other">{{ other_engine_label }}</div>
 </div>

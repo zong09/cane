@@ -1,0 +1,9 @@
+{% extends "auth_base.html" %}
+{% block card %}
+<div class="authcard__title">เปิดใช้บัญชีแล้ว</div>
+<div class="modal__warn">backup code 10 ใบข้างล่าง <strong>แสดงครั้งเดียว</strong> · เก็บไว้ที่ปลอดภัย ใช้แทนรหัสจากแอปได้ตอน login ใบละครั้ง</div>
+<div class="codes">
+  {% for code in codes %}<span class="codes__one">{{ code }}</span>{% endfor %}
+</div>
+<a class="btn btn--primary btn--block" href="/login">ไปหน้าเข้าสู่ระบบ</a>
+{% endblock %}

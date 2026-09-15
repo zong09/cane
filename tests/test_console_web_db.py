@@ -15,10 +15,16 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Connection
 
 from cane.api.app import create_app
-from cane.api.deps import MODE_COOKIE
+from cane.api.deps import signed_in
+from cane.auth import secrets as auth_secrets
+from cane.auth.matrix import DEFAULT_MATRIX
 from cane.config import load_profile
 from cane.db.repo import config as config_repo
-from cane.db.schema import CONFIG_TABLES, engine_state
+from cane.db.repo import permissions as perms
+from cane.db.repo import sessions as sessions_repo
+from cane.db.repo import users as users_repo
+from cane.db.schema import AUTH_TABLES, CONFIG_TABLES, engine_state
+from cane.db.types import now_ms
 from cane.engine.state import PROFILES, STOPPED
 
 pytestmark = pytest.mark.db
@@ -57,8 +63,40 @@ class FakeProcess:
 
 
 @pytest.fixture
-def client(db: Connection) -> TestClient:
-    return TestClient(create_app(db=BoundDb(db), spawn=lambda profile: FakeProcess(1)))
+def owner(db: Connection):
+    """OWNER ที่ผูก 2FA แล้ว พร้อม session ที่ยังมีชีวิต
+
+    ใบ 19 เคยตั้งโหมดด้วยคุกกี้ · ใบ 20 ย้ายโหมดไปอยู่บนแถวของ session ไฟล์นี้จึง
+    ต้องมีผู้ใช้จริงกับ session จริง ไม่ใช่แค่ตั้งคุกกี้แล้วยิง
+    """
+    for table in AUTH_TABLES:
+        db.execute(table.delete())
+    perms.activate(db, perms.insert_version(db, DEFAULT_MATRIX, created_ts=now_ms()))
+
+    user_id = users_repo.create(
+        db,
+        email="owner@example.com",
+        name="เจ้าของ",
+        role="OWNER",
+        created_ts=now_ms(),
+        password_hash=auth_secrets.hash_password("รหัสผ่านที่ยาวพอ"),
+    )
+    users_repo.enrol_totp(
+        db,
+        user_id,
+        secret_enc=auth_secrets.encrypt_secret("JBSWY3DPEHPK3PXP"),
+        enrolled_ts=now_ms(),
+    )
+    token = auth_secrets.new_token()
+    sessions_repo.create(db, user_id=user_id, token=token, now=now_ms())
+    return sessions_repo.lookup(db, token, now=now_ms())
+
+
+@pytest.fixture
+def client(db: Connection, owner) -> TestClient:
+    app = create_app(db=BoundDb(db), spawn=lambda profile: FakeProcess(1))
+    app.dependency_overrides[signed_in] = lambda: owner
+    return TestClient(app)
 
 
 @pytest.fixture
@@ -95,7 +133,6 @@ def test_the_profile_chip_reads_the_active_config_version_not_the_toml_file(
     config_repo.activate(db, head.id)
 
     with client:
-        client.cookies.set(MODE_COOKIE, "paper")
         page = client.get("/overview").text
 
     assert "จำลองทั้งหมด" in page
@@ -107,7 +144,6 @@ def test_a_profile_with_no_active_version_says_so_instead_of_pretending_to_be_fi
 ) -> None:
     """"ไม่มีเวอร์ชัน active = ไม่เทรด" (spec/07) — ต้องเห็นบนหน้าจอ ไม่ใช่เงียบ"""
     with client:
-        client.cookies.set(MODE_COOKIE, "paper")
         page = client.get("/overview").text
 
     assert "ไม่มีเวอร์ชัน active" in page

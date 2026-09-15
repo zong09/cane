@@ -1,0 +1,20 @@
+{% extends "auth_base.html" %}
+{% block card %}
+<div class="authcard__title">เข้าสู่ระบบ</div>
+{% if error %}<div class="modal__warn">{{ error }}</div>{% endif %}
+{% if locked_minutes %}
+<div class="modal__warn">บัญชีถูกล็อกชั่วคราว · ลองใหม่ได้ในอีก {{ locked_minutes }} นาที หรือให้ OWNER/ADMIN ปลดให้</div>
+{% endif %}
+<form hx-post="/login" hx-target="body" hx-swap="innerHTML">
+  <label class="field">
+    <span class="field__name">อีเมล</span>
+    <input class="field__input" type="email" name="email" value="{{ email or '' }}" required autofocus autocomplete="username">
+  </label>
+  <label class="field">
+    <span class="field__name">รหัสผ่าน</span>
+    <input class="field__input" type="password" name="password" required autocomplete="current-password">
+  </label>
+  <button class="btn btn--primary btn--block" type="submit">ต่อไป</button>
+</form>
+<div class="authcard__note">ขั้นต่อไปจะขอรหัส 6 หลักจากแอป Authenticator</div>
+{% endblock %}

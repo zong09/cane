@@ -1,0 +1,14 @@
+{% extends "auth_base.html" %}
+{% block card %}
+<div class="authcard__title">ยืนยันตัวตน</div>
+<div class="authcard__note">รหัส 6 หลักจากแอป Authenticator · ใช้ backup code แทนได้</div>
+{% if error %}<div class="modal__warn">{{ error }}</div>{% endif %}
+<form hx-post="/login/verify" hx-target="body" hx-swap="innerHTML">
+  <input type="hidden" name="ticket" value="{{ ticket }}">
+  <label class="field">
+    <span class="field__name">รหัสยืนยัน</span>
+    <input class="field__input field__input--code" name="code" inputmode="numeric" placeholder="000000" required autofocus autocomplete="one-time-code">
+  </label>
+  <button class="btn btn--primary btn--block" type="submit">เข้าสู่ระบบ</button>
+</form>
+{% endblock %}

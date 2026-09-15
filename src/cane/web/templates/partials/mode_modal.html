@@ -12,18 +12,19 @@
       <div class="modal__title">สลับไปโปรไฟล์ live</div>
       <div class="modal__text">คอนโซลจะแสดงค่าของโปรไฟล์ live · ตำแหน่ง ตัวเลขความเสี่ยง และรายงานของ paper จะไม่แสดงหลังจากนี้</div>
       {% if live_warning %}<div class="modal__warn">{{ live_warning }}</div>{% endif %}
-      <div id="mode-error"></div>
+      {% if error %}<div class="modal__warn">{{ error }}</div>{% endif %}
+      <form hx-post="/api/session/mode" hx-vals='{"mode":"live"}'
+            hx-target="#modal-slot" hx-swap="innerHTML">
       <label class="modal__field">
         <span class="modal__fieldname">รหัส 6 หลักจากแอป Authenticator</span>
-        <input class="modal__code" inputmode="numeric" maxlength="6" placeholder="000000" disabled>
+        <input class="modal__code" name="step_up_code" inputmode="numeric" maxlength="6" placeholder="000000" required autofocus>
       </label>
       <div class="modal__actions">
-        <button class="btn btn--live" type="button"
-                hx-post="/api/session/mode" hx-vals='{"mode":"live"}'
-                hx-target="#mode-error" hx-swap="innerHTML">สลับไป live</button>
+        <button class="btn btn--live" type="submit">สลับไป live</button>
         <button class="btn btn--ghost" type="button"
                 hx-get="/partials/mode-modal/close" hx-target="#modal-slot" hx-swap="innerHTML">อยู่ paper ต่อ</button>
       </div>
+      </form>
     </div>
   </div>
 </div>

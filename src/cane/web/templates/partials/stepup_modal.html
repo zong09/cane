@@ -1,0 +1,35 @@
+{#
+  step-up 2FA modal — 436px ตาม design (dc.html:2064) · คนละตัวกับ modal 452px
+  ของการสลับโหมด · ใช้ร่วมทุก action ที่สเปกทำเครื่องหมาย "ต้อง"
+
+  รหัสถูกส่งไปกับ **คำขอที่ลงมือจริง** ไม่ใช่ส่งไปแลกตั๋วก่อน — spec/09 บอกว่า
+  "ต้องแนบรหัส 6 หลักมากับ request นั้นเอง" และ "ไม่มีช่วงผ่อนผัน"
+#}
+<div class="overlay">
+  <div class="modal modal--stepup">
+    <div class="modal__rule modal__rule--primary"></div>
+    <div class="modal__body">
+      <div class="modal__eyebrow">ยืนยันตัวตนอีกครั้ง</div>
+      <div class="modal__title">{{ title }}</div>
+      <div class="modal__text">{{ detail }}</div>
+      {% if error %}<div class="modal__warn">{{ error }}</div>{% endif %}
+      {#
+        ยิงไปที่ช่องของ modal เอง · คำตอบที่สำเร็จเป็นการ์ด engine ที่ติดธง
+        `hx-swap-oob` — htmx เอาการ์ดไปวางที่ `#engine-card` แล้วเหลือความว่าง
+        มาแทน modal ซึ่งคือการปิด modal · ล้มเหลวได้ modal ใบเดิมพร้อมกล่องเตือน
+        ทั้งสองทางเป็นการ swap เป้าเดียว ไม่ต้องมี JS มาช่วยปิดหน้าต่าง
+      #}
+      <form hx-post="{{ action }}" hx-target="#modal-slot" hx-swap="innerHTML">
+        <label class="modal__field">
+          <span class="modal__fieldname">รหัส 6 หลักจากแอป Authenticator</span>
+          <input class="modal__code" name="step_up_code" inputmode="numeric" maxlength="6" placeholder="000000" required autofocus>
+        </label>
+        <div class="modal__actions">
+          <button class="btn btn--ghost" type="button"
+                  hx-get="/partials/mode-modal/close" hx-target="#modal-slot" hx-swap="innerHTML">ยกเลิก</button>
+          <button class="btn btn--primary btn--grow" type="submit">ยืนยัน</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>

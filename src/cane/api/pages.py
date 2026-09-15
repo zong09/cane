@@ -12,8 +12,10 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import Engine
 
 from cane.api import context
-from cane.api.deps import ConsoleUser, current_mode, current_user, get_db, get_sup
+from cane.api.deps import current_mode, current_user, get_db, get_sup
 from cane.api.templating import templates
+from cane.db.repo import permissions as perms
+from cane.db.repo.users import User
 from cane.engine.supervisor import Supervisor
 
 router = APIRouter()
@@ -22,6 +24,12 @@ router = APIRouter()
 PAGES: dict[str, tuple[str, int]] = {
     slug: (label, ticket) for slug, label, ticket in context.NAV + context.GLOBAL_NAV
 }
+
+#: สิทธิ์ขั้นต่ำที่ต้องมีเพื่อ "เปิดหน้า" · spec/09 ผูกสิทธิ์ให้ endpoint ที่คืนข้อมูล
+#: ส่วนหน้า HTML เป็นเปลือก — คนที่เปิดหน้าภาพรวมได้ต้องมี `view_overview` เป็นอย่างน้อย
+#: และหน้าผู้ใช้เป็นของ `manage_users` เท่านั้น
+PAGE_CAP = {slug: "view_overview" for slug in PAGES}
+PAGE_CAP["users"] = "manage_users"
 
 
 @router.get("/")
@@ -35,15 +43,16 @@ def page(
     request: Request,
     db: Engine = Depends(get_db),
     sup: Supervisor = Depends(get_sup),
-    user: ConsoleUser = Depends(current_user),
+    user: User = Depends(current_user),
+    mode: str = Depends(current_mode),
 ) -> HTMLResponse:
     if slug not in PAGES:
         raise HTTPException(status_code=404, detail=f"ไม่มีหน้า {slug!r}")
 
     label, ticket = PAGES[slug]
     with db.connect() as conn:
-        ctx = context.build(
-            conn, sup, user=user, mode=current_mode(request), active=slug
-        )
+        if not perms.allowed(conn, role=user.role, cap=PAGE_CAP[slug]):
+            raise HTTPException(status_code=403, detail=f"ต้องมีสิทธิ์ {PAGE_CAP[slug]}")
+        ctx = context.build(conn, sup, user=user, mode=mode, active=slug)
     ctx |= {"page_label": label, "page_ticket": ticket}
     return templates.TemplateResponse(request, "pages/placeholder.html", ctx)

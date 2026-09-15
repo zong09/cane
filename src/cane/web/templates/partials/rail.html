@@ -63,12 +63,13 @@
   <div class="card">
     {% include "partials/profile_state.html" %}
     <div class="userchip">
-      <span class="userchip__avatar">{{ user.initials }}</span>
+      <span class="userchip__avatar">{{ initials }}</span>
       <div class="userchip__who">
         <div class="userchip__name">{{ user.name }}</div>
         <div class="userchip__role">{{ user.role }}</div>
       </div>
-      <button class="btn btn--ghost btn--xs userchip__out" type="button" title="ออกจากระบบ" disabled>ออก</button>
+      <button class="btn btn--ghost btn--xs userchip__out" type="button" title="ออกจากระบบ"
+              hx-post="/logout">ออก</button>
     </div>
   </div>
 </aside>

@@ -35,10 +35,20 @@ The bot has an entry point now: `cane engine run --profile {live|paper}` is the 
 loop, normally started by the console's supervisor rather than by hand. The trading pipeline
 inside that loop is still being built.
 
-`cane serve` brings the console up. Its shell is in place — layout, the profile/engine cards,
-and the live↔paper mode switch all work against the real supervisor — but each screen's body
-is still to come, and **there is no authentication yet**: keep it on `127.0.0.1` until the auth
-ticket lands.
+`cane serve` brings the console up. The shell is in place — layout, the profile/engine cards,
+and the live↔paper mode switch — and it now sits behind two-step authentication: password,
+then a TOTP code, with a fresh code required again for anything that controls the engine or
+switches to `live`. Each screen's body is still to come.
+
+First run, after `alembic upgrade head`:
+
+```bash
+uv run --env-file .env cane auth seed-permissions
+uv run --env-file .env cane auth create-owner --email you@example.com --name "Your Name"
+```
+
+The second command prints a one-time link. Open it to set up an authenticator app; the
+account stays unusable until you do — there is no path into the console that skips 2FA.
 
 | Component | Status |
 | --- | --- |
@@ -54,7 +64,8 @@ ticket lands.
 | Risk limits, kill switch, broker, reconciliation | ⬜ |
 | Per-bar-close runner that fills the decision record in | ⬜ |
 | Console shell — layout, sidebar, profile/engine cards, mode switch, `cane serve` | ✅ |
-| Console screens, authentication, and notifications | ⬜ |
+| `auth/` — two-step login, TOTP, backup codes, account lockout, sessions, RBAC, audit log | ✅ |
+| Console screens and notifications | ⬜ |
 
 🟡 Action Zone is ported and unit-tested, but its acceptance gate has not run: closing it
 requires a bar-by-bar match against a TradingView export of the same symbol, and nobody has
@@ -179,10 +190,11 @@ src/cane/
   db/           engine (role per connection), schema, type boundary
     repo/       one module per domain; returns the project's frozen dataclasses
   engine/       per-profile subprocess, heartbeat, and the console-side supervisor
-  api/          the console's FastAPI app, routes, and the seams auth will replace
+  api/          the console's FastAPI app, routes, and the auth dependencies
+  auth/         password and TOTP primitives, and the login/step-up decisions
   web/          Jinja2 templates and static assets for the console
   log.py        credential redaction for logs
-  cli.py        the `cane` command: `db seed`, `engine run`, `serve`
+  cli.py        the `cane` command: `db seed`, `engine run`, `serve`, `auth …`
 alembic/        migrations, one per domain; the DSN comes from the environment
 docker-compose.yml  PostgreSQL for dev and tests
 config/         paper / live profiles
