@@ -34,4 +34,7 @@ pythonpath = ["src"]
 #   uv run --extra dev pytest -q -m "not db"
 markers = [
     "db: ต้องมี Postgres ที่ migrate แล้ว (docker compose up -d db)",
+    # เทสต์ที่ spawn process จริงแล้วรอ heartbeat — ช้ากว่าที่เหลือทั้งชุดรวมกัน
+    #   uv run --env-file .env --extra dev pytest -q -m "not slow"
+    "slow: spawn process จริงและรอเวลาจริง (ใบ 18)",
 ]

@@ -12,12 +12,16 @@ seed ใช้ role **console** ไม่ใช่ engine เพราะกา�
 from __future__ import annotations
 
 import argparse
+import logging
+import signal
 import sys
 from collections.abc import Sequence
 
+from cane import log
 from cane.config.validate import ConfigError, load_profile
 from cane.db.engine import make_engine
 from cane.db.repo import config as config_repo
+from cane.engine import loop
 
 #: config ไม่ผ่าน — แยกจาก 1 (ล้มเพราะอย่างอื่น) เพื่อให้สคริปต์ที่เรียกแยกได้ว่า
 #: "ค่าผิด" กับ "ต่อ DB ไม่ได้" ไม่ใช่เรื่องเดียวกัน
@@ -68,6 +72,34 @@ def _seed(args: argparse.Namespace) -> int:
     return 0
 
 
+def _engine_run(args: argparse.Namespace) -> int:
+    """ลูปของ engine หนึ่ง profile — **ไม่ใช่คำสั่งที่คนพิมพ์เอง** supervisor เรียก
+
+    สวม role `engine` เท่านั้น · role `console` จะทำให้ process นี้ปลด kill switch ได้
+    ซึ่ง spec/06 บอกว่าเป็นการกระทำของคนผ่านคอนโซลอย่างเดียว
+
+    signal handler ติดตั้งที่นี่ไม่ใช่ใน `loop.run()` เพราะ handler เป็นของทั้ง process
+    ฟังก์ชันที่เทสต์เรียกได้จึงไม่ควรไปทับของ pytest
+    """
+    handler = logging.StreamHandler()
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s · %(message)s")
+    )
+    logging.basicConfig(level=logging.INFO, handlers=[log.install(handler)])
+
+    stopping = loop.StopFlag()
+    # SIGINT ด้วย เพราะคนที่รันด้วยมือแล้วกด Ctrl-C ควรได้การจบรอบแบบเดียวกัน
+    # ไม่ใช่ KeyboardInterrupt กลางการส่งออเดอร์
+    signal.signal(signal.SIGTERM, stopping.request_stop)
+    signal.signal(signal.SIGINT, stopping.request_stop)
+
+    db = make_engine(role="engine")
+    try:
+        return loop.run(args.profile, db=db, stopping=stopping)
+    finally:
+        db.dispose()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cane", description="เครื่องมือของบอท cane")
     commands = parser.add_subparsers(dest="group", required=True)
@@ -100,6 +132,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="บันทึกไว้แต่ยังไม่เปิดใช้ (engine ยังเดินด้วยเวอร์ชันเดิม)",
     )
     seed.set_defaults(activate=True, run=_seed)
+
+    engine_cmds = commands.add_parser("engine", help="ลูปของบอทต่อ profile").add_subparsers(
+        dest="command", required=True
+    )
+
+    engine_run = engine_cmds.add_parser(
+        "run",
+        help="เดินลูปของ profile หนึ่งจนกว่าจะถูกสั่งหยุด",
+        description=(
+            "**ปกติไม่ได้พิมพ์เอง** — supervisor ในคอนโซลเป็นคนเรียก · สั่งเองได้เพื่อ "
+            "ตรวจงาน แต่ต้องมีคนกด start ก่อน ไม่งั้นมันอ่านเจตนาแล้วออกทันที"
+        ),
+    )
+    engine_run.add_argument("--profile", required=True, choices=["live", "paper"])
+    engine_run.set_defaults(run=_engine_run)
 
     return parser
 

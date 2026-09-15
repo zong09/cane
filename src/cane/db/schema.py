@@ -999,3 +999,33 @@ kill_switch = Table(
         name="ck_kill_switch_latched_has_a_story",
     ),
 )
+
+
+#: เจตนาของคนกับ heartbeat ของ engine — **ไม่มีคอลัมน์ "สถานะ"** (spec/10 §5. state ที่อยู่ในตาราง)
+#:
+#: ตารางที่สองที่เขียนทับได้ คู่กับ `kill_switch` ข้างบน · สถานะที่คอนโซลแสดง
+#: (`running` / `crashed` / `stopping`) คิดใหม่ทุกครั้งที่ถามจากสองคอลัมน์นี้ที่
+#: `cane/engine/state.py` · เก็บลงตารางเมื่อไหร่จะได้ค่าที่ค้างอยู่ตอน process ตาย
+#: กลางทาง ซึ่งเป็นการโกหกชนิดเดียวกับที่ spec/10 ทั้งหน้ามีไว้กัน
+#:
+#: **ข้อบังคับที่สำคัญที่สุดของตารางนี้ก็ไม่ได้อยู่ในคำประกาศนี้เช่นกัน** — GRANT
+#: ระดับคอลัมน์ของ migration 0009 แยกว่าคอนโซลเขียนได้แค่ `should_run` และ engine
+#: เขียนได้แค่ `last_heartbeat_ts` / `blocked_reason` · SQLAlchemy ประกาศสิทธิ์ระดับ
+#: คอลัมน์ไม่ได้ `server_default` ของ `should_run` ข้างล่างจึงดูเหมือนค่าตั้งต้นเฉยๆ
+#: ทั้งที่มันเป็นส่วนหนึ่งของด่านนั้น
+engine_state = Table(
+    "engine_state",
+    metadata,
+    Column("profile", PROFILE_T, primary_key=True),
+    Column("should_run", Boolean, nullable=False, server_default=text("false")),
+    Column("last_heartbeat_ts", BigInteger),
+    Column("blocked_reason", Text),
+    CheckConstraint(
+        "blocked_reason IS NULL OR length(btrim(blocked_reason)) > 0",
+        name="ck_engine_state_blocked_reason_has_a_story",
+    ),
+    CheckConstraint(
+        "last_heartbeat_ts IS NULL OR last_heartbeat_ts > 0",
+        name="ck_engine_state_heartbeat_is_epoch_ms",
+    ),
+)
