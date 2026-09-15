@@ -146,6 +146,9 @@ def test_switching_to_live_is_refused_until_step_up_exists(no_config: None) -> N
 
     assert response.status_code == 403
     assert "ใบ 20" in response.text
+    # ต้องเป็น partial ของกล่องเตือนใน modal ไม่ใช่ JSON `{"detail": ...}` ของ FastAPI
+    # — htmx เป็นคนรับ ไม่ใช่โค้ดที่อ่าน JSON เป็น
+    assert 'class="modal__warn"' in response.text
 
 
 def test_switching_back_to_paper_takes_effect_immediately(no_config: None) -> None:
@@ -300,3 +303,23 @@ def test_the_card_answered_right_after_a_command_asks_for_one_extra_recheck() ->
 
     assert "load delay:1200ms" in after_start
     assert "load delay:1200ms" in after_stop
+
+
+def test_a_crashed_engine_still_shows_stop_until_the_supervisor_can_tell_it_apart(
+    no_config: None,
+) -> None:
+    """ปุ่มเลือกจาก `should_run` ไม่ใช่ `status` — ตรึงไว้เพราะยังเปลี่ยนไม่ปลอดภัย
+
+    spec/10 §1. หนึ่ง engine ต่อหนึ่ง profile บอกว่า engine ที่พังให้คนกดสตาร์ทเอง
+    และ `launch()` ก็เปิดให้ `crashed` อยู่แล้ว · แต่ช่วงสองสามวินาทีแรกหลัง
+    `launch()` สถานะก็อ่านได้เป็น `crashed` เหมือนกัน ปุ่ม start ตรงนั้นจะพาไป
+    `launch()` รอบสองแล้วได้ process ตัวที่สอง · ปลดตรงนี้ได้เมื่อ `Supervisor`
+    แยก "เพิ่ง spawn" ออกจาก "ตายแล้ว" ได้ — เป็นของที่ต้องแก้ที่ engine/ ไม่ใช่ที่ route
+    """
+    client, sup = build({"live": CRASHED, "paper": CRASHED})
+    sup.should_run["paper"] = True
+    with client:
+        card = client.get("/partials/engine").text
+
+    assert "stop engine" in card
+    assert "start engine" not in card
