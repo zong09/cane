@@ -166,8 +166,27 @@ def test_launching_twice_while_the_heartbeat_is_fresh_spawns_only_once():
     assert supervisor.launch(view(status=STOPPED)) is not None
     assert supervisor.launch(view(status=RUNNING)) is None
     assert supervisor.launch(view(status=BLOCKED)) is None
+    assert supervisor.launch(view(status=STOPPING)) is None
 
     assert spawn.calls == ["paper"]
+
+
+def test_starting_during_a_stop_that_has_not_finished_does_not_add_a_second_engine():
+    """**`stopping` คือ heartbeat ที่ยังสด** — สเปกบอกว่าสตาร์ทตอน heartbeat สดคือ no-op
+
+    เส้นทางที่เกิดจริง: คอนโซลรีสตาร์ท pid หาย → กด stop (ตั้ง `should_run = false`
+    แต่ส่ง SIGTERM ไม่ได้) → engine เดิมยังรออยู่กลางรอบ → คนกด start ทันที ตั้ง
+    `should_run` กลับเป็น `true` → ถ้าตัวนี้ spawn ตัวใหม่ engine เดิมจะอ่านเจตนาที่
+    ต้นรอบถัดไปแล้ว **เดินต่อ** · ได้สองตัวยิงออเดอร์ซ้อนบน `live`
+
+    ช่วงเสี่ยงยาวเท่ากับการรอหนึ่งรอบ — ในใบ 18 คือห้าวินาที แต่ในใบ 12 คือหนึ่งแท่ง
+    ซึ่งบน 1D คือหนึ่งวันเต็ม
+    """
+    spawn = FakeSpawn()
+    supervisor = Supervisor(spawn=spawn)
+
+    assert supervisor.launch(view(status=STOPPING)) is None
+    assert spawn.calls == []
 
 
 def test_a_crashed_engine_is_relaunched_only_because_someone_asked_not_by_itself():
@@ -339,7 +358,32 @@ def test_the_loop_stops_when_the_intent_flips_even_though_no_signal_ever_arrived
     patched.should_run = [True, False]
 
     assert loop.run("paper", db=patched, stopping=loop.StopFlag(), sleep=clock.sleep, now=clock.now) == 0
-    assert patched.log == ["read", "beat", "beat", "read"], "รอบแรกเต้นสองครั้ง: ต้นรอบกับระหว่างรอ"
+    assert patched.log == ["read", "beat", "read", "read"], (
+        "การรอเห็นเจตนาเปลี่ยนแล้วออก แล้วต้นรอบยืนยันอีกครั้งก่อนจบ — "
+        "การอ่านซ้ำหนึ่งครั้งคือราคาของการมีผู้ตัดสินจุดเดียวที่ต้นรอบ"
+    )
+
+
+def test_the_wait_itself_notices_a_stop_so_a_console_with_no_pid_is_not_stuck(patched, clock):
+    """**การรออ่านเจตนาด้วย ไม่ใช่แค่ธง SIGTERM**
+
+    คอนโซลที่รีสตาร์ทแล้วไม่มี pid ส่งสัญญาณไม่ได้ เหลือแต่ `should_run` ในตาราง ·
+    ถ้าอ่านเฉพาะที่ต้นรอบ การกด stop ในกรณีนั้นจะมีผลก็ต่อเมื่อการรอจบลงเอง ซึ่งใน
+    ใบ 12 คือรอจนแท่งถัดไปปิด — บน 1D คือหนึ่งวันเต็มที่ปุ่มหยุดดูเหมือนไม่ทำงาน
+    """
+    patched.should_run = [False]
+
+    loop._wait_beating(
+        "paper",
+        db=patched,
+        until_ms=HEARTBEAT_PERIOD_S * 1000 * 10,
+        stopping=loop.StopFlag(),
+        sleep=clock.sleep,
+        now=clock.now,
+    )
+
+    assert patched.log == ["read"], "ต้องออกทันทีที่เห็นเจตนาเปลี่ยน ไม่เต้นต่อ"
+    assert len(clock.naps) == 1
 
 
 def test_a_stop_flag_set_before_the_first_read_skips_the_cycle_entirely(patched, clock):
@@ -357,6 +401,8 @@ def test_the_wait_is_sliced_so_the_heartbeat_never_goes_stale_while_waiting(patc
     การรอที่ไม่แบ่งซอยจะทำให้ heartbeat เก่าเกินสองรอบระหว่างที่ engine สุขภาพดี
     กำลังรออยู่ แล้วคอนโซลจะขึ้น `crashed` ทั้งที่ไม่มีอะไรพัง
     """
+    patched.should_run = [True, True, True]
+
     loop._wait_beating(
         "paper",
         db=patched,
@@ -367,7 +413,9 @@ def test_the_wait_is_sliced_so_the_heartbeat_never_goes_stale_while_waiting(patc
     )
 
     assert clock.naps == [HEARTBEAT_PERIOD_S] * 3
-    assert patched.log == ["beat"] * 3, "หนึ่งการเต้นต่อหนึ่งช่วง ไม่ใช่ครั้งเดียวตอนจบ"
+    assert patched.log == ["read", "beat"] * 3, (
+        "หนึ่งการเต้นต่อหนึ่งช่วง ไม่ใช่ครั้งเดียวตอนจบ · และอ่านเจตนาคู่กันทุกครั้ง"
+    )
 
 
 def test_the_two_profiles_are_listed_live_first_so_the_console_never_reorders_them():

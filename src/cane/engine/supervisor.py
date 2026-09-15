@@ -60,9 +60,9 @@ from cane.db.repo import enginestate
 from cane.db.repo.enginestate import EngineState
 from cane.db.types import now_ms
 from cane.engine.state import (
-    BLOCKED,
+    CRASHED,
     PROFILES,
-    RUNNING,
+    STOPPED,
     EngineStatus,
     derive_status,
 )
@@ -150,7 +150,9 @@ class Supervisor:
         """ตั้งเจตนาเป็น "รัน" แล้วคืนภาพ **ก่อน** spawn — ดูหัวไฟล์ว่าทำไมแยก
 
         สถานะใน view ที่คืนคือสถานะ *ก่อน* คำสั่งนี้ ซึ่งคือสิ่งที่ `launch()` ต้องใช้
-        ตัดสินว่ามี process เดิมอยู่แล้วหรือยัง
+        ตัดสินว่ามี process เดิมอยู่แล้วหรือยัง · **ผู้เรียกที่จะเอา view นี้ไปแสดงผล
+        ต้องอ่านใหม่หลัง commit** ไม่งั้นหน้าจอจะขึ้น `should_run = false` ทันทีหลัง
+        กดสตาร์ท ซึ่งเป็นภาพก่อนคำสั่ง ไม่ใช่ภาพหลังคำสั่ง
         """
         at = now_ms() if now is None else now
         before = enginestate.read(conn, profile)
@@ -177,8 +179,13 @@ class Supervisor:
         สตาร์ทซ้ำตอนที่ heartbeat ยังสดคือ **no-op ไม่ใช่ error** (spec/10 §6. สัญญาของ API) ·
         ตัวตัดสินคือความสดของ heartbeat ไม่ใช่การมี handle อยู่ในมือ — คอนโซลที่เพิ่ง
         รีสตาร์ทไม่มี handle แต่ engine ยังเดินอยู่ ถ้าตัดสินจาก handle จะได้ตัวที่สอง
+
+        เขียนเป็น "spawn เฉพาะตอนที่ไม่มีอะไรเต้นอยู่" ไม่ใช่ "ไม่ spawn ตอน running" ·
+        `stopping` คือ heartbeat ที่ยังสดเหมือนกัน และเป็นช่องที่อันตรายที่สุด: engine
+        ที่กำลังจะหยุดยังไม่ถึงต้นรอบ ถ้ามีคนกด start ระหว่างนั้น เจตนาจะกลับเป็น
+        `true` ก่อนที่มันจะอ่าน แล้วมันจะเดินต่อ — ได้สองตัวพร้อมกัน
         """
-        if view.status in (RUNNING, BLOCKED):
+        if view.status not in (STOPPED, CRASHED):
             return None
         process = self._spawn(view.profile)
         self._handles[view.profile] = process

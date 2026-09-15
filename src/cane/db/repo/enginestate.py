@@ -116,18 +116,17 @@ def beat(conn: Connection, profile: str, *, blocked_reason: str | None = None) -
 
     ไม่เอ่ยถึง `should_run` เลย — engine สั่งให้ตัวเองรันไม่ได้ ดูหัวไฟล์
     """
+    # อ่านนาฬิกาครั้งเดียว — สองครั้งทำให้แถวที่แทรกกับแถวที่ทับมี ts ต่างกันได้
+    at = now_ms()
     conn.execute(
         insert(engine_state)
         .values(
             profile=profile,
-            last_heartbeat_ts=now_ms(),
+            last_heartbeat_ts=at,
             blocked_reason=blocked_reason,
         )
         .on_conflict_do_update(
             index_elements=[engine_state.c.profile],
-            set_={
-                "last_heartbeat_ts": now_ms(),
-                "blocked_reason": blocked_reason,
-            },
+            set_={"last_heartbeat_ts": at, "blocked_reason": blocked_reason},
         )
     )

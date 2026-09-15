@@ -31,7 +31,9 @@ Full specs live in [docs/README.md](docs/README.md); the reasoning behind each c
 Specs and ADRs are complete. The code is being built out in the order laid out by the
 [runtime pipeline](docs/spec/08-runtime-pipeline.md).
 
-**There is no entry point yet** — the bot cannot be run. What exists is modules and their tests.
+The bot has an entry point now: `cane engine run --profile {live|paper}` is the per-profile
+loop, normally started by the console's supervisor rather than by hand. The trading pipeline
+inside that loop is still being built.
 
 | Component | Status |
 | --- | --- |
@@ -40,7 +42,8 @@ Specs and ADRs are complete. The code is being built out in the order laid out b
 | `data/` — closed-bar OHLCV (live and replay share one `as_of` axis), funding rate, ccxt client per market; writes through `db/repo` | ✅ |
 | `db/` — PostgreSQL foundation: schema, migrations, repositories, append-only enforced by grants | ✅ |
 | `db/repo/decisions.py` — the per-bar decision record and its six child tables | ✅ |
-| Action Zone computation → `zone`, `state`, `long_signal`, `short_signal` | 🟡 |
+| Action Zone computation → `zone`, `state`, `long_signal`, `short_signal` — verified bar-by-bar against a TradingView export | ✅ |
+| `engine/` — per-profile subprocess, heartbeat, and the console-side supervisor (start/stop/status) | ✅ |
 | Confluence Judge (LLM weighing the supporting factors) | ⬜ |
 | Position sizing + the discipline rules + cold start | ⬜ |
 | Risk limits, kill switch, broker, reconciliation | ⬜ |
@@ -61,13 +64,13 @@ Requires Python 3.11+ (for stdlib `tomllib`) and [uv](https://docs.astral.sh/uv/
 
 ```bash
 uv sync --extra dev                          # install dependencies + pytest
-uv run --extra dev pytest -q -m "not db"     # 141 passing, no services needed
+uv run --extra dev pytest -q -m "not db"     # 349 passing, no services needed
 ```
 
 `pytest` is an optional dependency — skipping `uv sync --extra dev` and running a bare
 `uv run pytest` will fail.
 
-The full suite (283 tests) needs PostgreSQL; see [Database](#database) below. Tests that touch
+The full suite (601 tests) needs PostgreSQL; see [Database](#database) below. Tests that touch
 persistence carry the `db` marker so the rest still runs anywhere.
 
 The test suite never touches the network: the exchange client is injected everywhere, never
@@ -83,7 +86,7 @@ there is no ORM.
 docker compose up -d db                                   # postgres:16-alpine on host port 5436
 cp .env.example .env                                      # CANE_DB_DSN lives here
 uv run --env-file .env alembic upgrade head
-uv run --env-file .env --extra dev pytest -q              # 283 passing
+uv run --env-file .env --extra dev pytest -q              # 601 passing
 ```
 
 Host port **5436**, not 5432 — the dev machine already has other Postgres containers on 5432 and
