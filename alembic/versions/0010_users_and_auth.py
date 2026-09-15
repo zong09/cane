@@ -64,7 +64,8 @@ _STATUS_T = postgresql.ENUM(
     "pending", "active", "suspended", name="user_status_t", create_type=False
 )
 _TOKEN_KIND_T = postgresql.ENUM(
-    "invite", "reset_2fa", "reset_password", name="auth_token_kind_t", create_type=False
+    "login", "invite", "reset_2fa", "reset_password",
+    name="auth_token_kind_t", create_type=False,
 )
 
 #: 5 role ของ spec/09 · ลำดับคือลำดับที่หน้าจอแสดง ไม่ใช่ลำดับของสิทธิ์
@@ -131,9 +132,12 @@ $$ LANGUAGE plpgsql;
 
 def upgrade() -> None:
     op.execute("CREATE TYPE user_status_t AS ENUM ('pending', 'active', 'suspended')")
+    # `login` คือตั๋วของขั้นที่ 1 (spec/09 §5. login สองขั้น) — อายุ 5 นาที ใช้ได้
+    # ครั้งเดียว ผูกกับอีเมลนั้น และ **ไม่ใช่ session** · อยู่ในตารางเดียวกับอีกสามชนิด
+    # เพราะเป็นกลไกเดียวกันทุกประการ ต่างกันแค่ว่าปลดล็อกให้ทำอะไรและอยู่ได้นานแค่ไหน
     op.execute(
         "CREATE TYPE auth_token_kind_t AS ENUM "
-        "('invite', 'reset_2fa', 'reset_password')"
+        "('login', 'invite', 'reset_2fa', 'reset_password')"
     )
 
     # ── คำศัพท์: role กับ cap ────────────────────────────────────────────────
@@ -307,10 +311,27 @@ def upgrade() -> None:
         sa.Column("email", sa.Text(), nullable=False),
         sa.Column("user_id", sa.Integer(), nullable=True),
         sa.Column("ok", sa.Boolean(), nullable=False),
+        # ขั้นไหนของ login · `unlock` คือการที่ OWNER/ADMIN ล้างตัวนับให้ด้วยมือ
+        # ซึ่ง **ไม่ใช่การ login สำเร็จ** ถึงจะล้างตัวนับเหมือนกัน · ถ้าใช้ `ok`
+        # ตัวเดียวแยกสองเรื่องนี้ ประวัติจะอ่านว่าคนคนนั้น login เข้ามาเองตอนนั้น
+        sa.Column("kind", sa.Text(), nullable=False),
         sa.Column("ip", sa.Text(), nullable=True),
         sa.Column("ts", sa.BigInteger(), nullable=False),
         sa.PrimaryKeyConstraint("id", name="pk_login_attempts"),
+        sa.CheckConstraint(
+            "kind IN ('password', 'totp', 'backup_code', 'unlock')",
+            name="ck_login_attempts_kind",
+        ),
+        # `unlock` เป็นการล้างตัวนับเสมอ ไม่มี `unlock` ที่ล้มเหลว
+        sa.CheckConstraint(
+            "kind <> 'unlock' OR ok", name="ck_login_attempts_unlock_always_succeeds"
+        ),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], name="fk_login_attempts_user"),
+        # `users.email` มี CHECK เดียวกันอยู่แล้ว · ถ้าตารางนี้ไม่มี อีเมลที่ไม่มีบัญชี
+        # จะถูกนับแยกกันตามตัวพิมพ์ แล้วการล็อกจะเลี่ยงได้ด้วยการพิมพ์ใหญ่สลับเล็ก
+        sa.CheckConstraint(
+            "email = lower(email)", name="ck_login_attempts_email_is_lowercase"
+        ),
     )
     op.create_index("ix_login_attempts_email_ts", "login_attempts", ["email", "ts"])
 

@@ -1046,7 +1046,8 @@ USER_STATUS_T = postgresql.ENUM(
 
 #: ลิงก์ใช้ครั้งเดียวสามชนิดที่เป็นกลไกเดียวกัน — spec/09
 AUTH_TOKEN_KIND_T = postgresql.ENUM(
-    "invite", "reset_2fa", "reset_password", name="auth_token_kind_t", create_type=False
+    "login", "invite", "reset_2fa", "reset_password",
+    name="auth_token_kind_t", create_type=False,
 )
 
 #: 5 role · แถวถูก seed ใน migration เพราะโค้ดอ้างชื่อพวกนี้ตรงๆ ไม่ใช่ค่าที่คนแก้
@@ -1171,7 +1172,8 @@ sessions = Table(
     Index("ix_sessions_user", "user_id"),
 )
 
-#: คำเชิญ / reset 2FA / ตั้งรหัสผ่านใหม่ — กลไกเดียวกัน ต่างกันแค่ `kind`
+#: ตั๋วขั้นที่ 1 ของ login / คำเชิญ / reset 2FA / ตั้งรหัสผ่านใหม่ — กลไกเดียวกัน
+#: ต่างกันแค่ `kind`
 #: ปลดล็อกให้ทำอะไร (spec/09) · การออกใหม่ฆ่าลิงก์เดิมด้วย `retired_ts`
 auth_tokens = Table(
     "auth_tokens",
@@ -1198,9 +1200,18 @@ login_attempts = Table(
     Column("email", Text, nullable=False),
     Column("user_id", Integer),
     Column("ok", Boolean, nullable=False),
+    Column("kind", Text, nullable=False),
     Column("ip", Text),
     Column("ts", BigInteger, nullable=False),
     ForeignKeyConstraint(["user_id"], ["users.id"], name="fk_login_attempts_user"),
+    CheckConstraint(
+        "kind IN ('password', 'totp', 'backup_code', 'unlock')",
+        name="ck_login_attempts_kind",
+    ),
+    CheckConstraint(
+        "kind <> 'unlock' OR ok", name="ck_login_attempts_unlock_always_succeeds"
+    ),
+    CheckConstraint("email = lower(email)", name="ck_login_attempts_email_is_lowercase"),
     Index("ix_login_attempts_email_ts", "email", "ts"),
 )
 
