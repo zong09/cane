@@ -206,6 +206,25 @@ def test_hammering_while_locked_does_not_push_the_unlock_time_further_away(db, a
     assert later.locked_until == first.locked_until
 
 
+def test_an_attempt_while_locked_still_lands_in_the_audit_log(db, account):
+    """spec/09 §8. audit log ของผู้ใช้ สั่งให้การล็อกอ่านย้อนหลังได้
+
+    ครั้งนี้ไม่ถูกนับเข้าตัวนับ (ไม่งั้นจะยืดล็อก) แต่ "มีคนพยายามต่อระหว่างล็อก"
+    เป็นเรื่องที่เจ้าของบัญชีต้องเห็น — ถ้าเงียบทั้งคู่ ช่วงที่ล็อกอยู่จะกลายเป็น
+    ช่องที่ไม่มีบันทึกอะไรเลย
+    """
+    from sqlalchemy import select
+
+    from cane.db.schema import user_audit_log
+
+    for i in range(login_attempts.MAX_FAILURES):
+        service.begin_login(db, email=EMAIL, password="ผิด", now=NOW + i)
+    service.begin_login(db, email=EMAIL, password="ผิด", now=NOW + 10)
+
+    actions = list(db.execute(select(user_audit_log.c.action)).scalars())
+    assert "login.refused_locked" in actions
+
+
 def test_passing_stage_one_does_not_clear_the_counter(db, account, secret):
     """ถ้าล้างที่ขั้นที่ 1 คนที่รู้รหัสผ่านแต่ไม่มีอุปกรณ์ 2FA จะยิงขั้นที่ 2 ได้ไม่จำกัด"""
     for i in range(login_attempts.MAX_FAILURES - 1):

@@ -72,7 +72,17 @@ def begin_login(
     state = login_attempts.lock_state(conn, email)
     if state.is_locked(now):
         # ไม่บันทึกครั้งนี้เป็น "ผิด" — ไม่งั้นการยิงรัวจะยืดล็อกออกไปเรื่อยๆ
-        # ซึ่งลงโทษเจ้าของบัญชีตัวจริง ไม่ใช่คนที่ยิง
+        # ซึ่งลงโทษเจ้าของบัญชีตัวจริง ไม่ใช่คนที่ยิง · แต่ยัง**ลง audit** เพราะ
+        # spec/09 §8. audit log ของผู้ใช้ สั่งให้การล็อกอ่านย้อนหลังได้ และคนที่ถูก
+        # ยิงรัวจนล็อกต้องเห็นได้ว่ามีคนพยายามต่อระหว่างที่ล็อกอยู่
+        audit.record(
+            conn,
+            action="login.refused_locked",
+            ts=now,
+            target=users_repo.normalise_email(email),
+            detail={"locked_until": state.locked_until},
+            ip=ip,
+        )
         return Failure(locked_until=state.locked_until)
 
     user = users_repo.by_email(conn, email)
