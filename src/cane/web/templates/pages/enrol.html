@@ -1,0 +1,22 @@
+{% extends "auth_base.html" %}
+{% block card %}
+<div class="authcard__title">ผูกแอป Authenticator</div>
+<div class="authcard__note">บัญชี {{ email }} · เพิ่มคีย์ข้างล่างลงในแอป แล้วกรอกรหัส 6 หลักที่ได้กลับมา</div>
+{% if error %}<div class="modal__warn">{{ error }}</div>{% endif %}
+<div class="secretbox">{{ secret }}</div>
+<div class="authcard__note authcard__note--tight">หรือใช้ลิงก์นี้กับแอปที่รับ otpauth: <span class="secretbox__uri">{{ uri }}</span></div>
+<form hx-post="/enrol/{{ token }}" hx-target="body" hx-swap="innerHTML">
+  <input type="hidden" name="secret" value="{{ secret }}">
+  {% if needs_password %}
+  <label class="field">
+    <span class="field__name">ตั้งรหัสผ่าน</span>
+    <input class="field__input" type="password" name="password" required minlength="12" autocomplete="new-password">
+  </label>
+  {% endif %}
+  <label class="field">
+    <span class="field__name">รหัส 6 หลักจากแอป</span>
+    <input class="field__input field__input--code" name="code" inputmode="numeric" placeholder="000000" required autocomplete="one-time-code">
+  </label>
+  <button class="btn btn--primary btn--block" type="submit">ยืนยันและเปิดใช้บัญชี</button>
+</form>
+{% endblock %}

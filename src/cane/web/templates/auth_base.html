@@ -1,0 +1,30 @@
+{# หน้า login ไม่มี rail / top bar / footer (handoff §4) · การ์ด 472px กลางจอ #}
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>cane console</title>
+<meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"400","swap":true},{"code":"401","swap":true},{"code":"403","swap":true},{"code":"404","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/console.css">
+<script src="/static/vendor/htmx-2.0.4.min.js" defer></script>
+</head>
+<body>
+<div class="authpage">
+  <div class="authcard">
+    <div class="authcard__rule"></div>
+    <div class="authcard__body">
+      <div class="rail__lockup rail__lockup--auth">
+        <span class="rail__mark"><svg viewBox="0 0 48 48" width="21" height="21" aria-label="cane"><path d="M28.8 19.6 A11.5 11.5 0 1 0 28.8 34.4 L41.7 19.1" fill="none" stroke="currentColor" stroke-width="6.5" stroke-linecap="round"></path></svg></span>
+        <div>
+          <div class="rail__wordmark">cane</div>
+          <div class="rail__tagline">CDC ACTION ZONE</div>
+        </div>
+      </div>
+      {% block card %}{% endblock %}
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -11,7 +11,7 @@ from importlib.metadata import version
 
 from sqlalchemy import Connection
 
-from cane.api.deps import ConsoleUser
+from cane.db.repo.users import User
 from cane.config.settings import Settings
 from cane.config.validate import ConfigError
 from cane.db.repo import config as config_repo
@@ -43,6 +43,16 @@ class Chip:
 
     label: str
     kind: str  # "live" | "paper" | "warn"
+
+
+def _initials(name: str) -> str:
+    """ตัวย่อในชิปผู้ใช้ · design ใช้ `NP` ของ "นภัส พ."
+
+    เอาอักษรแรกของแต่ละคำมาสองตัว — ไทยไม่มีตัวพิมพ์ใหญ่ การ `upper()` จึงไม่ทำอะไร
+    กับชื่อไทยและไม่ทำให้ชื่ออังกฤษเพี้ยน
+    """
+    parts = [word for word in name.split() if word]
+    return "".join(word[0] for word in parts[:2]).upper() or "—"
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,7 +111,7 @@ def build(
     conn: Connection,
     sup: Supervisor,
     *,
-    user: ConsoleUser,
+    user: User,
     mode: str,
     active: str = "",
 ) -> dict[str, object]:
@@ -117,6 +127,7 @@ def build(
 
     return {
         "app_version": version("cane"),
+        "initials": _initials(user.name),
         "user": user,
         "mode": mode,
         "other_mode": other,
