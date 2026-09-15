@@ -133,8 +133,9 @@ def cdc_trailing_stop(
     `bars` ต้องเรียงจากเก่าไปใหม่ · ไม่เรียงให้และไม่ตรวจ ธรรมเนียมเดียวกับ
     `action_zones()` — การเรียงเงียบๆ จะกลบบั๊กของผู้เรียกที่ส่งย้อนลำดับมา
 
-    `Sig` คำนวณจาก `Hst` เฉพาะช่วงที่นิยามได้ แล้วเติม `None` กลับเข้าไปข้างหน้า ·
-    `pine_ema()` ไม่รับ `None` และการยัด 0.0 ลงช่วงอุ่นเครื่องจะดึง EMA ลงเป็นสิบแท่ง
+    `Sig` คือ EMA ของ `Hst` ซึ่งมีหัวเป็น `None` · `pine_ema()` รับหัวที่เป็น `None`
+    และคืนหัวที่เป็น `None` ให้เอง (`na` ของ Pine) จึงส่งเข้าไปตรงๆ ได้ — เคยมี
+    `_ema_over_defined()` ตัดหัว/ต่อหัวให้ที่นี่ ตอนที่ `pine_ema()` ยังไม่รับ `None`
     """
     fast = cdc_trail(bars, period=fast_period, factor=fast_factor)
     slow = cdc_trail(bars, period=slow_period, factor=slow_factor)
@@ -143,7 +144,7 @@ def cdc_trailing_stop(
         None if f is None or s is None else f - s
         for f, s in zip(fast, slow, strict=True)
     ]
-    sig = _ema_over_defined(hst, signal_period)
+    sig = pine_ema(hst, signal_period)
 
     return [
         TrailPoint(
@@ -156,21 +157,3 @@ def cdc_trailing_stop(
         )
         for i, bar in enumerate(bars)
     ]
-
-
-def _ema_over_defined(values: Sequence[float | None], length: int) -> list[float | None]:
-    """EMA ของช่วงที่มีค่า · ช่วงที่เป็น `None` ยังเป็น `None` หลังคำนวณ
-
-    Pine ให้ `ema()` ของ `na` เป็น `na` และเริ่มนับใหม่เมื่อ source มีค่า — ที่นี่
-    ทำแบบเดียวกันโดยตัดหัวที่เป็น `None` ออกก่อน ไม่ใช่แทนด้วย 0.0 ซึ่งจะเป็นค่าที่
-    ต่ำผิดปกติแล้วดึง EMA ลงไปหลายสิบแท่งกว่าจะฟื้น
-
-    `Hst` ไม่มีรูที่กลางเส้น (ทั้ง `fast` และ `slow` เป็น `None` ต่อเนื่องช่วงหัว
-    เท่านั้น) การตัดหัวจึงพอ ไม่ต้องมีตรรกะรองรับรูตรงกลางที่เกิดไม่ได้
-    """
-    start = next((i for i, v in enumerate(values) if v is not None), len(values))
-    defined = [v for v in values[start:] if v is not None]
-    if len(defined) != len(values) - start:  # pragma: no cover - ดู docstring
-        raise ValueError("Hst มีรูกลางเส้น ซึ่งไม่ควรเกิดได้จาก cdc_trail()")
-    smoothed = pine_ema(defined, length)
-    return [None] * start + list(smoothed)

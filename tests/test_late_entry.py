@@ -603,3 +603,24 @@ def test_the_two_lines_use_their_own_period_and_factor():
     for point in tail:
         assert point.fast > point.slow
         assert point.hst == pytest.approx(point.fast - point.slow)
+
+
+def test_sig_starts_a_full_signal_period_after_hst_does():
+    """`Sig` คือ `ta.ema(Hst, 9)` — `na` จนกว่าจะมี `Hst` ครบ 9 แท่ง แล้ว seed ด้วย SMA
+
+    `pine_ema()` เพิ่งเปลี่ยนมา seed ด้วย SMA (ใบ 04) ซึ่งเลื่อนจุดเริ่มของ `Sig`
+    ออกไปอีก 8 แท่งและเปลี่ยนค่าช่วงต้น · ก่อนหน้านี้ไม่มีเทสต์ไหนแตะ `sig` เลย
+    การเปลี่ยนจึงเงียบสนิท ข้อนี้ปิดช่องนั้น
+
+    `TrailPoint.sig` ยังไม่มีผู้ใช้ใน `src/` — คำนวณไว้เพราะสคริปต์ต้นทางมี
+    """
+    points = cdc_trailing_stop(bars([100.0 + i * 2 for i in range(40)]))
+    hst = [p.hst for p in points]
+    defined_at = next(i for i, v in enumerate(hst) if v is not None)
+
+    assert [i for i, p in enumerate(points) if p.sig is None] == list(
+        range(defined_at + 9 - 1)
+    )
+    assert points[defined_at + 8].sig == pytest.approx(
+        sum(hst[defined_at : defined_at + 9]) / 9
+    )
