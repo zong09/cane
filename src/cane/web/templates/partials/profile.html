@@ -1,0 +1,22 @@
+<div class="profile">
+  <div class="profile__label">PROFILE</div>
+  <div class="switch switch--{{ mode }}">
+    {% if mode == "live" %}
+    <span class="switch__on switch__on--live">LIVE</span>
+    <button class="switch__off" type="button"
+            hx-post="/api/session/mode" hx-vals='{"mode":"paper"}'
+            hx-target="#profile-state" hx-swap="outerHTML">PAPER</button>
+    {% else %}
+    {# paper → live ต้อง step-up · เปิด modal ก่อน ไม่ยิงตรง #}
+    <button class="switch__off" type="button"
+            hx-get="/partials/mode-modal" hx-target="#modal-slot"
+            hx-swap="innerHTML">LIVE</button>
+    <span class="switch__on switch__on--paper">PAPER</span>
+    {% endif %}
+  </div>
+  <div class="profile__meta">
+    <span class="profile__file">{{ profile_file }}</span>
+    <span class="chip chip--{{ chip.kind }}">{{ chip.label }}</span>
+  </div>
+  <div class="profile__desc">USDT-M perp · เปิดได้ทั้ง long และ short</div>
+</div>

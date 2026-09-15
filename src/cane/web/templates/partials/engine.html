@@ -1,0 +1,31 @@
+{#
+  poll ทุก 5 วินาที (= HEARTBEAT_PERIOD_S) · ไม่ใช่ความสวยงาม แต่จำเป็น:
+  หลังกดสตาร์ท process ลูกยังไม่ได้เขียน heartbeat แรก สถานะที่คำนวณได้จึงเป็น
+  `crashed` อยู่ครู่หนึ่ง ถ้าไม่ poll หน้าจอจะค้างอยู่ที่ crashed ตลอดไป
+
+  การ์ดที่ตอบกลับ *ทันที* หลังกดปุ่มจึงขอ trigger เพิ่มอีกนัดหนึ่งแบบหน่วงสั้น —
+  ยืดเวลาที่ป้ายผิดค้างอยู่จาก ~5 วินาทีเหลือ ~1 วินาที · ไม่ใช้วิธีเดาว่า
+  "เพิ่งสั่งไป = กำลังขึ้น" เพราะ engine ที่ตายตั้งแต่ยังไม่ทันเต้นครั้งแรกก็หน้าตา
+  เหมือนกันเป๊ะ และป้ายที่บอกว่ากำลังขึ้นทั้งที่มันตายแล้วคือป้ายที่ไม่มีใครไปกดสตาร์ท
+#}
+<div id="engine-card" class="engine engine--{{ engine.status }} engine--{{ mode }}"
+     hx-get="/partials/engine"
+     hx-trigger="{% if just_changed %}load delay:1200ms, {% endif %}every 5s"
+     hx-swap="outerHTML">
+  <div class="engine__line">
+    <span class="engine__dot"></span>engine {{ mode }} · {{ engine.status }}
+  </div>
+  {% if engine.blocked_reason %}
+  <div class="engine__reason">{{ engine.blocked_reason }}</div>
+  {% endif %}
+  {% if engine.should_run %}
+  <button class="engine__btn engine__btn--stop" type="button"
+          hx-post="/api/{{ mode }}/engine/stop"
+          hx-target="#engine-card" hx-swap="outerHTML">stop engine</button>
+  {% else %}
+  <button class="engine__btn engine__btn--start" type="button"
+          hx-post="/api/{{ mode }}/engine/start"
+          hx-target="#engine-card" hx-swap="outerHTML">start engine</button>
+  {% endif %}
+  <div class="engine__other">{{ other_engine_label }}</div>
+</div>

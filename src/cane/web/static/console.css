@@ -1,0 +1,297 @@
+/* cane console — ชุด token ถอดจาก design handoff §12.3–12.6
+ *
+ * ไฟล์ design ไม่มี :root ให้ลอก — style ในนั้นเป็น inline attribute ล้วน 2848 บรรทัด
+ * ไฟล์นี้จึงเป็นการ "ประกอบ token ขึ้นใหม่" จากตารางในเอกสาร ไม่ใช่การ copy block
+ *
+ * radius เป็น 0 แทบทุกที่โดยเจตนา (handoff §12.6 เน้นว่า **อย่าเปลี่ยนการ์ด/ปุ่ม
+ * เป็นมุมโค้ง**) · 1px เฉพาะ input กับปุ่มไอคอนเล็ก
+ */
+
+:root {
+  /* surfaces & neutrals */
+  --body-bg: #eaf1f7;
+  --body-grad: linear-gradient(155deg, #c3d8e8 0%, #dbe8f2 34%, #eff5f9 68%, #ffffff 100%);
+  --surface: linear-gradient(160deg, #e6eff7 0%, #f4f8fb 58%, #ffffff 100%);
+  --surface-raised: linear-gradient(180deg, #eef4f9 0%, #ffffff 100%);
+  --hover: #e8eef3;
+  --selected: linear-gradient(90deg, #cfe3f4 0%, #eaf4fd 100%);
+  --border: #d5e1ea;
+  --border-strong: #c9d8e3;
+  --divider: #dde7ee;
+  --divider-soft: #e3ebf1;
+  --top-rule: #e4eff8;
+
+  --text: #0e1e29;
+  --text-2: #3d5a6b;
+  --label: #5f7b8a;
+  --muted: #6f8896;
+  --faint: #8ea3af;
+
+  /* accent & semantic */
+  --primary: linear-gradient(135deg, #0f6fb5 0%, #30afff 55%, #7fd6ff 100%);
+  --primary-text: #1478c4;
+  --primary-edge: #0f6fb5;
+
+  --live: linear-gradient(135deg, #b5352b 0%, #e8776c 100%);
+  --live-text: #c0392f;
+  --live-tint: linear-gradient(160deg, #f8d6d3 0%, #fdeeec 100%);
+  --live-border: #f3d2ce;
+  --live-border-2: #e2b4ae;
+
+  --paper: linear-gradient(135deg, #0f7a4c 0%, #48bd88 100%);
+  --paper-text: #0f7a4c;
+  --paper-tint: linear-gradient(160deg, #cbead9 0%, #edf8f2 100%);
+  --paper-border: #b9dfca;
+  --paper-border-2: #a9cdb9;
+
+  --warn-text: #8a6a15;
+  --warn-tint: linear-gradient(160deg, #f6e7bd 0%, #fdf8ea 100%);
+  --warn-border: #f4e6bd;
+
+  /* zone palette */
+  --zone-green: #17a866;
+  --zone-blue: #2f7fe0;
+  --zone-lblue: #92c8f2;
+  --zone-yellow: #dfbb2a;
+  --zone-orange: #ef8b3c;
+  --zone-red: #e05252;
+  --zone-black: #c3d4e0;
+
+  /* type */
+  --sans: 'IBM Plex Sans Thai', system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', monospace;
+  --mix: 'IBM Plex Mono', 'IBM Plex Sans Thai', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--body-bg);
+  background-image: var(--body-grad);
+  background-attachment: fixed;
+  font-family: var(--sans);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--primary-text); text-decoration: none; }
+button { font-family: inherit; }
+
+/* ── โครงหน้า · 1440px คงที่ ไม่มี breakpoint (handoff §4) ─────────────────── */
+
+.app { display: flex; flex-direction: column; min-height: 100vh; width: 1440px; }
+.app__row { display: flex; flex: 1; min-height: 0; }
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+.topbar {
+  display: flex; align-items: center; gap: 12px; padding: 10px 34px;
+  background: var(--surface-raised); border-bottom: 1px solid var(--divider);
+}
+.topbar__spacer { flex: 1; }
+.topbar__mode { font: 500 10.5px var(--mix); letter-spacing: .08em; }
+.topbar__mode--live { color: var(--live-text); }
+.topbar__mode--paper { color: var(--paper-text); }
+.topbar__muted { font: 400 10.5px var(--mix); color: var(--faint); }
+
+.screen { padding: 28px 34px 40px; border-top: 2px solid var(--top-rule); }
+.h1 { font: 600 25px/1.25 var(--sans); letter-spacing: -.01em; margin: 0; }
+.placeholder {
+  margin-top: 18px; padding: 13px 15px; background: var(--surface-raised);
+  border: 1px solid var(--divider-soft); font: 400 12px/1.7 var(--sans); color: #546e7d;
+}
+
+.footer {
+  display: flex; align-items: center; justify-content: space-between; gap: 24px;
+  padding: 16px 34px; border-top: 1px solid var(--border);
+  background: var(--surface-raised);
+  font: 400 11px var(--mix); color: var(--muted); letter-spacing: .05em;
+}
+.footer__group { display: flex; align-items: center; gap: 14px; }
+.footer__mark { font-weight: 600; letter-spacing: .2em; text-transform: uppercase; color: #546e7d; }
+.footer__sep { color: var(--border-strong); }
+
+/* ── rail ─────────────────────────────────────────────────────────────────── */
+
+.rail {
+  width: 236px; flex: none; background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; padding: 26px 18px 22px;
+}
+.rail__lockup { display: flex; align-items: center; gap: 11px; padding: 0 8px 24px; }
+.rail__mark {
+  width: 30px; height: 30px; border-radius: 1px; background: var(--primary);
+  display: grid; place-items: center; color: #fff; flex: none;
+}
+.rail__wordmark { font: 600 15px/1.1 var(--mono); letter-spacing: .22em; text-transform: uppercase; }
+.rail__tagline { font: 400 10px/1.3 var(--mix); color: var(--label); margin-top: 3px; letter-spacing: .06em; }
+.rail__stripe { display: flex; height: 3px; margin: 0 8px 20px; }
+.rail__spacer { flex: 1; }
+
+.zone { display: block; }
+.zone--green { flex: 2; background: var(--zone-green); }
+.zone--blue { flex: 1; background: var(--zone-blue); }
+.zone--lblue { flex: 1; background: var(--zone-lblue); }
+.zone--yellow { flex: 1; background: var(--zone-yellow); }
+.zone--orange { flex: 1; background: var(--zone-orange); }
+.zone--red { flex: 2; background: var(--zone-red); }
+.zone--black { flex: 1; background: var(--zone-black); }
+
+.navgroup { display: flex; align-items: baseline; gap: 8px; padding: 0 12px 8px; }
+.navgroup--split { padding: 18px 12px 8px; margin-top: 4px; border-top: 1px solid var(--divider); }
+.navgroup__name { font: 500 10px/1 var(--mono); color: var(--label); letter-spacing: .08em; }
+.navgroup__scope { font: 400 10.5px var(--mix); color: var(--faint); }
+
+.nav { display: flex; flex-direction: column; gap: 2px; }
+.nav__item {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px;
+  border: 0; border-radius: 0; background: transparent; color: var(--text-2);
+  font: 400 13px var(--sans); text-align: left; cursor: pointer;
+}
+.nav__item:hover { background: var(--hover); }
+.nav__item--on { background: var(--selected); color: var(--primary-text); font-weight: 600; }
+.nav__bar { width: 3px; height: 15px; background: transparent; flex: none; }
+.nav__item--on .nav__bar { background: var(--primary); }
+.nav__num { font: 500 10px var(--mono); color: var(--muted); letter-spacing: .08em; }
+.nav__item--on .nav__num { color: var(--primary-edge); }
+.nav__dot { width: 16px; font: 500 11px var(--mono); color: var(--muted); }
+.nav__item--on .nav__dot { color: var(--primary-edge); }
+
+.symbols {
+  margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--divider);
+  display: flex; flex-direction: column; min-height: 0;
+}
+.symbols__head { display: flex; align-items: baseline; gap: 8px; padding: 0 12px 10px; }
+.symbols__grow { flex: 1; }
+.symbols__count { font: 400 10.5px var(--mix); color: var(--muted); white-space: nowrap; flex: none; }
+.symbols__query {
+  width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 1px;
+  background: var(--surface-raised); font: 400 12.5px var(--sans); color: var(--text); outline: none;
+}
+.symbols__query:focus { border-color: var(--primary-edge); background: var(--surface); }
+.symbols__list { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; overflow-y: auto; }
+.symbols__empty { padding: 12px; font: 400 12px var(--sans); color: var(--muted); text-align: center; }
+
+.sym {
+  display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 12px;
+  border: 0; border-radius: 1px; background: transparent; cursor: pointer; text-align: left;
+}
+.sym:hover { background: var(--hover); }
+.sym__dot { width: 8px; height: 8px; border-radius: 0; flex: none; }
+.sym__pair { flex: 1; font: 400 12.5px var(--sans); color: var(--text-2); }
+
+/* ── การ์ด PROFILE + engine + user chip ───────────────────────────────────── */
+
+.card {
+  border: 1px solid var(--border); border-radius: 0; padding: 14px;
+  background: var(--surface-raised);
+}
+.profile__label { font: 500 10px/1 var(--mix); color: var(--label); letter-spacing: .08em; }
+
+.switch { display: grid; grid-template-columns: 1fr 1fr; margin-top: 10px; background: #fff; }
+.switch--live { border: 1px solid var(--live-border); }
+.switch--paper { border: 1px solid var(--paper-border); }
+.switch__on {
+  padding: 7px 0; text-align: center; font: 600 11px var(--mono);
+  letter-spacing: .13em; color: #fff;
+}
+.switch__on--live { background: var(--live); }
+.switch__on--paper { background: var(--paper); }
+.switch__off {
+  padding: 7px 0; border: 0; background: transparent; color: var(--muted);
+  font: 500 11px var(--mono); letter-spacing: .13em; cursor: pointer;
+}
+.switch--live .switch__off:hover { background: var(--hover); color: var(--paper-text); }
+.switch--paper .switch__off:hover { background: var(--hover); color: var(--live-text); }
+
+.profile__meta { display: flex; align-items: center; gap: 7px; margin-top: 9px; flex-wrap: wrap; }
+.profile__file { font: 400 10.5px var(--mono); color: var(--muted); }
+.profile__desc { font: 400 11px/1.6 var(--sans); color: var(--label); margin-top: 10px; }
+
+.chip { font: 500 10.5px var(--sans); padding: 2px 8px; }
+.chip--live { background: var(--live-tint); color: var(--live-text); border: 1px solid var(--live-border); }
+.chip--paper { background: var(--paper-tint); color: var(--paper-text); border: 1px solid var(--paper-border); }
+.chip--warn { background: var(--warn-tint); color: var(--warn-text); border: 1px solid var(--warn-border); }
+
+.engine { margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--divider); }
+.engine__line { display: flex; align-items: center; gap: 7px; font: 500 11.5px var(--sans); color: var(--muted); }
+.engine__dot { width: 7px; height: 7px; background: var(--zone-black); flex: none; }
+.engine__other { font: 400 10.5px var(--mix); color: var(--faint); margin-top: 8px; }
+.engine__reason { font: 400 10.5px/1.6 var(--sans); color: var(--warn-text); margin-top: 6px; }
+
+.engine__btn {
+  width: 100%; margin-top: 9px; padding: 9px 0; border: 0; color: #fff;
+  font: 600 12px var(--sans); cursor: pointer;
+}
+.engine__btn--start { background: #fff; }
+.engine--live .engine__btn--start { border: 1px solid var(--live-border-2); color: var(--live-text); }
+.engine--live .engine__btn--start:hover { border-color: var(--live-text); }
+.engine--paper .engine__btn--start { border: 1px solid var(--paper-border-2); color: var(--paper-text); }
+.engine--paper .engine__btn--start:hover { border-color: var(--paper-text); }
+.engine--live .engine__btn--stop { background: var(--live); }
+.engine--paper .engine__btn--stop { background: var(--paper); }
+
+/* สถานะที่ design ไม่ได้วาด — spec/10 §2 บอกว่า running/stopped ไม่ครบ
+ * crashed ใช้สี live ทุกโหมด เพราะมันคือความผิดปกติ ไม่ใช่โหมด */
+.engine--running.engine--live .engine__line { color: var(--live-text); }
+.engine--running.engine--live .engine__dot { background: var(--live-text); }
+.engine--running.engine--paper .engine__line { color: var(--paper-text); }
+.engine--running.engine--paper .engine__dot { background: var(--paper-text); }
+.engine--crashed .engine__line { color: var(--live-text); }
+.engine--crashed .engine__dot { background: var(--live-text); }
+.engine--blocked .engine__line { color: var(--warn-text); }
+.engine--blocked .engine__dot { background: #c8981a; }
+
+.userchip {
+  display: flex; align-items: center; gap: 9px; margin-top: 14px; padding-top: 13px;
+  border-top: 1px solid var(--divider);
+}
+.userchip__avatar {
+  width: 26px; height: 26px; flex: none; border-radius: 0;
+  background: linear-gradient(150deg, #cfe3f4 0%, #eaf4fd 100%); color: var(--primary-text);
+  display: grid; place-items: center; font: 600 11px var(--mono);
+}
+.userchip__who { flex: 1; min-width: 0; }
+.userchip__name { font: 500 12px/1.3 var(--sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.userchip__role { font: 500 9.5px/1.3 var(--mono); color: var(--primary-text); letter-spacing: .08em; margin-top: 2px; }
+.userchip__out { flex: none; }
+
+/* ── ปุ่มทั่วไป ───────────────────────────────────────────────────────────── */
+
+.btn { border-radius: 0; cursor: pointer; font-family: var(--sans); }
+.btn--ghost { border: 1px solid var(--border-strong); background: transparent; color: var(--label); }
+.btn--ghost:hover { border-color: var(--primary-edge); color: var(--primary-text); }
+.btn--xs { padding: 2px 7px; font: 400 10px var(--sans); }
+.btn--live { border: 0; background: var(--live); color: #fff; font: 500 13px var(--sans); padding: 12px; flex: 1; }
+.btn[disabled] { cursor: not-allowed; opacity: .65; }
+
+/* ── modal สลับโหมด (452px) ───────────────────────────────────────────────── */
+
+.overlay {
+  position: fixed; inset: 0; background: rgba(3, 10, 15, .74);
+  display: grid; place-items: center; z-index: 50; padding: 40px;
+}
+.modal { width: 452px; background: var(--surface); }
+.modal--live { border: 1px solid var(--live-border); }
+.modal__rule { height: 3px; background: var(--live); }
+.modal__body { padding: 28px 30px 26px; }
+.modal__hops { display: flex; align-items: center; gap: 9px; }
+.hop { font: 600 10px var(--mono); letter-spacing: .15em; padding: 3px 9px; color: #fff; }
+.hop--paper { background: var(--paper); }
+.hop--live { background: var(--live); }
+.hop__arrow { font: 400 12px var(--mono); color: var(--muted); }
+.modal__title { font: 600 17px/1.4 var(--sans); margin-top: 14px; }
+.modal__text { font: 400 12.5px/1.75 var(--sans); color: var(--label); margin-top: 6px; }
+.modal__warn {
+  font: 400 12.5px/1.7 var(--sans); color: var(--live-text); margin-top: 12px;
+  padding: 11px 14px; border: 1px solid var(--live-border); background: var(--live-tint);
+}
+.modal__field { display: flex; flex-direction: column; gap: 8px; margin-top: 20px; }
+.modal__fieldname { font: 500 10.5px var(--mix); color: var(--label); letter-spacing: .07em; }
+.modal__code {
+  width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: 1px;
+  background: var(--surface-raised); font: 500 17px var(--mono); letter-spacing: .34em;
+  color: var(--text); outline: none;
+}
+.modal__code:focus { border-color: var(--live-text); }
+.modal__actions { display: flex; gap: 10px; margin-top: 22px; }
+.modal__actions .btn--ghost { flex: none; padding: 12px 20px; font: 400 13px var(--sans); }

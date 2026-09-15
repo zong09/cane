@@ -1,0 +1,8 @@
+{#
+  PROFILE card + engine card อยู่ใน div เดียวกันเพราะการสลับโหมดเปลี่ยนทั้งสองอัน
+  พร้อมกัน · HTMX จึง swap เป้าเดียว ไม่ต้องใช้ out-of-band
+#}
+<div id="profile-state">
+  {% include "partials/profile.html" %}
+  {% include "partials/engine.html" %}
+</div>

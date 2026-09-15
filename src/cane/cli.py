@@ -1,8 +1,8 @@
 """`cane` — ทางเข้าบรรทัดคำสั่งของระบบ
 
-ตอนนี้มีคำสั่งเดียว: `cane db seed` ที่พาไฟล์ TOML เดิมเข้า DB ครั้งแรก
-**ยังไม่ใช่ทางเข้าของตัวบอท** (ลูปต่อการปิดแท่งเป็นของใบ 12) ไฟล์นี้จึงตั้งใจเล็ก
-และไม่มีอะไรที่เป็นตรรกะของระบบอยู่ข้างใน — ตรรกะอยู่ใน repository กับ validator
+`cane db seed` พาไฟล์ TOML เดิมเข้า DB ครั้งแรก · `cane engine run` เป็นลูปต่อ profile
+ที่ supervisor เรียก **ไม่ใช่คำสั่งที่คนพิมพ์เอง** · `cane serve` ยกคอนโซลขึ้น
+ไฟล์นี้ตั้งใจเล็กและไม่มีตรรกะของระบบอยู่ข้างใน — ตรรกะอยู่ใน repository กับ validator
 
 seed ใช้ role **console** ไม่ใช่ engine เพราะการเขียน config เป็นสิทธิ์ของคน
 ไม่ใช่ของบอท (`decisions.md` ข้อ 23) เส้นทางนี้จึงเป็นตัวยืนยันด้วยว่า grant
@@ -100,6 +100,36 @@ def _engine_run(args: argparse.Namespace) -> int:
         db.dispose()
 
 
+def _serve(args: argparse.Namespace) -> int:
+    """ยกคอนโซลขึ้น — **worker เดียวเท่านั้น**
+
+    `Supervisor` ถือ handle ของ process ลูกไว้ในหน่วยความจำของ process ตัวเอง
+    (spec/10 §1. หนึ่ง engine ต่อหนึ่ง profile) worker ที่สองจะได้ supervisor ที่ว่างเปล่า
+    แล้ว `signal_stop()` ของมันคืน `False` ทุกครั้งโดยไม่มีอะไรบอกว่าทำไม ·
+    ด้วยเหตุผลเดียวกันจึงไม่มี `--reload`: การ reload คือการเปลี่ยน process
+
+    import ของ web stack อยู่ **ข้างในฟังก์ชัน** เพราะ `spawn_subprocess()` เรียก
+    `python -m cane.cli engine run` — import ระดับโมดูลจะทำให้ engine ลูกทุกตัว
+    จ่ายค่า import fastapi/uvicorn ทิ้งไปฟรีๆ ทั้งที่ไม่ได้ใช้
+    """
+    import uvicorn
+
+    from cane.api.app import create_app
+
+    handler = logging.StreamHandler()
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s · %(message)s")
+    )
+    logging.basicConfig(level=logging.INFO, handlers=[log.install(handler)])
+    # uvicorn ติดตั้ง handler ของตัวเอง ซึ่งเลี่ยง RedactingFilter ไปทั้งชุด
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        for existing in logging.getLogger(name).handlers:
+            log.install(existing)
+
+    uvicorn.run(create_app(), host=args.host, port=args.port, log_config=None)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cane", description="เครื่องมือของบอท cane")
     commands = parser.add_subparsers(dest="group", required=True)
@@ -147,6 +177,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     engine_run.add_argument("--profile", required=True, choices=["live", "paper"])
     engine_run.set_defaults(run=_engine_run)
+
+    # คำสั่งชั้นเดียวตัวแรกของไฟล์นี้ (ที่เหลือเป็น group→command) · `serve console`
+    # จะอ่านว่ามีคอนโซลหลายแบบให้เลือก ซึ่งไม่จริงและจะไม่จริง
+    serve = commands.add_parser(
+        "serve",
+        help="ยกคอนโซลขึ้น",
+        description=(
+            "FastAPI + Jinja2 + HTMX (ADR 20) · supervisor ของ engine อยู่ในกระบวนการ "
+            "นี้ จึงรัน worker เดียวและไม่มี --reload"
+        ),
+    )
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8000)
+    serve.set_defaults(run=_serve)
 
     return parser
 
