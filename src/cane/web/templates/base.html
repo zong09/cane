@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>cane console</title>
+{#
+  htmx ทิ้งคำตอบ 4xx โดยปริยาย · 403 ของการสลับไป live เป็นคำตอบที่ต้อง "แสดง"
+  ไม่ใช่ error ที่ต้องกลืน ถ้าไม่เปิดตรงนี้ กดปุ่มแล้วหน้าจอจะเงียบสนิทไม่มีอะไรบอก
+  ลำดับมีความหมาย — ตัวแรกที่ตรงชนะ 403 จึงต้องมาก่อน `[45]..`
+#}
+<meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"403","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
+{#
+  ฟอนต์จาก Google Fonts ตรงกับไฟล์ design · handoff §12.1 บอกว่าโปรดักชันควร
+  self-host — เป็นงานตามหลัง ไม่ใช่ของใบ 19
+#}
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/console.css">
+{# vendor ไว้ในเครื่อง ไม่ใช้ CDN tag — เน็ตองค์กรมี Zscaler ดักกลาง #}
+<script src="/static/vendor/htmx-2.0.4.min.js" defer></script>
+</head>
+<body>
+<div class="app">
+  <div class="app__row">
+    {% include "partials/rail.html" %}
+    <div class="main">
+      <div class="topbar">
+        <span class="topbar__mode topbar__mode--{{ mode }}">โหมด {{ mode | upper }}</span>
+        <div class="topbar__spacer"></div>
+        <span class="topbar__muted">การแจ้งเตือน — ใบ 29</span>
+      </div>
+      <div class="screen">{% block screen %}{% endblock %}</div>
+    </div>
+  </div>
+  <footer class="footer">
+    <div class="footer__group">
+      <span class="footer__mark">cane</span><span class="footer__sep">/</span>
+      <span>{{ app_version }}</span><span class="footer__sep">/</span>
+      <span>build —</span>
+    </div>
+    <div class="footer__group">
+      <span>dev</span><span class="footer__sep">/</span><span>deploy —</span>
+    </div>
+  </footer>
+</div>
+<div id="modal-slot"></div>
+</body>
+</html>

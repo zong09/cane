@@ -1,0 +1,74 @@
+<aside class="rail">
+  <div class="rail__lockup">
+    <span class="rail__mark">
+      <svg viewBox="0 0 48 48" width="21" height="21" aria-label="cane"><path d="M28.8 19.6 A11.5 11.5 0 1 0 28.8 34.4 L41.7 19.1" fill="none" stroke="currentColor" stroke-width="6.5" stroke-linecap="round"></path></svg>
+    </span>
+    <div>
+      <div class="rail__wordmark">cane</div>
+      <div class="rail__tagline">CDC ACTION ZONE</div>
+    </div>
+  </div>
+
+  {# แถบโซน 7 สี สัดส่วน 2:1:1:1:1:2:1 ตามไฟล์ design #}
+  <div class="rail__stripe">
+    <span class="zone zone--green"></span><span class="zone zone--blue"></span><span class="zone zone--lblue"></span><span class="zone zone--yellow"></span><span class="zone zone--orange"></span><span class="zone zone--red"></span><span class="zone zone--black"></span>
+  </div>
+
+  <div class="navgroup">
+    <span class="navgroup__name">MODE</span>
+    <span class="navgroup__scope">{{ nav_scope_label }}</span>
+  </div>
+  <nav class="nav">
+    {% for slug, label, ticket in nav %}
+    <a class="nav__item{% if slug == active %} nav__item--on{% endif %}" href="/{{ slug }}">
+      <span class="nav__bar"></span><span class="nav__num">{{ "%02d" % loop.index }}</span>{{ label }}
+    </a>
+    {% endfor %}
+  </nav>
+
+  <div class="navgroup navgroup--split">
+    <span class="navgroup__name">ทั้งระบบ</span>
+    <span class="navgroup__scope">ไม่ผูกกับโหมด</span>
+  </div>
+  <nav class="nav">
+    {% for slug, label, ticket in global_nav %}
+    <a class="nav__item{% if slug == active %} nav__item--on{% endif %}" href="/{{ slug }}">
+      <span class="nav__bar"></span><span class="nav__dot">·</span>{{ label }}
+    </a>
+    {% endfor %}
+  </nav>
+
+  <div class="symbols">
+    <div class="symbols__head">
+      <span class="navgroup__name">SYMBOLS</span>
+      <div class="symbols__grow"></div>
+      <span class="symbols__count">{{ symbol_count }}</span>
+      <a class="btn btn--ghost btn--xs" href="/symbols">จัดการ</a>
+    </div>
+    <input class="symbols__query" type="search" placeholder="ค้นหาคู่เหรียญ" disabled>
+    <div class="symbols__list">
+      {% for row in symbols %}
+      <a class="sym" href="/symbols">
+        <span class="sym__dot" style="background:{{ row.dot }}"></span>
+        <span class="sym__pair">{{ row.pair }}</span>
+      </a>
+      {% else %}
+      <div class="symbols__empty">ไม่มีคู่เหรียญที่เปิดใช้</div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="rail__spacer"></div>
+
+  <div class="card">
+    {% include "partials/profile_state.html" %}
+    <div class="userchip">
+      <span class="userchip__avatar">{{ user.initials }}</span>
+      <div class="userchip__who">
+        <div class="userchip__name">{{ user.name }}</div>
+        <div class="userchip__role">{{ user.role }}</div>
+      </div>
+      <button class="btn btn--ghost btn--xs userchip__out" type="button" title="ออกจากระบบ" disabled>ออก</button>
+    </div>
+  </div>
+</aside>

@@ -9,6 +9,14 @@ dependencies = [
     "psycopg[binary]>=3.3.5",
     "pydantic>=2.9",
     "sqlalchemy>=2.0.52",
+    # คอนโซล (ใบ 19) · ADR 20 — server-rendered ไม่มี build step ไม่มีภาษาที่สอง
+    # อยู่ใน dependencies หลักไม่ใช่ extra เพราะ engine กับคอนโซลเป็น deployable
+    # เดียวกัน · ค่า import ของ web stack ไม่ตกใส่ engine ลูก เพราะ `cane serve`
+    # import มันข้างในฟังก์ชัน ไม่ใช่ระดับโมดูล
+    "fastapi>=0.115",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
+    "uvicorn>=0.30",
 ]
 
 [project.scripts]
@@ -17,6 +25,9 @@ cane = "cane.cli:main"
 
 [project.optional-dependencies]
 dev = [
+    # `fastapi.testclient.TestClient` ต้องมี httpx · เป็น dependency ที่ประกาศจริง
+    # ไม่ใช่ของที่ติดมากับ ccxt แบบ `requests` (ดู `confluence/openai_client.py`)
+    "httpx>=0.27",
     "pytest>=8.0",
 ]
 
