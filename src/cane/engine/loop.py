@@ -72,13 +72,22 @@ def _wait_beating(
     sleep: Callable[[float], None],
     now: Callable[[], int],
 ) -> None:
-    """รอจนถึง `until_ms` โดยเต้นทุก `HEARTBEAT_PERIOD_S` · ออกก่อนได้ถ้าถูกสั่งหยุด"""
+    """รอจนถึง `until_ms` โดยเต้นทุก `HEARTBEAT_PERIOD_S` · ออกก่อนได้ถ้าถูกสั่งหยุด
+
+    **อ่านเจตนาทุกครั้งที่เต้น ไม่ใช่แค่ธง SIGTERM** — คอนโซลที่รีสตาร์ทแล้วไม่มี pid
+    ส่งสัญญาณไม่ได้ เหลือแต่ `should_run` ในตาราง · ถ้าอ่านเฉพาะที่ต้นรอบ การกด stop
+    ในกรณีนั้นจะมีผลก็ต่อเมื่อการรอจบลงเอง ซึ่งในใบ 12 คือรอจนแท่งถัดไปปิด
+
+    อ่านในทรานแซกชันเดียวกับการเต้น จึงไม่มี query เพิ่มและไม่มีช่องให้สองค่าคาบเกี่ยวกัน
+    """
     while not stopping and now() < until_ms:
         remaining_s = (until_ms - now()) / 1000
         sleep(min(HEARTBEAT_PERIOD_S, remaining_s))
         if stopping:
             return
         with db.begin() as conn:
+            if not enginestate.read(conn, profile).should_run:
+                return
             enginestate.beat(conn, profile)
 
 
