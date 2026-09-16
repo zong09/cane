@@ -1,0 +1,27 @@
+{#
+  การ์ด kill switch · อ่านจากตาราง `kill_switch` (migration 0008) ไม่ใช่ไฟล์ JSON
+  อย่างที่ไฟล์ design เขียนไว้ — errata ที่หัว spec/10 ยกเลิกข้อนั้นไปแล้ว
+
+  เหตุที่ติดมาจากคอลัมน์ `reason` ไม่ใช่ประโยคตายตัว เพราะ breaker กับคนกดให้เหตุ
+  คนละอย่าง · ปุ่มเป็นของคอมมิตถัดไปในใบเดียวกัน
+#}
+<div id="killswitch-card"
+     class="rk__kill{% if risk_kill.latched %} rk__kill--latched{% endif %}">
+  <div class="rk__killhead">
+    <span class="rk__killdot"></span>
+    Kill switch — {% if risk_kill.latched %}latched{% else %}ปกติ{% endif %}
+  </div>
+  <div class="rk__killnote">
+    {% if risk_kill.latched %}
+    หยุดยิงออเดอร์เปิดใหม่ทั้งหมดแล้ว · {{ risk_kill.reason or "ไม่ได้ระบุเหตุ" }}
+    {% if risk_kill.latched_by %}<span class="rk__killby">โดย {{ risk_kill.latched_by }}</span>{% endif %}
+    {% else %}
+    ตรวจก่อนยิงทุกออเดอร์ ไม่ใช่ตอนเริ่มรอบ · สถานะเก็บเป็นแถวในฐาน จึงอยู่รอดข้าม
+    การรีสตาร์ททั้ง engine และเครื่อง
+    {% endif %}
+  </div>
+  <div class="rk__killfoot">
+    ปลดล็อกด้วยมือเท่านั้น ไม่หายเองเมื่อเวลาผ่านไปหรือเมื่อ restart ·
+    หยุด engine ไม่ปลด และสตาร์ท engine ก็ไม่ปลด
+  </div>
+</div>

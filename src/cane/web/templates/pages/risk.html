@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block screen %}
+<h1 class="h1">{{ page_label }}</h1>
+<div class="rk__sub">
+  ทุกเพดานตรวจก่อนยิงทุกออเดอร์ ไม่ใช่ตอนเริ่มรอบ · ตั้งไม่ครบ = โหลดไม่ผ่าน = ไม่เทรด ·
+  โหมดทางเดียวต่อเหรียญ จึงไม่มีสถานะสวนกันในคู่เดียวกัน
+</div>
+{% include "partials/risk_body.html" %}
+{% endblock %}

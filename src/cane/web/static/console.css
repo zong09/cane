@@ -481,3 +481,64 @@ a.btn--block { padding: 12px; }
   grid-column: 1 / -1; padding: 20px 24px;
   font: 400 12.5px var(--sans); color: var(--muted);
 }
+
+/* ── หน้าความเสี่ยง (ใบ 23) ─────────────────────────────────────────────────── */
+.rk__sub { font: 400 12px/1.75 var(--sans); color: var(--label); margin-top: 8px; }
+.rk__grid { display: grid; grid-template-columns: 400px minmax(0, 1fr); gap: 20px; align-items: start; margin-top: 20px; }
+.rk__col { display: flex; flex-direction: column; gap: 20px; }
+.rk__card { background: var(--surface); border: 1px solid var(--border); padding: 20px 22px; }
+.rk__card--wide { margin-top: 20px; padding: 0 0 18px; }
+.rk__cardtitle { font: 600 13px var(--mono); padding-bottom: 14px; border-bottom: 1px solid var(--divider); }
+.rk__card--wide .rk__cardtitle { padding: 20px 24px 14px; }
+.rk__hint { font: 400 11.5px/1.65 var(--sans); color: var(--muted); margin-top: 12px; }
+.rk__card--wide .rk__hint { padding: 0 24px; }
+
+.rk__kill { padding: 18px 20px; background: var(--paper-tint); border: 1px solid var(--paper-border); }
+.rk__kill--latched { background: var(--live-tint); border-color: var(--live-border); }
+.rk__killhead { display: flex; align-items: center; gap: 9px; font: 600 14px var(--sans); color: var(--paper-text); }
+.rk__kill--latched .rk__killhead { color: var(--live-text); }
+.rk__killdot { width: 11px; height: 11px; flex: none; background: var(--paper-text); }
+.rk__kill--latched .rk__killdot { background: var(--live-text); }
+.rk__killnote { font: 400 12.5px/1.7 var(--sans); color: var(--text-2); margin-top: 8px; }
+.rk__killby { font: 400 11.5px var(--mono); color: var(--muted); margin-left: 6px; }
+.rk__killfoot { font: 400 11.5px/1.6 var(--sans); color: var(--muted); margin-top: 10px; }
+
+.rk__side { display: flex; align-items: baseline; gap: 10px; margin-top: 16px; }
+.rk__sidechip { padding: 3px 9px; font: 600 11px var(--mono); letter-spacing: .06em; color: #fff; }
+.rk__sidechip--long { background: var(--zone-green); }
+.rk__sidechip--short { background: var(--live-text); }
+.rk__sidenum { font: 400 13px var(--mono); color: var(--text-2); }
+.rk__sidenote { font: 400 11.5px/1.6 var(--mono); color: var(--muted); margin-top: 5px; }
+
+.rk__held { display: grid; grid-template-columns: 1fr 60px 80px 1fr; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--divider-soft); font: 400 12px var(--mono); color: var(--text-2); }
+.rk__heldpair { font-weight: 600; }
+.rk__heldside { color: var(--live-text); }
+.rk__heldqty { text-align: right; }
+.rk__heldsrc { color: var(--muted); text-align: right; }
+
+.rk__limit { margin-top: 20px; }
+.rk__limithead { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.rk__limitname { font: 400 12.5px/1.5 var(--sans); color: var(--text-2); }
+.rk__limitval { font: 600 16px var(--mono); flex: none; }
+.rk__bar { height: 7px; margin-top: 9px; background: var(--divider-soft); }
+.rk__barfill { display: block; height: 100%; width: 0; background: var(--primary); }
+.rk__pips { display: flex; gap: 4px; margin-top: 9px; }
+.rk__pip { width: 46px; height: 11px; background: var(--divider-soft); }
+.rk__limitnote { font: 400 11.5px/1.65 var(--sans); color: var(--muted); margin-top: 7px; }
+
+.rk__foot { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 20px; margin-top: 26px; padding-top: 18px; border-top: 1px solid var(--divider); }
+.rk__footname { font: 500 10px/1 var(--mix); letter-spacing: .09em; text-transform: uppercase; color: var(--label); }
+.rk__footline { font: 400 12px var(--mono); color: var(--text-2); margin-top: 7px; }
+.rk__footnote { font: 400 11.5px/1.7 var(--sans); color: var(--muted); margin-top: 7px; }
+
+.rktable { display: grid; grid-template-columns: 150px 74px 116px 116px 150px minmax(0, 1fr); align-items: center; }
+.rktable > div { padding: 15px 0; border-bottom: 1px solid var(--divider); }
+.rktable > .rktable__head { padding: 14px 0; border-bottom: 1px solid var(--border); font: 500 10.5px var(--mix); letter-spacing: .06em; color: var(--label); }
+.rktable > .rktable__head:first-child, .rktable > .rktable__pair { padding-left: 24px; }
+.rktable__pair { font: 600 13px var(--sans); }
+.rktable__sub { display: block; font: 400 11px var(--mono); color: var(--label); margin-top: 3px; }
+.rktable__lev { padding: 3px 8px; background: var(--hover); border: 1px solid var(--border-strong); font: 600 11.5px var(--mono); color: var(--primary-text); }
+.rktable__num { font: 400 12.5px var(--mono); color: var(--text-2); }
+.rktable__sides { font: 400 12.5px var(--mono); color: var(--text-2); }
+.rktable__sides--long { color: var(--warn-text); }
+.rktable > .rktable__empty { grid-column: 1 / -1; padding: 20px 24px; font: 400 12.5px var(--sans); color: var(--muted); }

@@ -1,0 +1,148 @@
+{#
+  เนื้อของหน้าความเสี่ยง · ผูกกับโหมดที่ session กำลังดู
+
+  ฟังเหตุการณ์ `cane:mode` ด้วยเหตุผลเดียวกับหน้าภาพรวม — การสลับโหมด swap แค่การ์ด
+  PROFILE กับ engine ถ้าไม่ฟัง เพดานทั้งหน้าจะค้างอยู่ที่โหมดเดิม
+
+  **top-level element เดียวเท่านั้น** เพราะคำตอบของ modal จะติดธง `hx-swap-oob`
+  แล้ว htmx เอาก้อนนี้ไปวางที่ id ของมัน เหลือความว่างมาแทน modal ซึ่งคือการปิด modal ·
+  มีสองก้อนเมื่อไหร่ modal จะไม่ปิด
+#}
+<div id="risk-body" class="rk"
+     hx-get="/partials/risk" hx-trigger="cane:mode from:body" hx-swap="outerHTML">
+  {% if risk_settings is none %}
+  <div class="cfg__banner cfg__banner--warn">
+    <div>
+      {% if risk_problems %}
+      <div class="cfg__bannertitle">config ของโหมดนี้โหลดไม่ผ่าน {{ risk_problems }} ข้อ</div>
+      <div class="cfg__bannernote">เพดานทุกตัวมาจากเวอร์ชันที่เปิดใช้ — แก้ได้ที่หน้า ตั้งค่า</div>
+      {% else %}
+      <div class="cfg__bannertitle">ยังไม่มีเวอร์ชัน config ที่เปิดใช้</div>
+      <div class="cfg__bannernote">ไม่มีเวอร์ชัน active = ไม่เทรด ไม่ใช่ถอยไปใช้ค่าตั้งต้น</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# การ์ด kill switch อ่านจากตาราง จึงแสดงได้แม้ config จะพัง #}
+  {% include "partials/killswitch_card.html" %}
+  {% else %}
+
+  <div class="rk__grid">
+    <div class="rk__col">
+      {% include "partials/killswitch_card.html" %}
+
+      <div class="rk__card">
+        <div class="rk__cardtitle">สถานะรวมตามฝั่ง</div>
+        <div class="rk__side">
+          <span class="rk__sidechip rk__sidechip--long">LONG</span>
+          <span class="rk__sidenum">{{ risk_long_count }} ไม้ · margin {{ risk_long_margin }}</span>
+        </div>
+        <div class="rk__sidenote">
+          notional {{ risk_long_notional }} ·
+          bucket long รวม {{ "%.2f" | format(risk_bucket_long) }} USDT
+        </div>
+        <div class="rk__side">
+          <span class="rk__sidechip rk__sidechip--short">SHORT</span>
+          <span class="rk__sidenum">{{ risk_short_count }} ไม้ · margin {{ risk_short_margin }}</span>
+        </div>
+        <div class="rk__sidenote">
+          notional {{ risk_short_notional }} ·
+          bucket short รวม {{ "%.2f" | format(risk_bucket_short) }} USDT
+        </div>
+        <div class="rk__hint">
+          จำนวนไม้ มาร์จิ้น และไม้ที่รอส่ง ต้องอ่านสถานะจริงจาก venue — ยังไม่มีตารางเก็บ (ใบ 13) ·
+          ช่องที่ยังตอบไม่ได้ขึ้นเป็น — ไม่ใช่ 0
+        </div>
+      </div>
+
+      <div class="rk__card">
+        <div class="rk__cardtitle">ไม้ที่ระบบไม่ได้ตั้งใจถือ</div>
+        {% for item in risk_held %}
+        <div class="rk__held">
+          <span class="rk__heldpair">{{ item.pair }}</span>
+          <span class="rk__heldside">{{ item.side }}</span>
+          <span class="rk__heldqty">{{ item.qty }}</span>
+          <span class="rk__heldsrc">{{ item.source }}</span>
+        </div>
+        {% else %}
+        <div class="rk__hint">ไม่มีของค้าง — ไม้แบบนี้เกิดเมื่อการกลับข้างปิดขาเก่าไม่หมด</div>
+        {% endfor %}
+        <div class="rk__hint">
+          ระบบจะไม่ปิดให้เอง ต้องปิดด้วยมือ · ไม้แบบนี้มีเลเวอเรจและไม่มี stop คุ้มอยู่
+        </div>
+      </div>
+    </div>
+
+    <div class="rk__col">
+      <div class="rk__card">
+        <div class="rk__cardtitle">เพดานความเสี่ยง · จาก config profile</div>
+        {% for row in risk_ceilings %}
+        <div class="rk__limit">
+          <div class="rk__limithead">
+            <span class="rk__limitname">{{ row.label }}</span>
+            <span class="rk__limitval">{{ row.value }}</span>
+          </div>
+          {% if row.pips %}
+          <div class="rk__pips">
+            {% for _ in range(row.pips) %}<span class="rk__pip"></span>{% endfor %}
+          </div>
+          {% else %}
+          <div class="rk__bar"><span class="rk__barfill"></span></div>
+          {% endif %}
+          <div class="rk__limitnote">{{ row.note }}</div>
+        </div>
+        {% endfor %}
+
+        <div class="rk__foot">
+          <div>
+            <div class="rk__footname">BROKER</div>
+            {% for name, value in risk_broker %}
+            <div class="rk__footline">{{ name }} = {{ value }}</div>
+            {% endfor %}
+          </div>
+          <div>
+            <div class="rk__footname">กันสั่งซ้ำ</div>
+            <div class="rk__footnote">
+              รหัสออเดอร์คำนวณจาก symbol + เวลาปิดแท่ง + <b>ฝั่งของออเดอร์ (buy/sell)</b> +
+              ขาที่ยิง (open/close/stop) — ถ้าโปรเซสตายกลางคันแล้วกลับมาในแท่งเดิม
+              จะได้รหัสเดิม ไม่เปิดสถานะซ้อนและไม่กลับข้างซ้ำ
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="rk__card rk__card--wide">
+    <div class="rk__cardtitle">เลเวอเรจและ bucket ต่อเหรียญ</div>
+    <div class="rktable">
+      <div class="rktable__head">SYMBOL</div>
+      <div class="rktable__head">LEV</div>
+      <div class="rktable__head">BUCKET LONG</div>
+      <div class="rktable__head">BUCKET SHORT</div>
+      <div class="rktable__head">ฝั่งที่อนุญาต</div>
+      <div class="rktable__head">ห่าง liquidation ของไม้ปัจจุบัน</div>
+      {% for row in risk_rows %}
+      <div class="rktable__pair">
+        {{ row.pair }}<span class="rktable__sub">{{ row.market }}</span>
+      </div>
+      <div><span class="rktable__lev">{{ "%g" | format(row.leverage) }}x</span></div>
+      <div class="rktable__num">{{ "%.2f" | format(row.bucket_long) }}</div>
+      <div class="rktable__num">
+        {% if row.bucket_short is none %}—{% else %}{{ "%.2f" | format(row.bucket_short) }}{% endif %}
+      </div>
+      <div class="rktable__sides{% if not row.allow_short %} rktable__sides--long{% endif %}">
+        {{ row.sides }}
+      </div>
+      <div class="rktable__num">{{ row.liq }}</div>
+      {% else %}
+      <div class="rktable__empty">ไม่มีคู่เหรียญที่เปิดใช้ในโปรไฟล์นี้</div>
+      {% endfor %}
+    </div>
+    <div class="rk__hint">
+      bucket ของสองฝั่งแยกกัน — เปิด short ไม่กินโควตาไม้ long ที่รออยู่ ·
+      เหรียญที่ตั้ง 1.0x ไม่มีการยืม จึงไม่มีราคา liquidation
+    </div>
+  </div>
+  {% endif %}
+</div>
