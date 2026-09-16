@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from cane.config import ConfigError, load_profile, render_loc, validate_settings
+from cane.config import diff as diff_mod
 
 # live.toml ที่พังสี่จุดตาม design handoff (หน้าตั้งค่า แท็บ live.toml)
 BROKEN_LIVE = """\
@@ -414,3 +415,99 @@ def test_a_bad_form_says_where_the_values_came_from():
 )
 def test_field_paths_render_the_way_a_form_names_its_inputs(loc, expected):
     assert render_loc(loc) == expected
+
+
+# ── ตารางเทียบสองโปรไฟล์ · ใบ 21 ─────────────────────────────────────────────
+
+
+def a_paper():
+    return load_profile("config/paper.toml")
+
+
+def a_live():
+    return load_profile("config/live.toml")
+
+
+def rebuilt(settings, **overrides):
+    """ประกอบ `Settings` ใหม่จาก dump ที่แก้บางคีย์ — ผ่าน validator เหมือนฟอร์ม"""
+    raw = settings.model_dump() | overrides
+    return validate_settings(raw, source="เทสต์")
+
+
+def test_flatten_names_fields_the_way_the_validator_and_the_form_do():
+    """คนที่เห็นผลต่างต้องกดไปแก้ช่องนั้นได้ — path จึงต้องเป็นตัวเดียวกัน"""
+    flat = diff_mod.flatten(a_paper())
+
+    assert flat[render_loc(("base_pct",))] == "10.0"
+    assert flat[render_loc(("risk", "max_leverage"))] == "2.0"
+    assert flat[render_loc(("broker", "kind"))] == "paper"
+
+
+def test_symbols_are_matched_by_symbol_and_market_not_by_position():
+    """ลำดับในลิสต์ไม่มีความหมายข้าม profile — สลับที่กันแล้วต้องไม่มีผลต่าง"""
+    paper = a_paper()
+    flipped = rebuilt(paper, symbols=list(reversed(paper.model_dump()["symbols"])))
+
+    assert diff_mod.diff(paper, flipped) == []
+
+
+def test_the_same_coin_on_a_different_market_is_not_the_same_row():
+    """BTC ที่เป็น spot กับ BTC ที่เป็น perp เป็นคนละของ ไม่ใช่ leverage ที่ต่างกัน
+
+    ถ้าจับคู่ด้วยชื่อเหรียญเฉยๆ ตารางจะชี้ให้ไปแก้ leverage ซึ่งเป็นการแก้ผิดที่
+    """
+    perp = validate_settings(
+        a_live().model_dump()
+        | {
+            "symbols": [
+                {
+                    "symbol": "BTC/USDT",
+                    "market": "usdtm_perp",
+                    "bucket_quote_long": 100.0,
+                    "leverage": 1.0,
+                    "allow_short": False,
+                    "enabled": True,
+                }
+            ]
+        },
+        source="เทสต์",
+    )
+    spot = validate_settings(
+        perp.model_dump()
+        | {
+            "symbols": [
+                {
+                    "symbol": "BTC/USDT",
+                    "market": "spot",
+                    "bucket_quote_long": 100.0,
+                    "leverage": 1.0,
+                    "allow_short": False,
+                    "enabled": True,
+                }
+            ]
+        },
+        source="เทสต์",
+    )
+
+    keys = {row.key for row in diff_mod.diff(perp, spot)}
+    assert "symbols[BTC/USDT@usdtm_perp].leverage" in keys
+    assert "symbols[BTC/USDT@spot].leverage" in keys
+    assert all(
+        row.mine == diff_mod.MISSING or row.theirs == diff_mod.MISSING
+        for row in diff_mod.diff(perp, spot)
+    )
+
+
+def test_a_symbol_that_only_one_profile_has_is_reported_as_missing():
+    """paper มี ETH/USDT บน spot ส่วน live ไม่มีเลย — ต้องอ่านออกว่า `ขาด`"""
+    rows = {row.key: row for row in diff_mod.diff(a_paper(), a_live())}
+
+    eth = rows["symbols[ETH/USDT@spot].bucket_quote_long"]
+    assert eth.mine == "80.0"
+    assert eth.theirs == diff_mod.MISSING
+    assert eth.theirs_missing
+
+
+def test_the_profile_name_is_never_a_difference():
+    """มันต่างกันเสมอโดยนิยาม การนับเข้าไปทำให้เลขบนหัว panel โกหก"""
+    assert all(row.key != "profile" for row in diff_mod.diff(a_paper(), a_live()))

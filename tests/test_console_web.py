@@ -17,8 +17,10 @@ from fastapi.testclient import TestClient
 from cane.api.app import create_app
 from cane.api.deps import get_sup, signed_in
 from cane.auth import service as auth_service
+from cane.config.validate import ConfigError, Problem
 from cane.db.repo import config as config_repo
 from cane.db.repo import permissions as perms
+from cane.db.repo import users as users_repo
 from cane.db.repo.sessions import Session
 from cane.db.repo.users import User
 from cane.engine.state import CRASHED, PROFILES, RUNNING, STOPPED
@@ -163,6 +165,10 @@ def no_db_reads(monkeypatch: pytest.MonkeyPatch) -> None:
     `test_auth_service_db.py` และ `test_console_auth_db.py`
     """
     monkeypatch.setattr(config_repo, "active_settings", lambda conn, profile: None)
+    # หน้าตั้งค่า (ใบ 21) อ่านประวัติเวอร์ชันกับชื่อคนแก้ด้วย · `FakeConn.execute()`
+    # คืน `None` การปล่อยให้ repo ตัวจริงวิ่งจึงระเบิดเป็น AttributeError ก่อนถึง assert
+    monkeypatch.setattr(config_repo, "versions", lambda conn, profile: [])
+    monkeypatch.setattr(users_repo, "everyone", lambda conn: [])
     monkeypatch.setattr(perms, "allowed", lambda conn, *, role, cap: role != "VIEWER")
     monkeypatch.setattr(
         auth_service, "verify_step_up", lambda conn, user, code, *, now: code == "111111"
@@ -311,7 +317,8 @@ def test_the_rail_renders_both_groups_and_every_menu_item() -> None:
     assert "OWNER" in page and "นพ" in page  # ตัวย่อของ "นภัส พ."
 
 
-@pytest.mark.parametrize("slug", ["overview", "symbols", "risk", "log", "report", "config", "users"])
+#: `config` ไม่อยู่ในรายการนี้แล้ว — ใบ 21 เติมเนื้อของมันไปแล้ว ที่เหลือยังเป็นโครง
+@pytest.mark.parametrize("slug", ["overview", "symbols", "risk", "log", "report", "users"])
 def test_every_menu_item_opens_even_though_its_body_belongs_to_a_later_ticket(
     slug: str
 ) -> None:
@@ -471,3 +478,183 @@ def test_an_api_endpoint_answers_401_rather_than_redirecting_to_a_html_page() ->
         response = client.get("/api/engine/status", follow_redirects=False)
 
     assert response.status_code == 401
+
+
+# ── หน้าตั้งค่า · ใบ 21 ───────────────────────────────────────────────────────
+
+
+def a_config(profile: str = "paper"):
+    """config ที่ผ่านทุกกฎ · อ่านจากไฟล์ seed จริงเพื่อไม่ต้องประกอบด้วยมือ
+
+    ไฟล์ TOML เหลือหน้าที่เดียวคือทางเข้าของ `cane db seed` (spec/07 §Config profile)
+    ที่นี่ใช้มันเป็น **ตัวอย่างค่าที่ถูกต้อง** ไม่ใช่เป็นแหล่งที่หน้าจออ่าน
+    """
+    from cane.config import load_profile
+
+    return load_profile(f"config/{profile}.toml")
+
+
+def a_broken_config() -> ConfigError:
+    """เวอร์ชันที่บันทึกไว้ตอนกฎยังไม่เข้ม แล้ว `settings_of()` ปฏิเสธตอนอ่าน"""
+    return ConfigError(
+        [
+            Problem(("base_pct",), "base_pct = 32.0 อยู่นอกช่วง 5–20", "ตรวจตอนบันทึกเวอร์ชัน"),
+            Problem(("risk", "max_leverage"), "ขาด max_leverage", "risk limit ไม่มีค่าตั้งต้นให้"),
+        ],
+        source="config version paper v1",
+    )
+
+
+def test_the_config_page_has_a_body_of_its_own_now(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ใบ 21 เป็นหน้าแรกของชุด 21–26 ที่เลิกใช้ placeholder ของใบ 19"""
+    monkeypatch.setattr(config_repo, "active_settings", lambda conn, profile: a_config())
+    client, _ = build()
+    with client:
+        page = client.get("/config").text
+
+    assert "ใบ 19 ทำแค่โครง" not in page
+    assert "ประวัติเวอร์ชัน" in page
+    assert 'name="base_pct"' in page
+
+
+def test_a_profile_with_no_active_version_says_so_and_offers_nothing_to_edit() -> None:
+    """ไม่มีเวอร์ชัน active = ไม่เทรด (spec/07 §Config profile) — ไม่ใช่ฟอร์มเปล่าให้กรอก
+
+    ฟอร์มเปล่าที่กรอกได้จะกลายเป็นการสร้าง config จากศูนย์ ซึ่งไม่ใช่สิ่งที่หน้านี้ทำ
+    """
+    client, _ = build()
+    with client:
+        page = client.get("/config").text
+
+    assert "ยังไม่มีเวอร์ชัน config ที่เปิดใช้" in page
+    assert 'name="base_pct"' not in page
+
+
+def test_a_config_that_no_longer_validates_lists_every_field_that_must_change(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`context.build()` กลืน `ConfigError` ทิ้ง หน้านี้จึงต้องเรียก repo เอง
+
+    และต้องเป็น 200 ไม่ใช่ 500 — หน้าที่เปิดไม่ขึ้นคือหน้าที่แก้ config ไม่ได้
+    """
+
+    def explode(conn: object, profile: str):
+        raise a_broken_config()
+
+    monkeypatch.setattr(config_repo, "active_settings", explode)
+    client, _ = build()
+    with client:
+        response = client.get("/config")
+
+    assert response.status_code == 200
+    assert "โหลดไม่ผ่าน — พบ 2 ข้อ" in response.text
+    assert "ไม่มีโหมดเตือนแล้วไปต่อ" in response.text
+
+
+def test_the_problem_list_points_at_field_paths_not_line_numbers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """badge เป็น `risk.max_leverage` ไม่ใช่ `L20` — spec/07 §path ของฟิลด์ที่ผิด
+
+    mockup ของ design ติด badge เลขบรรทัดไว้ ซึ่งใช้อ้างอิงไม่ได้แล้วตั้งแต่ config
+    ย้ายลง DB · ไม่มีไฟล์ก็ไม่มีบรรทัด
+    """
+
+    def explode(conn: object, profile: str):
+        raise a_broken_config()
+
+    monkeypatch.setattr(config_repo, "active_settings", explode)
+    client, _ = build()
+    with client:
+        page = client.get("/config").text
+
+    assert '<span class="cfg__path">risk.max_leverage</span>' in page
+    assert '<span class="cfg__path">base_pct</span>' in page
+
+
+def test_someone_without_edit_profile_sees_the_page_but_cannot_edit_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`view_overview` เปิดหน้าได้ · การแก้เป็น `edit_profile` ซึ่ง OWNER คนเดียวมี
+
+    `no_db_reads` ปล่อยทุก role ที่ไม่ใช่ VIEWER จึงแยกสองสิทธิ์นี้ไม่ได้ —
+    เทสต์นี้ต้องวางของปลอมของตัวเอง
+    """
+    monkeypatch.setattr(config_repo, "active_settings", lambda conn, profile: a_config())
+    monkeypatch.setattr(perms, "allowed", lambda conn, *, role, cap: cap != "edit_profile")
+    client, _ = build(role="TRADER")
+    with client:
+        page = client.get("/config").text
+
+    assert "ดูได้อย่างเดียว — การแก้ต้องมีสิทธิ์ edit_profile" in page
+
+
+def test_the_other_profile_opens_in_its_own_tab_with_a_notice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ดูโปรไฟล์ที่ไม่ได้รันอยู่ก็ได้ แต่ต้องบอกว่ากำลังดูของที่ไม่ได้เดิน"""
+    monkeypatch.setattr(
+        config_repo, "active_settings", lambda conn, profile: a_config("live")
+    )
+    client, _ = build(mode="paper")
+    with client:
+        body = client.get("/partials/config/live").text
+
+    assert "กำลังดูโปรไฟล์ที่ไม่ได้ทำงานอยู่" in body
+
+
+def test_a_profile_that_does_not_exist_is_not_found() -> None:
+    """spec/10 §6. สัญญาของ API — profile ที่ไม่มีคือ 404 ไม่ใช่ 400"""
+    client, _ = build()
+    with client:
+        assert client.get("/partials/config/nowhere").status_code == 404
+
+
+def test_the_diff_card_counts_the_fields_that_differ_from_the_other_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`ต่างจาก live N ค่า` — N มาจากการเทียบจริง ไม่ใช่เลขในภาพ mockup"""
+    monkeypatch.setattr(
+        config_repo, "active_settings", lambda conn, profile: a_config(profile)
+    )
+    client, _ = build(mode="paper")
+    with client:
+        page = client.get("/config").text
+
+    assert "ต่างจาก live" in page
+    assert "คีย์ที่ไม่อยู่ในรายการนี้มีค่าเท่ากันทั้งสองโปรไฟล์" in page
+    # base_pct ของสองไฟล์ seed ต่างกันจริง (10.0 กับ 5.0)
+    assert "base_pct" in page
+
+
+def test_the_other_profile_with_no_active_version_says_it_cannot_be_compared(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        config_repo,
+        "active_settings",
+        lambda conn, profile: a_config("paper") if profile == "paper" else None,
+    )
+    client, _ = build(mode="paper")
+    with client:
+        page = client.get("/config").text
+
+    assert "live ยังไม่มีเวอร์ชัน active — เทียบไม่ได้" in page
+
+
+def test_the_other_profile_that_no_longer_validates_says_it_cannot_be_compared(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """เทียบกับของที่ประกอบกลับไม่ได้ไม่ได้ · และเป็นคนละเรื่องกับ "ยังไม่มีเวอร์ชัน" """
+
+    def by_profile(conn: object, profile: str):
+        if profile == "paper":
+            return a_config("paper")
+        raise a_broken_config()
+
+    monkeypatch.setattr(config_repo, "active_settings", by_profile)
+    client, _ = build(mode="paper")
+    with client:
+        page = client.get("/config").text
+
+    assert "live โหลดไม่ผ่าน 2 ข้อ — เทียบไม่ได้" in page

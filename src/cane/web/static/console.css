@@ -341,3 +341,78 @@ a.btn--block { padding: 12px; }
 .modal--stepup .modal__code { font-size: 22px; letter-spacing: .32em; text-align: center; }
 .btn--grow { flex: 1; }
 .modal__actions .btn--primary { flex: 1; }
+
+/* ── หน้าตั้งค่า (ใบ 21) ───────────────────────────────────────────────────── */
+
+.cfg__sub { font: 400 12px/1.75 var(--sans); color: var(--label); margin-top: 8px; max-width: 900px; }
+
+.cfg__tabs { display: flex; gap: 2px; margin-top: 20px; border-bottom: 1px solid var(--border); }
+.cfg__tab {
+  display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; cursor: pointer;
+  background: transparent; border: 0; border-bottom: 2.5px solid transparent;
+  font: 400 13.5px var(--mono); color: var(--label);
+}
+.cfg__tab:hover { color: var(--primary-text); }
+.cfg__tab--on { font-weight: 600; color: var(--text); border-bottom-color: var(--primary-edge); margin-bottom: -1px; }
+
+.cfg__offmode {
+  margin-top: 16px; padding: 11px 14px; background: var(--warn-tint);
+  border: 1px solid var(--warn-border); color: var(--warn-text); font: 400 12.5px/1.7 var(--sans);
+}
+
+.cfg__banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 18px;
+  margin-top: 16px; padding: 16px 18px;
+}
+.cfg__banner--warn { background: var(--warn-tint); border: 1px solid var(--warn-border); }
+.cfg__banner--bad { background: var(--live-tint); border: 1px solid var(--live-border); }
+.cfg__banner--ok { background: var(--paper-tint); border: 1px solid var(--paper-border); }
+.cfg__bannertitle { font: 600 14px/1.4 var(--sans); }
+.cfg__bannernote { font: 400 12.5px/1.6 var(--sans); color: var(--muted); margin-top: 2px; }
+.cfg__banner--warn .cfg__bannertitle { color: var(--warn-text); }
+.cfg__banner--bad .cfg__bannertitle { color: var(--live-text); }
+.cfg__banner--ok .cfg__bannertitle { color: var(--paper-text); }
+.cfg__banner .btn--live { flex: none; padding: 10px 18px; }
+.cfg__banner .btn--ghost { flex: none; padding: 10px 18px; font: 400 13px var(--sans); background: #fff; }
+
+.cfg__grid { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 20px; align-items: start; margin-top: 20px; }
+.cfg__side { display: flex; flex-direction: column; gap: 20px; }
+.cfg__card { background: var(--surface); border: 1px solid var(--border); padding: 20px 22px; }
+.cfg__cardhead { display: flex; align-items: baseline; gap: 10px; padding-bottom: 14px; border-bottom: 1px solid var(--divider); }
+.cfg__cardname { font: 600 13px var(--mono); }
+.cfg__cardnote { font: 400 11px var(--mix); color: var(--muted); }
+.cfg__group { margin-top: 20px; }
+.cfg__eyebrow { font: 500 10px/1 var(--mix); letter-spacing: .09em; text-transform: uppercase; color: var(--label); }
+
+.cfg .field { margin-top: 14px; }
+.cfg .field__name { font: 500 11px var(--mix); }
+.cfg__fixed { padding: 11px 13px; background: var(--hover); border: 1px solid var(--border); font: 400 13px var(--mono); color: var(--text-2); }
+.cfg__hint { font: 400 11.5px/1.6 var(--sans); color: var(--muted); }
+.cfg__hint--block { display: block; margin-top: 14px; padding: 10px 13px; background: var(--surface-raised); border: 1px solid var(--divider-soft); }
+
+.cfg__switch { display: grid; grid-template-columns: 180px 120px 1fr; align-items: center; gap: 12px; margin-top: 14px; }
+.cfg__switchname { font: 400 12.5px var(--mono); color: var(--text-2); }
+
+.cfg__problem { padding: 12px 0; border-bottom: 1px solid var(--divider-soft); }
+.cfg__path { display: inline-block; padding: 3px 8px; font: 600 11px var(--mono); color: var(--live-text); background: var(--live-tint); }
+.cfg__problemtext { font: 500 13.5px/1.6 var(--sans); margin-top: 6px; }
+.cfg__problemdetail { font: 400 12.5px/1.65 var(--sans); color: var(--muted); margin-top: 3px; }
+
+.cfg__version { padding: 12px 0; border-bottom: 1px solid var(--divider-soft); }
+.cfg__version--on { border-left: 2px solid var(--primary-edge); padding-left: 12px; }
+.cfg__versionhead { display: flex; align-items: center; gap: 8px; }
+.cfg__versionno { font: 600 12.5px var(--mono); }
+.cfg__versionsrc { font: 400 11px var(--mono); color: var(--muted); }
+.cfg__versionmeta { font: 400 11.5px var(--mix); color: var(--muted); margin-top: 3px; }
+.cfg__versionnote { font: 400 12.5px/1.6 var(--sans); color: var(--text-2); margin-top: 4px; }
+
+.cfgdiff { display: grid; grid-template-columns: minmax(0, 1fr) 78px 78px; gap: 0 10px; margin-top: 12px; font: 400 12px var(--mono); }
+.cfgdiff__head { font: 500 10.5px var(--mix); color: var(--label); padding: 6px 0; border-bottom: 1px solid var(--border); }
+.cfgdiff__key { padding: 7px 0; border-bottom: 1px solid var(--divider-soft); color: var(--text-2); overflow-wrap: anywhere; }
+.cfgdiff__val { padding: 7px 0; border-bottom: 1px solid var(--divider-soft); text-align: right; color: var(--text-2); }
+.cfgdiff__val--gone { color: var(--live-text); font-weight: 600; }
+
+.cfgtable { width: 100%; border-collapse: collapse; margin-top: 12px; font: 400 12px var(--mono); }
+.cfgtable th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); font: 500 10.5px var(--mix); color: var(--label); }
+.cfgtable td { padding: 7px 8px; border-bottom: 1px solid var(--divider-soft); color: var(--text-2); }
+.cfgtable__num { text-align: right; }

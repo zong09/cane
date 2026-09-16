@@ -1,0 +1,180 @@
+{#
+  เนื้อของหน้าตั้งค่า · การ์ดใบนี้ถือ id ของตัวเองแล้ว swap ทั้งใบแบบเดียวกับ
+  `partials/engine.html` — สลับแท็บ กดตรวจอีกครั้ง และบันทึก ใช้เส้นทางเดียวกันหมด
+
+  badge ข้างรายการที่ต้องแก้เป็น **path ของฟิลด์** ไม่ใช่เลขบรรทัดอย่างที่ mockup
+  วาดไว้ · ไม่มีไฟล์ก็ไม่มีบรรทัด (spec/07 §path ของฟิลด์ที่ผิด)
+#}
+<div id="config-body" class="cfg">
+  <div class="cfg__tabs">
+    {% for tab in cfg_tabs %}
+    <button class="cfg__tab{% if tab.current %} cfg__tab--on{% endif %}" type="button"
+            hx-get="/partials/config/{{ tab.profile }}"
+            hx-target="#config-body" hx-swap="outerHTML">
+      {{ tab.profile }}
+      {% if tab.running %}<span class="chip chip--paper">กำลังทำงาน</span>{% endif %}
+    </button>
+    {% endfor %}
+  </div>
+
+  {% if not cfg_can_edit %}
+  <div class="cfg__hint cfg__hint--block">ดูได้อย่างเดียว — การแก้ต้องมีสิทธิ์ edit_profile</div>
+  {% endif %}
+
+  {% if cfg_off_mode %}
+  <div class="cfg__offmode">
+    กำลังดูโปรไฟล์ที่ไม่ได้ทำงานอยู่ — การแก้ที่นี่ไม่กระทบกับโหมดที่เดินอยู่ตอนนี้
+  </div>
+  {% endif %}
+
+  {% if cfg_no_version %}
+  <div class="cfg__banner cfg__banner--warn">
+    <div>
+      <div class="cfg__bannertitle">ยังไม่มีเวอร์ชัน config ที่เปิดใช้</div>
+      <div class="cfg__bannernote">ไม่มีเวอร์ชัน active = ไม่เทรด ไม่ใช่ถอยไปใช้ค่าตั้งต้น</div>
+    </div>
+  </div>
+  {% elif cfg_problems %}
+  <div class="cfg__banner cfg__banner--bad">
+    <div>
+      <div class="cfg__bannertitle">โหลดไม่ผ่าน — พบ {{ cfg_problems | length }} ข้อ · ระบบไม่เทรดจนกว่าจะแก้ครบ</div>
+      <div class="cfg__bannernote">ไม่มีโหมดเตือนแล้วไปต่อ</div>
+    </div>
+    <button class="btn btn--live" type="button"
+            hx-get="/partials/config/{{ cfg_profile }}"
+            hx-target="#config-body" hx-swap="outerHTML">ตรวจอีกครั้ง</button>
+  </div>
+  {% else %}
+  <div class="cfg__banner cfg__banner--ok">
+    <div>
+      <div class="cfg__bannertitle">โหลดผ่าน — ไม่พบข้อผิดพลาด</div>
+      <div class="cfg__bannernote">ใช้ schema ตัวเดียวกันทั้งสองโปรไฟล์</div>
+    </div>
+    <button class="btn btn--ghost" type="button"
+            hx-get="/partials/config/{{ cfg_profile }}"
+            hx-target="#config-body" hx-swap="outerHTML">ตรวจอีกครั้ง</button>
+  </div>
+  {% endif %}
+
+  <div class="cfg__grid">
+    <div class="cfg__card">
+      <div class="cfg__cardhead">
+        <span class="cfg__cardname">{{ cfg_profile }}</span>
+        <span class="cfg__cardnote">เวอร์ชันที่เปิดใช้อยู่</span>
+      </div>
+
+      {% for title, fields in cfg_groups %}
+      <div class="cfg__group">
+        <div class="cfg__eyebrow">{{ title }}</div>
+        {% for f in fields %}
+        <label class="field">
+          <span class="field__name">{{ f.label }}</span>
+          {% if f.kind == "select" %}
+          <select class="field__input" name="{{ f.path }}" {% if not cfg_can_edit %}disabled{% endif %}>
+            {% for value, label in f.options %}
+            <option value="{{ value }}"{% if value == f.value %} selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+          {% elif f.kind == "readonly" %}
+          <span class="cfg__fixed">{{ f.value }}</span>
+          {% else %}
+          <input class="field__input" name="{{ f.path }}" value="{{ f.value }}"
+                 {% if f.kind == "number" %}inputmode="decimal"{% endif %}
+                 {% if not cfg_can_edit %}disabled{% endif %}>
+          {% endif %}
+          {% if f.hint %}<span class="cfg__hint">{{ f.hint }}</span>{% endif %}
+        </label>
+        {% endfor %}
+      </div>
+      {% endfor %}
+
+      {% if cfg_switches %}
+      <div class="cfg__group">
+        <div class="cfg__eyebrow">สวิตช์ — ใบ 23</div>
+        {% for name, value, note in cfg_switches %}
+        <div class="cfg__switch">
+          <span class="cfg__switchname">{{ name }}</span>
+          <span class="cfg__fixed">{{ value }}</span>
+          <span class="cfg__hint">{{ note }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% if cfg_settings %}
+      <div class="cfg__group">
+        <div class="cfg__eyebrow">คู่เหรียญ — แก้ได้ที่ใบ 26</div>
+        <table class="cfgtable">
+          <tr>
+            <th>symbol</th><th>market</th><th>long</th><th>short</th>
+            <th>leverage</th><th>short?</th><th>เปิด?</th>
+          </tr>
+          {% for s in cfg_settings.symbols %}
+          <tr>
+            <td>{{ s.symbol }}</td>
+            <td>{{ s.market }}</td>
+            <td class="cfgtable__num">{{ s.bucket_quote_long }}</td>
+            <td class="cfgtable__num">{{ s.bucket_quote_short if s.bucket_quote_short is not none else "—" }}</td>
+            <td class="cfgtable__num">{{ s.leverage }}</td>
+            <td>{{ "ใช่" if s.allow_short else "ไม่" }}</td>
+            <td>{{ "ใช่" if s.enabled else "พักไว้" }}</td>
+          </tr>
+          {% endfor %}
+        </table>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="cfg__side">
+      {% if cfg_problems %}
+      <div class="cfg__card">
+        <div class="cfg__eyebrow">รายการที่ต้องแก้</div>
+        {% for p in cfg_problems %}
+        <div class="cfg__problem">
+          {% if p.field_path %}<span class="cfg__path">{{ p.field_path }}</span>{% endif %}
+          <div class="cfg__problemtext">{{ p.message }}</div>
+          {% if p.detail %}<div class="cfg__problemdetail">{{ p.detail }}</div>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="cfg__card">
+        {% if cfg_diff_note %}
+        <div class="cfg__eyebrow">เทียบกับ {{ cfg_other }}</div>
+        <div class="cfg__hint">{{ cfg_diff_note }}</div>
+        {% else %}
+        <div class="cfg__eyebrow">ต่างจาก {{ cfg_other }} {{ cfg_diff | length }} ค่า</div>
+        <div class="cfg__hint">คีย์ที่ไม่อยู่ในรายการนี้มีค่าเท่ากันทั้งสองโปรไฟล์</div>
+        <div class="cfgdiff">
+          <div class="cfgdiff__head">key</div>
+          <div class="cfgdiff__head cfgdiff__val">{{ cfg_profile }}</div>
+          <div class="cfgdiff__head cfgdiff__val">{{ cfg_other }}</div>
+          {% for row in cfg_diff %}
+          <div class="cfgdiff__key">{{ row.key }}</div>
+          <div class="cfgdiff__val{% if row.mine_missing %} cfgdiff__val--gone{% endif %}">{{ row.mine }}</div>
+          <div class="cfgdiff__val{% if row.theirs_missing %} cfgdiff__val--gone{% endif %}">{{ row.theirs }}</div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="cfg__card">
+        <div class="cfg__eyebrow">ประวัติเวอร์ชัน</div>
+        {% for row in cfg_history %}
+        <div class="cfg__version{% if row.is_active %} cfg__version--on{% endif %}">
+          <div class="cfg__versionhead">
+            <span class="cfg__versionno">v{{ row.version }}</span>
+            <span class="cfg__versionsrc">{{ row.source }}</span>
+            {% if row.is_active %}<span class="chip chip--paper">เปิดใช้อยู่</span>{% endif %}
+          </div>
+          <div class="cfg__versionmeta">{{ row.when }} · {{ row.who }}</div>
+          {% if row.note %}<div class="cfg__versionnote">{{ row.note }}</div>{% endif %}
+        </div>
+        {% else %}
+        <div class="cfg__hint">ยังไม่มีเวอร์ชันของโปรไฟล์นี้เลย</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
