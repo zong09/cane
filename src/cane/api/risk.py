@@ -369,9 +369,11 @@ def latch(
     ความช้าตอนฉุกเฉินแพงกว่าการกดเกิน · คนที่กด latch แล้วเห็น error เพราะมันถูก
     latch อยู่แล้ว จะไม่รู้ว่าตัวเองหยุดสำเร็จหรือยัง แล้วจะไปกดอย่างอื่น
 
-    เหตุผลคิดให้จากคนที่กด ไม่ได้ถามในฟอร์ม — ตารางบังคับว่า latched ต้องมีที่มา
+    เหตุผลคิดให้ ไม่ได้ถามในฟอร์ม — ตารางบังคับว่า latched ต้องมีที่มา
     (`ck_kill_switch_latched_has_a_story`) แต่กล่องข้อความคั่นระหว่างคนกับปุ่มหยุด
-    ฉุกเฉินคือความช้าที่ไม่ควรมี · ใครกดอยู่ที่ `latched_by` อยู่แล้ว
+    ฉุกเฉินคือความช้าที่ไม่ควรมี · **ใครกดอยู่ที่ `latched_by` ช่องเดียว** ไม่ปนเข้าไป
+    ในเหตุผลด้วย ไม่งั้นการ์ดขึ้นชื่อคนสองที่ในประโยคเดียว · ชื่อที่คนอ่านคอนโซลรู้จัก
+    คือชื่อในระบบ ส่วน id ของคนกดอยู่ที่ `user_audit_log` ซึ่งลบไม่ได้
 
     **ไม่แตะ engine เลย** — latch กับ `should_run` เป็นคนละ state คนละ lifecycle
     (spec/10 §`engine.should_run` ≠ `kill_switch.latched`) · engine ที่เดินอยู่จะเดินต่อ
@@ -380,7 +382,7 @@ def latch(
     target = require_profile(profile)
     now = now_ms()
     with db.begin() as conn:
-        killswitch_repo.latch(conn, target, reason=f"กดจากคอนโซล · {user.name}", by=user.email)
+        killswitch_repo.latch(conn, target, reason="กดจากคอนโซล", by=user.name)
         audit.record(
             conn,
             action="killswitch.latch",
