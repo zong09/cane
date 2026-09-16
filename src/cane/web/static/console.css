@@ -416,3 +416,4 @@ a.btn--block { padding: 12px; }
 .cfgtable th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); font: 500 10.5px var(--mix); color: var(--label); }
 .cfgtable td { padding: 7px 8px; border-bottom: 1px solid var(--divider-soft); color: var(--text-2); }
 .cfgtable__num { text-align: right; }
+.cfg__error { font: 400 12px/1.6 var(--sans); color: var(--live-text); }

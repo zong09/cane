@@ -184,3 +184,70 @@ def test_the_version_history_lists_every_version_newest_first(
     assert page.index(f"v{second.version}") < page.index(f"v{first.version}")
     assert "ลองแก้" in page
     assert "เปิดใช้อยู่" in page
+
+
+def seeded(db: Connection, profile: str):
+    head = config_repo.insert_version(
+        db, load_profile(f"config/{profile}.toml"), source="toml_seed"
+    )
+    return config_repo.activate(db, head.id)
+
+
+def test_saving_writes_a_new_version_that_is_not_active_and_leaves_the_pointer_alone(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    """เกณฑ์ของมติ draft+activate — บันทึกแล้ว engine ต้องยังเดินด้วยค่าเดิม"""
+    active = seeded(db, "paper")
+
+    with client:
+        response = client.post(
+            "/api/paper/config", data={"base_pct": "12.0", "note": "ลดขนาดไม้"}
+        )
+
+    assert response.status_code == 200
+    heads = config_repo.versions(db, "paper")
+    assert len(heads) == 2
+    assert heads[0].source == "console"
+    assert heads[0].is_active is False
+    assert config_repo.active_version(db, "paper").id == active.id
+
+
+def test_the_saved_version_records_who_pressed_it(
+    db: Connection, client: TestClient, clean_config: None, owner
+) -> None:
+    """ประวัติที่ไม่มีชื่อคนแก้ตอบคำถามว่า "ใครเปลี่ยน" ไม่ได้ ซึ่งเป็นครึ่งหนึ่งของเหตุผลที่เก็บ"""
+    seeded(db, "paper")
+    _, user = owner
+
+    with client:
+        client.post("/api/paper/config", data={"base_pct": "12.0"})
+
+    draft = config_repo.versions(db, "paper")[0]
+    assert draft.created_by_user_id == user.id
+
+
+def test_a_form_that_breaks_three_rules_writes_no_row_at_all(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    """เกณฑ์เสร็จของใบ 21 · ค่าที่ไม่ผ่านต้อง **ไม่ลง DB เลย** ไม่ใช่ลงแล้วไม่ activate
+
+    (spec/07 §กฎการตรวจ config) · badge เป็น path ของฟิลด์ ไม่ใช่เลขบรรทัดของไฟล์
+    ที่ไม่มีอยู่แล้ว
+    """
+    seeded(db, "live")
+    before = len(config_repo.versions(db, "live"))
+
+    with client:
+        page = client.post(
+            "/api/live/config",
+            data={
+                "base_pct": "32.0",
+                "risk.consecutive_loss_breaker": "",
+                "broker.exchange": "",
+            },
+        ).text
+
+    assert "อยู่นอกช่วง 5–20" in page
+    assert "ขาด consecutive_loss_breaker" in page
+    assert "ไม่ระบุ exchange" in page
+    assert len(config_repo.versions(db, "live")) == before

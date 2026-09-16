@@ -29,22 +29,33 @@ spec/09 §3. ตารางสิทธิ์ — 13 สิทธิ์ × 5 ro
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from copy import deepcopy
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import Connection, Engine
 
-from cane.api.deps import current_mode, get_db, get_sup, require_cap, require_profile
+from cane.api.deps import (
+    client_ip,
+    current_mode,
+    get_db,
+    get_sup,
+    require_cap,
+    require_profile,
+)
 from cane.api.templating import templates
 from cane.config import diff as config_diff
-from cane.config.settings import Settings
-from cane.config.validate import ConfigError, Problem
+from cane.config.settings import Loc, Settings
+from cane.config.validate import ConfigError, Problem, validate_settings
+from cane.db.repo import audit
 from cane.db.repo import config as config_repo
 from cane.db.repo import permissions as perms
 from cane.db.repo import users as users_repo
 from cane.db.repo.users import User
+from cane.db.types import now_ms
 from cane.engine.state import PROFILES
 from cane.engine.supervisor import Supervisor
 
@@ -121,7 +132,9 @@ def _when(ts: int) -> str:
     return f"{moment.day}/{moment.month}/{moment.year + 543} {moment:%H:%M}"
 
 
-def _groups(settings: Settings | None) -> tuple[tuple[str, tuple[FormField, ...]], ...]:
+def _groups(
+    settings: Settings | None, errors: Mapping[str, Problem] | None = None
+) -> tuple[tuple[str, tuple[FormField, ...]], ...]:
     """ช่องกรอกทั้งหมด จัดกลุ่มตามหัวข้อที่ design แบ่งไว้
 
     ไม่มีเวอร์ชัน active = ไม่มีค่าให้ลอก จึงคืนกลุ่มว่าง — ฟอร์มเปล่าที่กรอกได้
@@ -135,7 +148,7 @@ def _groups(settings: Settings | None) -> tuple[tuple[str, tuple[FormField, ...]
         return ()
 
     risk, broker = settings.risk, settings.broker
-    return (
+    groups = (
         (
             "ทั่วไป",
             (
@@ -243,6 +256,13 @@ def _groups(settings: Settings | None) -> tuple[tuple[str, tuple[FormField, ...]
         ),
         ("ข้อมูลราคา", (FormField("data.exchange", "exchange", settings.data.exchange),)),
     )
+    if not errors:
+        return groups
+    # แขวน `Problem` ไว้กับช่องของมันเอง — เทมเพลตจึงไม่ต้องรู้จัก path
+    return tuple(
+        (title, tuple(replace(f, error=errors.get(f.path)) for f in fields))
+        for title, fields in groups
+    )
 
 
 def _switches(settings: Settings | None) -> tuple[tuple[str, str, str], ...]:
@@ -281,6 +301,101 @@ def _history(conn: Connection, profile: str) -> tuple[VersionRow, ...]:
     )
 
 
+#: ช่องที่ฟอร์มแก้ได้ → วิธีอ่านค่าจากสตริงที่ browser ส่งมา
+#:
+#: **ต้องแปลงเองก่อนส่งเข้า `validate_settings()`** ไม่ใช่โยนสตริงดิบเข้าไปแล้วให้
+#: pydantic coerce ให้ · `cross_checks()` ทำงานกับ dict ดิบและใช้ `_is_number()`
+#: ซึ่งคืน `False` ให้ `"0.5"` — กฎ `leverage` ของเหรียญเทียบ `max_leverage` จะเงียบ
+#: ไปทั้งข้อ และนั่นเป็น **กฎเดียวที่ฐานเขียนเป็น CHECK ไม่ได้** (spec/07 §กฎการตรวจ config)
+#:
+#: `symbols` ไม่อยู่ในนี้ (ใบ 26) · `dry_run`/`allow_short` ไม่อยู่ (ใบ 23) ·
+#: `profile` ไม่อยู่เลย เวอร์ชันใหม่เป็นของ profile เดิมเสมอ
+EDITABLE: dict[str, str] = {
+    "timeframe": "text",
+    "cold_start": "text?",
+    "base_pct": "number",
+    "risk.max_position_pct_long": "number",
+    "risk.max_position_pct_short": "number",
+    "risk.max_leverage": "number",
+    "risk.min_liq_buffer_pct": "number",
+    "risk.max_daily_loss_pct": "number",
+    "risk.consecutive_loss_breaker": "whole",
+    "broker.kind": "text",
+    "broker.exchange": "text?",
+    "broker.margin_mode": "text",
+    "broker.seed_quote": "number?",
+    "broker.taker_fee_pct": "number?",
+    "broker.maintenance_margin_pct": "number?",
+    "data.exchange": "text",
+}
+
+
+def _coerce(text: str, kind: str) -> object:
+    """สตริงหนึ่งช่อง → ค่าที่ `validate_settings()` อ่านรู้เรื่อง
+
+    ช่องว่างของค่าที่ **ไม่บังคับ** เป็น `None` · ช่องว่างของค่าที่ **บังคับ** คืน
+    `_ABSENT` เพื่อให้ผู้เรียกลบคีย์นั้นทิ้ง แล้ว pydantic รายงานว่า "ขาด" ที่ฟิลด์นั้น
+    ซึ่งเป็นข้อความที่ตรงกว่า "ค่าต้องเป็นตัวเลข" ของค่าว่าง
+    """
+    if text == "":
+        return None if kind.endswith("?") else _ABSENT
+    if kind.startswith("number"):
+        return float(text)
+    if kind == "whole":
+        return int(text)
+    return text
+
+
+#: ค่าที่แปลว่า "ลบคีย์นี้ทิ้ง" — `None` ใช้แทนไม่ได้เพราะมันเป็นค่าที่ถูกต้องของ
+#: ฟิลด์ที่เว้นว่างได้
+_ABSENT = object()
+
+
+def _dig(raw: dict, loc: Loc) -> dict | None:
+    """เดินลงไปที่ dict ที่ถือคีย์สุดท้ายของ `loc` · ไม่มีทางเดินไป = `None`"""
+    node: object = raw
+    for part in loc[:-1]:
+        if not isinstance(node, dict) or part not in node:
+            return None
+        node = node[part]
+    return node if isinstance(node, dict) else None
+
+
+def patched(base: Settings, form: Mapping[str, str]) -> tuple[dict, list[Problem]]:
+    """ลอกค่าของเวอร์ชันที่เปิดใช้อยู่ แล้วทับเฉพาะช่องที่ฟอร์มส่งมา
+
+    ลอกทั้งชุดไม่ใช่ประกอบใหม่จากฟอร์ม เพราะฟอร์มไม่มี `symbols` กับสวิตช์สองตัว
+    (เป็นของใบ 23/26) — เวอร์ชันใหม่ต้องพาของพวกนั้นไปด้วยครบถ้วน
+
+    คืนค่าดิบที่พร้อมส่งเข้า `validate_settings()` กับรายการปัญหาของ **การแปลงค่า**
+    ซึ่งเป็นคนละชั้นกับปัญหาของกฎ · ตัวเลขที่พิมพ์ผิดต้องชี้ที่ช่องนั้น ไม่ใช่โผล่มา
+    เป็น 500 จากชั้นที่ลึกกว่า
+    """
+    raw = deepcopy(base.model_dump())
+    problems: list[Problem] = []
+
+    for path, kind in EDITABLE.items():
+        if path not in form:
+            continue
+        loc: Loc = tuple(path.split("."))
+        holder = _dig(raw, loc)
+        if holder is None:
+            continue
+        try:
+            value = _coerce(form[path].strip(), kind)
+        except ValueError:
+            problems.append(
+                Problem(loc, f"{loc[-1]} = {form[path]!r} ไม่ใช่ตัวเลข", "ช่องนี้รับตัวเลขเท่านั้น")
+            )
+            continue
+        if value is _ABSENT:
+            holder.pop(loc[-1], None)
+        else:
+            holder[loc[-1]] = value
+
+    return raw, problems
+
+
 def _compare(
     conn: Connection, settings: Settings | None, *, profile: str, other: str
 ) -> tuple[tuple[config_diff.Row, ...], str]:
@@ -308,6 +423,9 @@ def page_context(
     profile: str,
     user: User,
     mode: str,
+    errors: Mapping[str, Problem] | None = None,
+    unplaced: tuple[Problem, ...] = (),
+    saved: str = "",
 ) -> dict[str, object]:
     """ทุกอย่างที่ `partials/config_body.html` ต้องใช้ · คีย์ขึ้นต้นด้วย `cfg_` ทั้งหมด
 
@@ -321,6 +439,7 @@ def page_context(
         settings = None
         problems = tuple(exc.problems)
 
+    found = dict(errors or {})
     running = {view.profile: view.should_run for view in sup.status(conn)}
     other = PROFILES[1] if profile == PROFILES[0] else PROFILES[0]
     rows, diff_note = _compare(conn, settings, profile=profile, other=other)
@@ -336,7 +455,10 @@ def page_context(
         "cfg_settings": settings,
         "cfg_problems": problems,
         "cfg_no_version": settings is None and not problems,
-        "cfg_groups": _groups(settings),
+        "cfg_groups": _groups(settings, found),
+        "cfg_errors": found,
+        "cfg_unplaced": unplaced,
+        "cfg_saved": saved,
         "cfg_switches": _switches(settings),
         "cfg_history": _history(conn, profile),
         "cfg_can_edit": perms.allowed(conn, role=user.role, cap="edit_profile"),
@@ -366,3 +488,117 @@ def body(
     with db.connect() as conn:
         ctx = page_context(conn, sup, profile=target, user=user, mode=mode)
     return templates.TemplateResponse(request, "partials/config_body.html", ctx)
+
+
+async def form_values(request: Request) -> dict[str, str]:
+    """ค่าทุกช่องในฟอร์มเป็น dict — ชื่อช่องเป็น path จึงประกาศเป็นพารามิเตอร์ไม่ได้
+
+    เป็น dependency แบบ async ทั้งที่ route เป็น `def` ธรรมดาโดยตั้งใจ: FastAPI
+    แก้ dependency ใน event loop แล้วพา handler ไปรันใน threadpool · route ที่เป็น
+    `async def` เองจะลาก SQLAlchemy แบบ sync เข้ามาบล็อก loop ซึ่ง `cane serve`
+    รับไม่ได้เพราะมันรัน worker เดียว (ดู `app.py`)
+    """
+    return {key: str(value) for key, value in (await request.form()).items()}
+
+
+def _rendered(
+    request: Request,
+    db: Engine,
+    sup: Supervisor,
+    *,
+    profile: str,
+    user: User,
+    mode: str,
+    errors: Mapping[str, Problem] | None = None,
+    unplaced: tuple[Problem, ...] = (),
+    saved: str = "",
+) -> HTMLResponse:
+    with db.connect() as conn:
+        ctx = page_context(
+            conn,
+            sup,
+            profile=profile,
+            user=user,
+            mode=mode,
+            errors=errors,
+            unplaced=unplaced,
+            saved=saved,
+        )
+    return templates.TemplateResponse(request, "partials/config_body.html", ctx)
+
+
+@router.post("/api/{profile}/config", response_class=HTMLResponse)
+def save(
+    profile: str,
+    request: Request,
+    form: Mapping[str, str] = Depends(form_values),
+    db: Engine = Depends(get_db),
+    sup: Supervisor = Depends(get_sup),
+    user: User = Depends(require_cap("edit_profile")),
+    mode: str = Depends(current_mode),
+) -> HTMLResponse:
+    """บันทึก = **สร้างเวอร์ชันใหม่ที่ยังไม่เปิดใช้** ไม่ใช่แก้ของเดิม
+
+    ฐานบังคับไว้แล้วตั้งแต่ระดับสิทธิ์ — `cane_console` มีแค่ `SELECT, INSERT` กับ
+    `UPDATE (is_active)` (migration 0002) · แก้ทับคอลัมน์ config ทำไม่ได้แม้อยากทำ
+    การเลื่อนตัวชี้เป็นการกระทำแยกที่ต้อง step-up ต่างหาก
+
+    **ล้มเหลวคืน 200 ไม่ใช่ 4xx** — htmx ทิ้งคำตอบ 4xx ทุกตัวยกเว้นที่อยู่ในลิสต์
+    `responseHandling` ของ `base.html` (มีแค่ 403 ของ step-up) · รายการที่ต้องแก้ที่
+    ตอบกลับมาเป็น 422 จะหายเงียบและหน้าจอจะดูเหมือนปุ่มไม่ทำงาน
+    """
+    target = require_profile(profile)
+
+    with db.connect() as conn:
+        try:
+            base = config_repo.active_settings(conn, target)
+        except ConfigError:
+            base = None
+
+    if base is None:
+        # ไม่มีของให้ลอก · ฟอร์มก็ไม่ถูก render ตั้งแต่แรก คำขอนี้จึงมาจากที่อื่น
+        return _rendered(
+            request, db, sup, profile=target, user=user, mode=mode,
+            unplaced=(Problem(message="ยังไม่มีเวอร์ชันที่เปิดใช้ให้แก้ — ทางเข้าครั้งแรกคือ cane db seed"),),
+        )
+
+    raw, problems = patched(base, form)
+    settings: Settings | None = None
+    try:
+        settings = validate_settings(raw, source="console")
+    except ConfigError as exc:
+        problems.extend(exc.problems)
+
+    if problems:
+        errors = {p.field_path: p for p in problems if p.field_path in EDITABLE}
+        unplaced = tuple(p for p in problems if p.field_path not in EDITABLE)
+        return _rendered(
+            request, db, sup, profile=target, user=user, mode=mode,
+            errors=errors, unplaced=unplaced,
+        )
+
+    assert settings is not None
+    note = form.get("note", "").strip()
+    now = now_ms()
+    with db.begin() as conn:
+        head = config_repo.insert_version(
+            conn,
+            settings,
+            source="console",
+            note=note or None,
+            created_by_user_id=user.id,
+            created_ts=now,
+        )
+        audit.record(
+            conn,
+            action="config.save",
+            ts=now,
+            actor_user_id=user.id,
+            target=f"{target} v{head.version}",
+            ip=client_ip(request),
+        )
+
+    return _rendered(
+        request, db, sup, profile=target, user=user, mode=mode,
+        saved=f"บันทึกเป็นเวอร์ชัน v{head.version} แล้ว — ยังไม่เปิดใช้",
+    )
