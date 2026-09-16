@@ -20,6 +20,7 @@ from cane.auth import service as auth_service
 from cane.config.validate import ConfigError, Problem
 from cane.db.repo import config as config_repo
 from cane.db.repo import decisions as decisions_repo
+from cane.db.repo import killswitch as killswitch_repo
 from cane.db.repo import permissions as perms
 from cane.db.repo import users as users_repo
 from cane.db.repo.sessions import Session
@@ -171,6 +172,12 @@ def no_db_reads(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config_repo, "versions", lambda conn, profile: [])
     # rail อ่านโซนล่าสุดต่อเหรียญตั้งแต่ใบ 22 · ทุกหน้ามี rail จึงโดนทุกเทสต์
     monkeypatch.setattr(decisions_repo, "latest_per_symbol", lambda conn, profile, tf: {})
+    # หน้าภาพรวมอ่าน kill switch จริง · ไม่มีแถว = ไม่ latched (repo คืนค่าตั้งต้นให้)
+    monkeypatch.setattr(
+        killswitch_repo,
+        "read",
+        lambda conn, profile: killswitch_repo.KillSwitch(profile=profile, latched=False),
+    )
     monkeypatch.setattr(users_repo, "everyone", lambda conn: [])
     monkeypatch.setattr(perms, "allowed", lambda conn, *, role, cap: role != "VIEWER")
     monkeypatch.setattr(
@@ -320,8 +327,8 @@ def test_the_rail_renders_both_groups_and_every_menu_item() -> None:
     assert "OWNER" in page and "นพ" in page  # ตัวย่อของ "นภัส พ."
 
 
-#: `config` ไม่อยู่ในรายการนี้แล้ว — ใบ 21 เติมเนื้อของมันไปแล้ว ที่เหลือยังเป็นโครง
-@pytest.mark.parametrize("slug", ["overview", "symbols", "risk", "log", "report", "users"])
+#: `config` (ใบ 21) กับ `overview` (ใบ 22) มีเนื้อของตัวเองแล้ว ที่เหลือยังเป็นโครง
+@pytest.mark.parametrize("slug", ["symbols", "risk", "log", "report", "users"])
 def test_every_menu_item_opens_even_though_its_body_belongs_to_a_later_ticket(
     slug: str
 ) -> None:
@@ -951,3 +958,182 @@ def test_someone_without_edit_profile_cannot_activate_anything(
 
     assert response.status_code == 403
     assert activated == []
+
+
+# ── หน้าภาพรวม · ใบ 22 ────────────────────────────────────────────────────────
+
+
+def a_record(**overrides):
+    """บันทึกของแท่งหนึ่ง — ค่าตั้งต้นคือแท่งที่ไม่ทำอะไร"""
+    base = {
+        "profile": "paper",
+        "market": "usdtm_perp",
+        "symbol": "BTC/USDT",
+        "timeframe": "1d",
+        "bar_close_ts": NOW,
+        "decided_ts": NOW,
+        "config_version_id": 1,
+        "close_px": 77_500.0,
+        "zone": "GREEN",
+        "state": "BULLISH",
+        "long_signal": False,
+        "short_signal": False,
+        "dry_run": True,
+        "skip_reason": "no_signal",
+    }
+    return decisions_repo.DecisionRecord(**{**base, **overrides})
+
+
+def with_overview(monkeypatch: pytest.MonkeyPatch, latest=None, profile: str = "paper"):
+    monkeypatch.setattr(config_repo, "active_settings", lambda conn, p: a_config(p))
+    monkeypatch.setattr(
+        decisions_repo, "latest_per_symbol", lambda conn, p, tf: dict(latest or {})
+    )
+
+
+def test_the_overview_page_has_a_body_of_its_own_now(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with_overview(monkeypatch)
+    client, _ = build()
+    with client:
+        page = client.get("/overview").text
+
+    assert "ใบ 19 ทำแค่โครง" not in page
+    assert "สัญญาณรอดำเนินการ" in page
+    assert "Kill switch" in page
+
+
+def test_a_number_with_no_source_yet_shows_a_dash_never_a_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ศูนย์เป็นคำตอบ ("วันนี้ไม่ขาดทุนเลย") ส่วนขีดแปลว่ายังตอบไม่ได้ — คนละเรื่อง
+
+    repo นี้ยึดเส้นนี้อยู่แล้วที่ `day_pnl_pct=None` ใน `risk/limits.py` ซึ่งเขียนว่า
+    `None` แปลว่า **คำนวณไม่ได้**
+    """
+    with_overview(monkeypatch)
+    client, _ = build()
+    with client:
+        page = client.get("/overview").text
+
+    assert "ต้องอ่านสถานะไม้จาก venue" in page
+    assert "—" in page
+    # เพดานมาจาก config จริง ไม่ใช่ขีด
+    assert "/ 5.0%" in page
+
+
+def test_no_decision_rows_at_all_means_the_count_cannot_be_answered_yet(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ฐานที่ engine ยังไม่เคยเดิน — `สัญญาณรอดำเนินการ = 0` จะเป็นคำตอบที่ผิด"""
+    with_overview(monkeypatch)
+    client, _ = build()
+    with client:
+        page = client.get("/overview").text
+
+    assert "ยังไม่มีบันทึก" in page
+
+
+def test_a_long_signal_on_the_latest_bar_is_counted_and_shown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with_overview(
+        monkeypatch,
+        {("usdtm_perp", "BTC/USDT"): a_record(long_signal=True, skip_reason=None)},
+    )
+    client, _ = build()
+    with client:
+        page = client.get("/overview").text
+
+    assert "เปิด long" in page
+    assert "var(--zone-green)" in page
+
+
+def test_a_short_signal_is_hidden_when_the_profile_switch_is_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """spec/07 §`allow_short` มีสองชั้น — ผลจริงคือ AND ของสองชั้น
+
+    ปิดข้างบนแล้วเหรียญที่เปิดไว้เองก็ยังปิด · สัญญาณที่กดไม่ได้ต้องไม่โผล่บนจอ
+    """
+    closed = a_config("paper").model_copy(update={"allow_short": False})
+    monkeypatch.setattr(config_repo, "active_settings", lambda conn, p: closed)
+    monkeypatch.setattr(
+        decisions_repo,
+        "latest_per_symbol",
+        lambda conn, p, tf: {
+            ("usdtm_perp", "BTC/USDT"): a_record(short_signal=True, skip_reason=None)
+        },
+    )
+    client, _ = build()
+    with client:
+        page = client.get("/overview").text
+
+    assert "เปิด short" not in page
+    assert "ฝั่ง short ปิดอยู่" in page
+
+
+def test_a_bar_the_cane_rule_rejected_raises_the_cold_start_banner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`cane_rule` เป็นประตูเดียวที่เข้าเส้นทาง cold start ได้ (`rules/late_entry.py`)
+
+    ใช้มันเป็นเงื่อนไขได้ตรงๆ โดยไม่ต้องมีธงใหม่ในฐาน ซึ่ง spec/10 ห้ามไว้อยู่แล้ว
+    """
+    with_overview(
+        monkeypatch,
+        {("usdtm_perp", "BTC/USDT"): a_record(skip_reason="cane_rule")},
+    )
+    client, _ = build()
+    with client:
+        page = client.get("/overview").text
+
+    assert "Cold start" in page
+    assert "แท่งล่าสุดไม่ใช่จุดสัญญาณ" in page
+
+
+def test_a_latched_kill_switch_is_visible_on_the_overview_not_only_on_the_risk_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with_overview(monkeypatch)
+    monkeypatch.setattr(
+        killswitch_repo,
+        "read",
+        lambda conn, profile: killswitch_repo.KillSwitch(
+            profile=profile, latched=True, reason="แพ้ติดกันครบ"
+        ),
+    )
+    client, _ = build()
+    with client:
+        page = client.get("/overview").text
+
+    assert "latched" in page
+    assert "แพ้ติดกันครบ" in page
+
+
+def test_the_overview_says_so_when_the_profile_has_no_active_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _ = build()
+    with client:
+        page = client.get("/overview").text
+
+    assert "ยังไม่มีเวอร์ชัน config ที่เปิดใช้" in page
+
+
+def test_switching_mode_tells_the_page_to_reload_its_own_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """สลับโหมด swap แค่การ์ดสองใบ · เนื้อหน้าที่ผูกกับโหมดต้องรู้ตัวเองว่าต้องดึงใหม่
+
+    ไม่งั้นตัวเลขทั้งหน้าค้างอยู่ที่โหมดเดิมทั้งที่แถบบนเปลี่ยนไปแล้ว
+    """
+    with_overview(monkeypatch)
+    client, _ = build(mode="live")
+    with client:
+        switched = client.post("/api/session/mode", data={"mode": "paper"})
+        page = client.get("/overview").text
+
+    assert switched.headers["HX-Trigger"] == "cane:mode"
+    assert 'hx-trigger="cane:mode from:body"' in page

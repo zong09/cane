@@ -21,6 +21,7 @@ from sqlalchemy import Engine
 from cane.api import auth_routes
 from cane.api import config as config_routes
 from cane.api import engine as engine_routes
+from cane.api import overview as overview_routes
 from cane.api import pages, session
 from cane.api.deps import LOGIN_PATH, StepUpFailed
 from cane.api.templating import templates
@@ -58,6 +59,7 @@ def create_app(
     app.include_router(pages.router)
     app.include_router(engine_routes.router)
     app.include_router(config_routes.router)
+    app.include_router(overview_routes.router)
     app.include_router(session.router)
 
     # `StepUpFailed` สืบทอดจาก `HTTPException` และ Starlette เลือก handler โดยไล่ตาม

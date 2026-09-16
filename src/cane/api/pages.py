@@ -16,6 +16,7 @@ from sqlalchemy import Engine
 
 from cane.api import config as config_routes
 from cane.api import context
+from cane.api import overview as overview_routes
 from cane.api.deps import current_mode, current_user, get_db, get_sup
 from cane.api.templating import templates
 from cane.db.repo import permissions as perms
@@ -36,7 +37,7 @@ PAGE_CAP = {slug: "view_overview" for slug in PAGES}
 PAGE_CAP["users"] = "manage_users"
 
 #: slug → เทมเพลตของหน้าที่มีเนื้อแล้ว · ที่ไม่อยู่ในนี้ได้ placeholder ของใบ 19
-BODIES = {"config": "pages/config.html"}
+BODIES = {"config": "pages/config.html", "overview": "pages/overview.html"}
 
 
 @router.get("/")
@@ -66,5 +67,7 @@ def page(
             ctx |= config_routes.page_context(
                 conn, sup, profile=mode, user=user, mode=mode
             )
+        elif slug == "overview":
+            ctx |= overview_routes.page_context(conn, profile=mode)
     ctx |= {"page_label": label, "page_ticket": ticket}
     return templates.TemplateResponse(request, BODIES.get(slug, "pages/placeholder.html"), ctx)
