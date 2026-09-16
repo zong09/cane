@@ -21,10 +21,12 @@ from cane.auth import totp
 from cane.auth.matrix import DEFAULT_MATRIX
 from cane.config import load_profile
 from cane.db.repo import config as config_repo
+from cane.db.repo import decisions as decisions_repo
 from cane.db.repo import permissions as perms
 from cane.db.repo import sessions as sessions_repo
 from cane.db.repo import users as users_repo
 from cane.db.schema import AUTH_TABLES, CONFIG_TABLES, engine_state, user_audit_log
+from cane.db.schema import decisions as decisions_table
 from cane.db.types import now_ms
 from cane.engine.state import PROFILES, STOPPED
 
@@ -314,3 +316,56 @@ def test_activating_leaves_an_audit_row_marked_step_up_verified(
     ).one()
     assert row.step_up_verified is True
     assert row.target == f"paper v{draft.version}"
+
+
+# ── จุดสีของ symbol ใน rail · ใบ 22 ───────────────────────────────────────────
+
+
+def a_decision(version_id: int, *, profile: str, zone: str, symbol: str = "BTC/USDT"):
+    """แท่งที่จบด้วย "ไม่ทำอะไร" — สั้นที่สุดที่ยังถูกกฎทุกข้อของ `validate_record()`"""
+    return decisions_repo.DecisionRecord(
+        profile=profile,
+        market="usdtm_perp",
+        symbol=symbol,
+        timeframe="1d",
+        bar_close_ts=1_787_961_600_000,
+        decided_ts=1_787_961_600_500,
+        config_version_id=version_id,
+        close_px=77_500.0,
+        zone=zone,
+        state="BULLISH",
+        long_signal=False,
+        short_signal=False,
+        dry_run=True,
+        skip_reason="no_signal",
+    )
+
+
+def test_the_rail_dot_takes_its_colour_from_the_latest_decision(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    """ใบ 19 ทิ้งจุดสีไว้เป็นสีเทาคงที่ · ใบ 22 ทำให้มันอ่านโซนจริง"""
+    head = seeded(db, "paper")
+    db.execute(decisions_table.delete())
+    decisions_repo.insert_decision(
+        db, a_decision(head.id, profile="paper", zone="GREEN")
+    )
+
+    with client:
+        page = client.get("/overview").text
+
+    assert "var(--zone-green)" in page
+
+
+def test_a_symbol_with_no_decision_yet_stays_black_rather_than_guessing(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    """`BLACK` แปลว่า "ไม่เข้าเงื่อนไขสีใดเลย" อยู่แล้ว (spec/02 §นิยามโซนทั้ง 6 สี)"""
+    seeded(db, "paper")
+    db.execute(decisions_table.delete())
+
+    with client:
+        page = client.get("/overview").text
+
+    assert "var(--zone-black)" in page
+    assert "var(--zone-green)" not in page

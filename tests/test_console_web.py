@@ -19,6 +19,7 @@ from cane.api.deps import get_sup, signed_in
 from cane.auth import service as auth_service
 from cane.config.validate import ConfigError, Problem
 from cane.db.repo import config as config_repo
+from cane.db.repo import decisions as decisions_repo
 from cane.db.repo import permissions as perms
 from cane.db.repo import users as users_repo
 from cane.db.repo.sessions import Session
@@ -168,6 +169,8 @@ def no_db_reads(monkeypatch: pytest.MonkeyPatch) -> None:
     # หน้าตั้งค่า (ใบ 21) อ่านประวัติเวอร์ชันกับชื่อคนแก้ด้วย · `FakeConn.execute()`
     # คืน `None` การปล่อยให้ repo ตัวจริงวิ่งจึงระเบิดเป็น AttributeError ก่อนถึง assert
     monkeypatch.setattr(config_repo, "versions", lambda conn, profile: [])
+    # rail อ่านโซนล่าสุดต่อเหรียญตั้งแต่ใบ 22 · ทุกหน้ามี rail จึงโดนทุกเทสต์
+    monkeypatch.setattr(decisions_repo, "latest_per_symbol", lambda conn, profile, tf: {})
     monkeypatch.setattr(users_repo, "everyone", lambda conn: [])
     monkeypatch.setattr(perms, "allowed", lambda conn, *, role, cap: role != "VIEWER")
     monkeypatch.setattr(

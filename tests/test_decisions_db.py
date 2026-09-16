@@ -1068,3 +1068,60 @@ def test_a_twenty_bar_run_reads_back_as_a_complete_sequence(
     # dry run คำนวณครบทุกขั้นแต่ไม่มีคำสั่งหลุดออกไป (spec/06 §dry_run)
     assert paper[0].size_pct_final == 50.0
     assert paper[0].orders[0].sent is False
+
+
+# ── บันทึกล่าสุดต่อเหรียญ · ใบ 22 ─────────────────────────────────────────────
+
+
+def test_the_latest_row_of_a_bar_wins_not_the_first(db, live_version):
+    """แท่งเดียวมีได้หลายแถวเมื่อ process ตายกลางแท่ง — หน้าจอต้องเห็นรอบที่เดินจบทีหลัง"""
+    repo.insert_decision(db, quiet_bar(live_version, zone="BLUE"), created_ts=T0 + 100)
+    repo.insert_decision(db, quiet_bar(live_version, zone="GREEN"), created_ts=T0 + 200)
+
+    latest = repo.latest_per_symbol(db, "live", "1d")
+
+    assert latest[(PERP, BTC)].zone == "GREEN"
+
+
+def test_the_newest_bar_wins_over_an_older_one(db, live_version):
+    repo.insert_decision(db, quiet_bar(live_version, zone="RED"), created_ts=T0 + 100)
+    repo.insert_decision(
+        db,
+        quiet_bar(live_version, bar_close_ts=T0 + DAY_MS, zone="YELLOW"),
+        created_ts=T0 + DAY_MS + 100,
+    )
+
+    assert repo.latest_per_symbol(db, "live", "1d")[(PERP, BTC)].zone == "YELLOW"
+
+
+def test_the_same_pair_on_two_markets_is_two_separate_rows(db, live_version):
+    """`store_symbol()` ตัด `:USDT` ทิ้ง — ไม่มี market เป็นกุญแจก็ชนกันเอง (decisions #26)"""
+    repo.insert_decision(db, quiet_bar(live_version, zone="GREEN"), created_ts=T0 + 100)
+    repo.insert_decision(
+        db,
+        quiet_bar(live_version, market=SPOT, symbol=ETH, zone="RED"),
+        created_ts=T0 + 100,
+    )
+
+    latest = repo.latest_per_symbol(db, "live", "1d")
+
+    assert latest[(PERP, BTC)].zone == "GREEN"
+    assert latest[(SPOT, ETH)].zone == "RED"
+
+
+def test_the_other_profile_never_leaks_in(db, live_version, paper_version):
+    """หน้าภาพรวมผูกกับโหมดที่กำลังดู — ตัวเลขของอีกโหมดหลุดเข้ามาไม่ได้"""
+    repo.insert_decision(db, quiet_bar(live_version, zone="GREEN"), created_ts=T0 + 100)
+    repo.insert_decision(
+        db,
+        quiet_bar(paper_version, profile="paper", dry_run=True, zone="RED"),
+        created_ts=T0 + 100,
+    )
+
+    assert repo.latest_per_symbol(db, "live", "1d")[(PERP, BTC)].zone == "GREEN"
+    assert repo.latest_per_symbol(db, "paper", "1d")[(PERP, BTC)].zone == "RED"
+
+
+def test_a_profile_with_no_decisions_yet_is_an_empty_map_not_an_error(db, live_version):
+    """ฐานที่ engine ยังไม่เคยเดิน — คอนโซลต้องเปิดได้ ไม่ใช่ 500"""
+    assert repo.latest_per_symbol(db, "live", "1d") == {}

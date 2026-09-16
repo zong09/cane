@@ -600,6 +600,43 @@ def decision_at(
     return _load(conn, [row])[0]
 
 
+def latest_per_symbol(
+    conn: Connection, profile: str, timeframe: str
+) -> dict[tuple[str, str], DecisionRecord]:
+    """บันทึกล่าสุดของทุกเหรียญใน profile หนึ่ง · คีย์เป็น `(market, symbol)`
+
+    คีย์เป็น **คู่** ไม่ใช่ชื่อเหรียญเฉยๆ เพราะ `store_symbol()` ตัด `:USDT` ทิ้ง
+    `BTC/USDT` บน spot กับบน perp จึงชนกันเองถ้าไม่มี market ([decisions #26](../../../../docs/decisions.md))
+
+    **"ล่าสุด" ต้องมีตัวตัดสินสองชั้น** — แท่งใหม่สุดก่อน แล้วจึง `id` สูงสุด ·
+    กุญแจธรรมชาติของตารางนี้ไม่ unique โดยเจตนา process ที่ตายกลางแท่งแล้วเดินใหม่
+    ทิ้งหลายแถวของแท่งเดียวกันไว้ (decisions #27.1) ถ้าเรียงด้วย `bar_close_ts`
+    อย่างเดียว หน้าจอจะสลับไปมาระหว่างสองรอบของแท่งเดิมโดยไม่มีอะไรเปลี่ยน
+
+    คอนโซลอ่านโซนกับสัญญาณจากที่นี่ **ไม่ใช่คำนวณ `action_zones()` ใหม่เอง** —
+    spec/07 §บันทึกการตัดสินใจ เก็บ `zone`/`state`/`long_signal`/`short_signal` ไว้
+    ต่อแท่งต่อเหรียญอยู่แล้ว การคำนวณซ้ำคือแหล่งความจริงที่สองที่จะขัดกับแหล่งแรก
+    """
+    rows = conn.execute(
+        select(decisions)
+        .where(
+            decisions.c.profile == profile,
+            decisions.c.timeframe == timeframe,
+        )
+        .distinct(decisions.c.market, decisions.c.symbol)
+        .order_by(
+            decisions.c.market,
+            decisions.c.symbol,
+            decisions.c.bar_close_ts.desc(),
+            decisions.c.id.desc(),
+        )
+    ).all()
+    return {
+        (row.market, row.symbol): record
+        for row, record in zip(rows, _load(conn, rows), strict=True)
+    }
+
+
 def _load(conn: Connection, rows: Sequence) -> list[DecisionRecord]:  # noqa: ANN001
     """ประกอบหัวกับลูกเป็น dataclass — อ่านลูกครั้งเดียวต่อชุด ไม่ใช่ครั้งเดียวต่อแท่ง"""
     if not rows:
