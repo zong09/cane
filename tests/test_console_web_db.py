@@ -410,3 +410,32 @@ def test_every_number_on_the_overview_follows_the_mode_being_viewed(
     # เพดานขาดทุนก็เป็นของคนละโปรไฟล์ (paper 5.0 · live 3.0)
     assert "/ 5.0%" in as_paper
     assert "/ 3.0%" in as_live
+
+
+# ── หน้าความเสี่ยงผูกกับโหมดจริง · ใบ 23 ──────────────────────────────────────
+
+
+def test_every_ceiling_on_the_risk_page_follows_the_mode_being_viewed(
+    db: Connection, owner, clean_config: None
+) -> None:
+    """เพดานทุกตัวมาจาก config ของโปรไฟล์ที่ session กำลังดู ไม่ใช่ของตัวที่โหลดล่าสุด
+
+    ตัวแยกคือค่าที่ seed ไว้คนละชุด: ขาดทุนต่อวัน (paper 5.0 · live 3.0) กับ bucket
+    รวมของฝั่ง long (paper 100+80 · live 100) — ถ้าหน้าลืมส่ง profile ลงไปชั้นใด
+    ชั้นหนึ่ง สองค่านี้จะเท่ากันทั้งที่ฐานเก็บไว้คนละแถว
+    """
+    seeded(db, "paper")
+    seeded(db, "live")
+
+    with client_in(db, owner, "paper") as client:
+        as_paper = client.get("/risk").text
+    with client_in(db, owner, "live") as client:
+        as_live = client.get("/risk").text
+
+    assert '<span class="rk__limitval">5</span>' in as_paper
+    assert '<span class="rk__limitval">3</span>' in as_live
+    assert "bucket long รวม 180.00 USDT" in as_paper
+    assert "bucket long รวม 100.00 USDT" in as_live
+    # paper มีเหรียญ spot อยู่ด้วย live ไม่มี — ตารางท้ายหน้าจึงต้องต่างกัน
+    assert "ไม่มี (spot)" in as_paper
+    assert "ไม่มี (spot)" not in as_live

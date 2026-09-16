@@ -327,8 +327,8 @@ def test_the_rail_renders_both_groups_and_every_menu_item() -> None:
     assert "OWNER" in page and "นพ" in page  # ตัวย่อของ "นภัส พ."
 
 
-#: `config` (ใบ 21) กับ `overview` (ใบ 22) มีเนื้อของตัวเองแล้ว ที่เหลือยังเป็นโครง
-@pytest.mark.parametrize("slug", ["symbols", "risk", "log", "report", "users"])
+#: `config` (21) `overview` (22) `risk` (23) มีเนื้อของตัวเองแล้ว ที่เหลือยังเป็นโครง
+@pytest.mark.parametrize("slug", ["symbols", "log", "report", "users"])
 def test_every_menu_item_opens_even_though_its_body_belongs_to_a_later_ticket(
     slug: str
 ) -> None:
@@ -1136,4 +1136,190 @@ def test_switching_mode_tells_the_page_to_reload_its_own_body(
         page = client.get("/overview").text
 
     assert switched.headers["HX-Trigger"] == "cane:mode"
+    assert 'hx-trigger="cane:mode from:body"' in page
+
+
+# ── หน้าความเสี่ยง · ใบ 23 ─────────────────────────────────────────────────────
+
+
+def with_risk(monkeypatch: pytest.MonkeyPatch, latest=None, profile: str = "paper"):
+    monkeypatch.setattr(config_repo, "active_settings", lambda conn, p: a_config(p))
+    monkeypatch.setattr(
+        decisions_repo, "latest_per_symbol", lambda conn, p, tf: dict(latest or {})
+    )
+
+
+def test_the_risk_page_has_a_body_of_its_own_now(monkeypatch: pytest.MonkeyPatch) -> None:
+    with_risk(monkeypatch)
+    client, _ = build()
+    with client:
+        page = client.get("/risk").text
+
+    assert "ใบ 19 ทำแค่โครง" not in page
+    assert "เพดานความเสี่ยง" in page
+    assert "Kill switch" in page
+
+
+def test_a_number_that_needs_open_positions_shows_a_dash_never_a_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ไม่มีตารางเก็บสถานะไม้เลย (ใบ 13) · "0 ไม้ · margin 0.00" จึงเป็นคำตอบที่ผิด"""
+    with_risk(monkeypatch)
+    client, _ = build()
+    with client:
+        page = client.get("/risk").text
+
+    assert "— ไม้ · margin —" in page
+    assert "notional — ·" in page
+    # เพดานมาจาก config เวอร์ชันที่ active จึงเป็นของจริงตั้งแต่วันนี้ ไม่ใช่ขีด
+    assert '<span class="rk__limitval">35%</span>' in page
+    assert '<span class="rk__limitval">50</span>' in page
+    assert "bucket long รวม 180.00 USDT" in page
+
+
+def test_the_breaker_shows_its_ceiling_as_empty_pips_rather_than_a_count_of_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ตัวนับต้องมาจาก VIEW ที่ยังไม่มี — ศูนย์ช่องที่เต็มแปลว่า "ยังไม่แพ้เลย" ซึ่งยังตอบไม่ได้"""
+    with_risk(monkeypatch)
+    client, _ = build()
+    with client:
+        page = client.get("/risk").text
+
+    # paper seed ตั้ง consecutive_loss_breaker = 4
+    assert page.count('<span class="rk__pip"></span>') == 4
+    assert "แพ้ติดกัน — ไม้" in page
+
+
+def test_the_kill_switch_card_tells_its_story_from_the_reason_column(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """breaker กับคนกดให้เหตุคนละอย่าง · ประโยคตายตัวบนการ์ดจะโกหกกรณีหนึ่งเสมอ"""
+    with_risk(monkeypatch)
+    monkeypatch.setattr(
+        killswitch_repo,
+        "read",
+        lambda conn, profile: killswitch_repo.KillSwitch(
+            profile=profile, latched=True, reason="คนกดตอนข่าวออก", latched_by="zong"
+        ),
+    )
+    client, _ = build()
+    with client:
+        page = client.get("/risk").text
+
+    assert "Kill switch — latched" in page
+    assert "คนกดตอนข่าวออก" in page
+    assert "zong" in page
+
+
+def test_the_kill_switch_card_never_mentions_a_json_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ไฟล์ design เขียนว่าสถานะอยู่ที่ `state/killswitch.json` — errata ของ spec/10 ยกเลิกไปแล้ว"""
+    with_risk(monkeypatch)
+    client, _ = build()
+    with client:
+        page = client.get("/risk").text
+
+    assert "killswitch.json" not in page
+    assert "แถวในฐาน" in page
+
+
+def test_the_order_id_note_says_the_side_is_the_order_side_not_the_position_side(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """spec/06 §กันสั่งซ้ำ (reconciliation) เขียน errata เองว่า mock ในดีไซน์พิมพ์ผิด"""
+    with_risk(monkeypatch)
+    client, _ = build()
+    with client:
+        page = client.get("/risk").text
+
+    assert "ฝั่งของออเดอร์ (buy/sell)" in page
+    assert "ฝั่งสถานะ (long/short)" not in page
+
+
+def test_the_broker_panel_derives_default_type_instead_of_reading_it_from_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`defaultType` ไม่มีในฐาน · perp เป็น `swap` ไม่ใช่ `future` อย่างที่ดีไซน์เขียน"""
+    with_risk(monkeypatch)
+    client, _ = build()
+    with client:
+        page = client.get("/risk").text
+
+    # paper seed มีทั้ง perp และ spot — ต้องขึ้นทั้งสองค่า
+    assert "defaultType = spot · swap" in page
+    assert "future" not in page
+
+
+def test_a_spot_symbol_says_it_has_no_liquidation_rather_than_an_unknown_distance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """spot ไม่เรียกชั้น liq_buffer เลย ไม่ใช่เรียกแล้วผ่านเสมอ (spec/06)"""
+    with_risk(monkeypatch)
+    client, _ = build()
+    with client:
+        page = client.get("/risk").text
+
+    assert "ไม่มี (spot)" in page
+
+
+def test_a_row_reads_long_only_when_the_profile_switch_is_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ผลจริงของแต่ละเหรียญคือ AND สองชั้น — ปิดข้างบนแล้วเหรียญที่เปิดเองก็ยังปิด"""
+    closed = a_config("paper").model_copy(update={"allow_short": False})
+    monkeypatch.setattr(config_repo, "active_settings", lambda conn, p: closed)
+    monkeypatch.setattr(decisions_repo, "latest_per_symbol", lambda conn, p, tf: {})
+    client, _ = build()
+    with client:
+        page = client.get("/risk").text
+
+    assert "long + short" not in page
+    assert "long เท่านั้น" in page
+
+
+def test_leftovers_from_an_aborted_flip_are_listed_apart_from_the_positions_we_own(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ไม้แบบนี้มีเลเวอเรจและไม่มี stop จนกว่าคนจะเห็น (decisions #19)
+
+    ถ้าคอนโซลกลืนมันไปกับไม้ปกติ การตัดสินให้คนปิดด้วยมือก็กลายเป็นการเงียบใส่ความเสี่ยง
+    """
+    stuck = decisions_repo.Unmanaged(
+        side="short", qty=0.004, source="flip_aborted", first_seen_bar_close_ts=NOW
+    )
+    with_risk(
+        monkeypatch,
+        {("usdtm_perp", "BTC/USDT"): a_record(skip_reason="flip_aborted", unmanaged=(stuck,))},
+    )
+    client, _ = build()
+    with client:
+        page = client.get("/risk").text
+
+    assert "ไม้ที่ระบบไม่ได้ตั้งใจถือ" in page
+    assert "flip_aborted" in page
+    assert "0.004" in page
+
+
+def test_the_risk_page_says_so_when_the_profile_has_no_active_config() -> None:
+    """เพดานทุกตัวมาจากเวอร์ชันที่เปิดใช้ · ไม่มีเวอร์ชัน = ไม่มีเพดานให้แสดง"""
+    client, _ = build()
+    with client:
+        page = client.get("/risk").text
+
+    assert "ยังไม่มีเวอร์ชัน config ที่เปิดใช้" in page
+    # การ์ด kill switch อ่านจากตาราง จึงยังต้องแสดงได้แม้ config จะไม่มี
+    assert "Kill switch" in page
+
+
+def test_the_risk_page_reloads_its_own_body_when_the_mode_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with_risk(monkeypatch)
+    client, _ = build(mode="live")
+    with client:
+        client.post("/api/session/mode", data={"mode": "paper"})
+        page = client.get("/risk").text
+
     assert 'hx-trigger="cane:mode from:body"' in page
