@@ -1,0 +1,125 @@
+{#
+  เนื้อของหน้าภาพรวม · ผูกกับโหมดที่ session กำลังดู
+
+  การ์ดใบนี้ฟังเหตุการณ์ `cane:mode` ที่ `/api/session/mode` ส่งกลับมาเป็น header
+  เพราะการสลับโหมด swap แค่การ์ด PROFILE กับ engine ไม่ได้โหลดหน้าใหม่ ·
+  ถ้าไม่ฟัง ตัวเลขทั้งหน้าจะค้างอยู่ที่โหมดเดิมทั้งที่แถบบนเปลี่ยนไปแล้ว
+
+  ช่องที่ยังไม่มีต้นทางขึ้นเป็น `—` **ไม่ใช่ `0`** — ศูนย์เป็นคำตอบ ส่วนขีดเป็นการ
+  บอกว่ายังตอบไม่ได้ (ดูตารางใน `api/overview.py`)
+#}
+<div id="overview-body" class="ov"
+     hx-get="/partials/overview" hx-trigger="cane:mode from:body" hx-swap="outerHTML">
+  {% if ov_settings is none %}
+  <div class="cfg__banner cfg__banner--warn">
+    <div>
+      {% if ov_problems %}
+      <div class="cfg__bannertitle">config ของโหมดนี้โหลดไม่ผ่าน {{ ov_problems }} ข้อ</div>
+      <div class="cfg__bannernote">ระบบไม่เทรดจนกว่าจะแก้ครบ — แก้ได้ที่หน้า ตั้งค่า</div>
+      {% else %}
+      <div class="cfg__bannertitle">ยังไม่มีเวอร์ชัน config ที่เปิดใช้</div>
+      <div class="cfg__bannernote">ไม่มีเวอร์ชัน active = ไม่เทรด ไม่ใช่ถอยไปใช้ค่าตั้งต้น</div>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  <div class="ov__sub">
+    {{ ov_rows | length }} symbol · {{ ov_market_note }} ·
+    ตัดสินใจบนแท่ง {{ ov_settings.timeframe }} ที่ปิดแล้วเท่านั้น
+  </div>
+
+  {% if ov_cold %}
+  <div class="ov__cold">
+    <span class="ov__coldmark">!</span>
+    <div>
+      <div class="ov__coldtitle">Cold start — เทรนด์เดินไปแล้วตอนที่บอทเพิ่งเข้ามา</div>
+      <div class="ov__colddetail">
+        {% for row in ov_cold %}{{ row.pair }}{% if not loop.last %} · {% endif %}{% endfor %}
+        เป็น {{ ov_cold[0].state | lower }} อยู่ แต่แท่งล่าสุดไม่ใช่จุดสัญญาณ ·
+        เส้นทางของรอบนี้อยู่ที่ <code>cold_start</code> ของโปรไฟล์
+        (<code>{{ ov_settings.cold_start or "ไม่ได้ตั้ง = ไม่เข้าเส้นทาง cold start" }}</code>)
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="ov__kpis">
+    <div class="ov__kpi">
+      <div class="ov__kpiname">สัญญาณรอดำเนินการ</div>
+      <div class="ov__kpinum">{{ ov_pending }}</div>
+      <div class="ov__kpinote">เหรียญที่แท่งล่าสุดมีสัญญาณ</div>
+    </div>
+    <div class="ov__kpi">
+      <div class="ov__kpiname">ถือสถานะอยู่</div>
+      <div class="ov__kpinum">{{ ov_holding }}</div>
+      <div class="ov__kpinote">ต้องอ่านสถานะไม้จาก venue — ใบ 13</div>
+    </div>
+    <div class="ov__kpi">
+      <div class="ov__kpiname">ขาดทุนวันนี้</div>
+      <div class="ov__kpinum">{{ ov_loss }}<span class="ov__kpicap">/ {{ ov_loss_cap }}%</span></div>
+      <div class="ov__kpinote">เพดานมาจาก config · ตัวเลขจริงต้องมี VIEW บน fills</div>
+    </div>
+    <div class="ov__kpi">
+      <div class="ov__kpiname">Kill switch</div>
+      <div class="ov__kpinum ov__kpinum--sm">
+        <span class="ov__dot {% if ov_kill.latched %}ov__dot--bad{% else %}ov__dot--ok{% endif %}"></span>
+        {% if ov_kill.latched %}latched{% else %}ปกติ{% endif %}
+      </div>
+      <div class="ov__kpinote">
+        {% if ov_kill.latched %}{{ ov_kill.reason or "ไม่ได้ระบุเหตุ" }}
+        {% else %}แพ้ติดกัน {{ ov_breaker }} จาก {{ ov_breaker_cap }}{% endif %}
+      </div>
+    </div>
+    <div class="ov__kpi">
+      <div class="ov__kpiname">มาร์จิ้นที่ใช้</div>
+      <div class="ov__kpinum">{{ ov_margin }}</div>
+      <div class="ov__kpinote">
+        เพดาน long {{ "%.2f" | format(ov_cap_long) }} · short {{ "%.2f" | format(ov_cap_short) }} USDT
+      </div>
+      <div class="ov__kpinote">notional {{ ov_notional }} · เลเวอเรจเฉลี่ย {{ ov_leverage }}</div>
+    </div>
+  </div>
+
+  <div class="ov__card">
+    <div class="ovtable">
+      <div class="ovtable__head">SYMBOL</div>
+      <div class="ovtable__head">ZONE</div>
+      <div class="ovtable__head">STATE</div>
+      <div class="ovtable__head ovtable__head--th">ราคาปิด</div>
+      <div class="ovtable__head ovtable__head--th">สัญญาณ</div>
+      <div class="ovtable__head ovtable__head--th">สถานะไม้</div>
+      {% for row in ov_rows %}
+      <div class="ovtable__pair">
+        {{ row.pair }}
+        <span class="ovtable__sub">{{ row.market }} · bucket {{ "%.2f" | format(row.bucket_long) }}</span>
+      </div>
+      <div>
+        <span class="ovtable__zone" style="border-left-color:var(--zone-{{ row.zone | lower }})">{{ row.zone }}</span>
+      </div>
+      <div class="ovtable__state">{{ row.state | lower }}</div>
+      <div class="ovtable__num">{{ row.close }}</div>
+      <div>
+        {% if row.long_signal %}
+        <span class="ovtable__sig ovtable__sig--long">▲ เปิด long</span>
+        {% elif row.short_signal %}
+        <span class="ovtable__sig ovtable__sig--short">▼ เปิด short</span>
+        {% elif not row.has_data %}
+        <span class="ovtable__muted">ยังไม่มีบันทึก</span>
+        {% else %}
+        <span class="ovtable__muted">ไม่มีสัญญาณ</span>
+        {% endif %}
+        {% if not row.allow_short %}
+        <span class="ovtable__sub">ฝั่ง short ปิดอยู่</span>
+        {% endif %}
+      </div>
+      <div class="ovtable__muted">
+        {% if row.skip_reason %}{{ row.skip_reason }}{% else %}—{% endif %}
+        <span class="ovtable__sub">สถานะไม้จริงต้องอ่านจาก venue — ใบ 13</span>
+      </div>
+      {% else %}
+      <div class="ovtable__empty">ไม่มีคู่เหรียญที่เปิดใช้ในโปรไฟล์นี้</div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>

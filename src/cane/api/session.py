@@ -114,4 +114,9 @@ def switch_mode(
     # การ์ดกลับไปแบบ out-of-band แล้วเหลือความว่างมาแทน modal — ปิดหน้าต่างด้วย
     # การ swap เป้าเดียว ไม่ต้องมี JS มาช่วย
     ctx["oob"] = True
-    return templates.TemplateResponse(request, "partials/profile_state.html", ctx)
+    response = templates.TemplateResponse(request, "partials/profile_state.html", ctx)
+    # การสลับโหมดเปลี่ยน "ขอบเขต" ของทั้งหน้า ไม่ใช่แค่การ์ดสองใบนี้ · เนื้อหน้าที่
+    # ผูกกับโหมด (ใบ 22 เป็นใบแรก) ฟังเหตุการณ์นี้แล้วดึงของตัวเองใหม่ · ที่นี่ไม่รู้
+    # ว่าหน้าไหนเปิดอยู่และไม่ควรรู้ — การประกาศว่า "โหมดเปลี่ยนแล้ว" พอแล้ว
+    response.headers["HX-Trigger"] = "cane:mode"
+    return response

@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Connection, select
@@ -369,3 +371,42 @@ def test_a_symbol_with_no_decision_yet_stays_black_rather_than_guessing(
 
     assert "var(--zone-black)" in page
     assert "var(--zone-green)" not in page
+
+
+# ── หน้าภาพรวมผูกกับโหมดจริง · เกณฑ์เสร็จของใบ 22 ─────────────────────────────
+
+
+def client_in(db: Connection, owner, mode: str) -> TestClient:
+    """client ที่ session มองโหมดที่ระบุ · `current_mode` อ่านจากแถว session"""
+    session, user = owner
+    app = create_app(db=BoundDb(db), spawn=lambda profile: FakeProcess(1))
+    app.dependency_overrides[signed_in] = lambda: (replace(session, mode=mode), user)
+    return TestClient(app)
+
+
+def test_every_number_on_the_overview_follows_the_mode_being_viewed(
+    db: Connection, owner, clean_config: None
+) -> None:
+    """เกณฑ์เสร็จของใบ 22 — สลับ live/paper แล้วไม่มีช่องไหนค้างที่โปรไฟล์เดิม
+
+    เพดานมาจาก bucket ของ config คนละชุด (paper 100+80 · live 100) และโซนมาจาก
+    บันทึกคนละแถว — ถ้าหน้าลืมส่ง profile ลงไปชั้นใดชั้นหนึ่ง สองค่านี้จะเท่ากัน
+    """
+    db.execute(decisions_table.delete())
+    paper = seeded(db, "paper")
+    live = seeded(db, "live")
+    decisions_repo.insert_decision(db, a_decision(paper.id, profile="paper", zone="GREEN"))
+    decisions_repo.insert_decision(db, a_decision(live.id, profile="live", zone="RED"))
+
+    with client_in(db, owner, "paper") as client:
+        as_paper = client.get("/overview").text
+    with client_in(db, owner, "live") as client:
+        as_live = client.get("/overview").text
+
+    assert "เพดาน long 180.00" in as_paper
+    assert "เพดาน long 100.00" in as_live
+    assert ">GREEN<" in as_paper and ">RED<" not in as_paper
+    assert ">RED<" in as_live and ">GREEN<" not in as_live
+    # เพดานขาดทุนก็เป็นของคนละโปรไฟล์ (paper 5.0 · live 3.0)
+    assert "/ 5.0%" in as_paper
+    assert "/ 3.0%" in as_live

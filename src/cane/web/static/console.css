@@ -417,3 +417,66 @@ a.btn--block { padding: 12px; }
 .cfgtable td { padding: 7px 8px; border-bottom: 1px solid var(--divider-soft); color: var(--text-2); }
 .cfgtable__num { text-align: right; }
 .cfg__error { font: 400 12px/1.6 var(--sans); color: var(--live-text); }
+
+/* ── หน้าภาพรวม (ใบ 22) ────────────────────────────────────────────────────── */
+
+.ov__sub { font: 400 12px/1.75 var(--sans); color: var(--label); margin-top: 8px; }
+
+.ov__cold {
+  display: flex; gap: 14px; align-items: flex-start; margin-top: 18px; padding: 18px 22px;
+  background: var(--warn-tint); border: 1px solid var(--warn-border);
+}
+.ov__coldmark {
+  width: 34px; height: 34px; flex: none; display: grid; place-items: center;
+  background: linear-gradient(135deg, #c8981a 0%, #e9c247 100%);
+  color: #4a3708; font: 600 17px var(--mono);
+}
+.ov__coldtitle { font: 600 14px/1.4 var(--sans); color: var(--warn-text); }
+.ov__colddetail { font: 400 12.5px/1.7 var(--sans); color: #8f6c13; margin-top: 3px; }
+.ov__colddetail code { font: 400 12px var(--mono); }
+
+.ov__kpis {
+  display: grid; grid-template-columns: repeat(5, 1fr); margin-top: 20px;
+  background: var(--surface); border: 1px solid var(--border);
+}
+.ov__kpi { padding: 20px 22px; border-right: 1px solid var(--border); }
+.ov__kpi:last-child { border-right: 0; }
+.ov__kpiname {
+  font: 500 10px/1 var(--mix); letter-spacing: .09em; text-transform: uppercase; color: var(--label);
+}
+.ov__kpinum { font: 600 30px/1 var(--mono); margin-top: 12px; }
+.ov__kpinum--sm { font: 600 16px/1.6 var(--sans); display: flex; align-items: center; gap: 8px; }
+.ov__kpicap { font: 400 13px var(--mono); color: var(--muted); margin-left: 7px; }
+.ov__kpinote { font: 400 11.5px/1.6 var(--sans); color: var(--muted); margin-top: 7px; }
+.ov__dot { width: 9px; height: 9px; flex: none; }
+.ov__dot--ok { background: var(--zone-green); }
+.ov__dot--bad { background: var(--live); }
+
+.ov__card { margin-top: 20px; background: var(--surface); border: 1px solid var(--border); }
+.ovtable {
+  display: grid; grid-template-columns: 170px 92px 88px 110px 190px 1fr;
+  gap: 0 14px; align-items: center;
+}
+.ovtable__head {
+  padding: 15px 0 15px; font: 500 10.5px var(--mix); letter-spacing: .07em; color: var(--label);
+  background: var(--surface-raised); border-bottom: 1px solid var(--divider-soft);
+}
+.ovtable__head--th { font-family: var(--sans); letter-spacing: 0; }
+.ovtable__head:first-child { padding-left: 24px; }
+.ovtable > div:not(.ovtable__head) { padding: 17px 0; border-bottom: 1px solid var(--divider); }
+.ovtable__pair { padding-left: 24px !important; font: 600 15px var(--sans); }
+.ovtable__sub { display: block; font: 400 11.5px var(--mono); color: var(--label); margin-top: 3px; }
+.ovtable__zone {
+  display: inline-block; padding: 4px 0 4px 9px; border-left: 2px solid var(--zone-black);
+  font: 600 11px var(--mono); letter-spacing: .09em; color: var(--text-2);
+}
+.ovtable__state { font: 400 12.5px var(--mono); color: var(--text-2); }
+.ovtable__num { font: 400 12.5px var(--mono); color: var(--text-2); }
+.ovtable__sig { font: 600 13px var(--sans); }
+.ovtable__sig--long { color: var(--zone-green); }
+.ovtable__sig--short { color: var(--live-text); }
+.ovtable__muted { font: 400 12.5px var(--sans); color: var(--muted); }
+.ovtable__empty {
+  grid-column: 1 / -1; padding: 20px 24px !important;
+  font: 400 12.5px var(--sans); color: var(--muted);
+}
