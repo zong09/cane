@@ -38,20 +38,29 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import Connection, Engine
 
-from cane.api.deps import current_mode, get_db, require_cap
+from cane.api.deps import (
+    client_ip,
+    current_mode,
+    get_db,
+    require_cap,
+    require_profile,
+)
 from cane.api.templating import templates
+from cane.auth import service
 from cane.config.settings import Settings, SymbolConfig
 from cane.config.validate import ConfigError
 from cane.data.exchange import default_type
+from cane.db.repo import audit
 from cane.db.repo import config as config_repo
 from cane.db.repo import decisions as decisions_repo
 from cane.db.repo import killswitch as killswitch_repo
+from cane.db.repo import permissions as perms
 from cane.db.repo.users import User
-from cane.db.types import store_symbol
+from cane.db.types import now_ms, store_symbol
 
 router = APIRouter()
 
@@ -216,11 +225,15 @@ def _bucket(rows: tuple[SymbolRow, ...], *, side: str) -> float:
     return sum(row.bucket_short or 0.0 for row in rows if row.allow_short)
 
 
-def page_context(conn: Connection, *, profile: str) -> dict[str, object]:
+def page_context(conn: Connection, *, profile: str, user: User) -> dict[str, object]:
     """ทุกอย่างที่ `partials/risk_body.html` ต้องใช้ · คีย์ขึ้นต้นด้วย `risk_`
 
     เรียก `active_settings()` เองแบบเดียวกับหน้าภาพรวม เพราะ `context.build()` กลืน
     `ConfigError` ทิ้ง และหน้านี้ต้องแยก "config พัง" ออกจาก "ไม่มีเวอร์ชัน active"
+
+    รับ `user` ด้วย (ต่างจากหน้าภาพรวม) เพราะปุ่มบนหน้านี้เปลี่ยนของจริง · ปุ่มที่คนนี้
+    กดไม่ได้ต้อง **ไม่ถูก render** ไม่ใช่ render แล้วได้ 403 ตอนกด ซึ่ง htmx จะเอา
+    JSON ของ FastAPI มา swap ลงหน้าจอ (แนวเดียวกับ `cfg_can_edit` ของใบ 21)
     """
     problems = 0
     try:
@@ -230,6 +243,11 @@ def page_context(conn: Connection, *, profile: str) -> dict[str, object]:
         problems = len(exc.problems)
 
     kill = killswitch_repo.read(conn, profile)
+    gates = {
+        "risk_oob": False,
+        "risk_can_latch": perms.allowed(conn, role=user.role, cap="killswitch_latch"),
+        "risk_can_unlatch": perms.allowed(conn, role=user.role, cap="killswitch_unlatch"),
+    }
     if settings is None:
         return {
             "risk_profile": profile,
@@ -237,10 +255,12 @@ def page_context(conn: Connection, *, profile: str) -> dict[str, object]:
             "risk_problems": problems,
             "risk_kill": kill,
             "risk_rows": (),
+            **gates,
         }
 
     rows = _rows(settings)
     return {
+        **gates,
         "risk_profile": profile,
         "risk_settings": settings,
         "risk_problems": 0,
@@ -266,7 +286,7 @@ def page_context(conn: Connection, *, profile: str) -> dict[str, object]:
 def body(
     request: Request,
     db: Engine = Depends(get_db),
-    _: User = Depends(require_cap("view_overview")),
+    user: User = Depends(require_cap("view_overview")),
     mode: str = Depends(current_mode),
 ) -> HTMLResponse:
     """เนื้อของหน้าความเสี่ยงของโหมดที่ดูอยู่
@@ -278,5 +298,154 @@ def body(
     PROFILE กับ engine ถ้าไม่มีเส้นทางนี้ เพดานทั้งหน้าจะค้างอยู่ที่โหมดเดิม
     """
     with db.connect() as conn:
-        ctx = page_context(conn, profile=mode)
+        ctx = page_context(conn, profile=mode, user=user)
     return templates.TemplateResponse(request, "partials/risk_body.html", ctx)
+
+
+# ── kill switch ───────────────────────────────────────────────────────────────
+
+
+def _card(request: Request, db: Engine, *, mode: str, user: User, oob: bool) -> HTMLResponse:
+    """คืนเนื้อหน้าใหม่หลังจากสวิตช์เปลี่ยนสถานะ
+
+    `oob=True` เฉพาะคำตอบที่ออกมาจากฟอร์มใน `#modal-slot` — htmx เอาก้อนนี้ไปวางที่
+    `#risk-body` เองแล้วเหลือความว่างมาแทน modal ซึ่งคือการปิด modal (รูปเดียวกับ
+    `config.activate`) · ปุ่ม latch ยิงตรงไปที่ `#risk-body` อยู่แล้ว ถ้าติดธง oob
+    ด้วยจะได้ความว่างทับหน้าจอทั้งหน้า
+    """
+    with db.connect() as conn:
+        ctx = page_context(conn, profile=mode, user=user)
+    ctx["risk_oob"] = oob
+    return templates.TemplateResponse(request, "partials/risk_body.html", ctx)
+
+
+def _unlatch_modal(
+    request: Request, *, target: str, error: str = "", status_code: int = 200
+) -> HTMLResponse:
+    """modal ของการปลด · มีช่องพิมพ์ชื่อโปรไฟล์ **เพิ่ม** จากช่องรหัส 6 หลัก
+
+    สามด่านตอบคำถามคนละข้อจึงแทนกันไม่ได้ (spec/10 §2. สาม state ที่คนละเรื่องกัน):
+    ชื่อโปรไฟล์กันการกดผิดโหมด · OWNER กับ step-up กันการกดผิดคน
+    """
+    return templates.TemplateResponse(
+        request,
+        "partials/stepup_modal.html",
+        {
+            "title": f"ปลด kill switch · {target}",
+            "detail": "ปลดแล้วระบบกลับไปเปิดไม้ใหม่ได้ตามสัญญาณ · การหยุดกดซ้ำได้เสมอ การปลดไม่ใช่",
+            "action": f"/api/{target}/killswitch/unlatch",
+            "fields": (("profile_name", f"พิมพ์ {target} เพื่อยืนยัน", target),),
+            "error": error,
+        },
+        status_code=status_code,
+    )
+
+
+@router.post("/api/{profile}/killswitch/latch", response_class=HTMLResponse)
+def latch(
+    profile: str,
+    request: Request,
+    db: Engine = Depends(get_db),
+    user: User = Depends(require_cap("killswitch_latch")),
+    mode: str = Depends(current_mode),
+) -> HTMLResponse:
+    """หยุดยิงออเดอร์เปิดใหม่ทันที · **ไม่มี step-up และกดซ้ำต้องไม่เคยล้มเหลว**
+
+    spec/09 §3. ตารางสิทธิ์ — 13 สิทธิ์ × 5 role ให้สิทธิ์นี้กว้างถึง TRADER เพราะ
+    ความช้าตอนฉุกเฉินแพงกว่าการกดเกิน · คนที่กด latch แล้วเห็น error เพราะมันถูก
+    latch อยู่แล้ว จะไม่รู้ว่าตัวเองหยุดสำเร็จหรือยัง แล้วจะไปกดอย่างอื่น
+
+    เหตุผลคิดให้จากคนที่กด ไม่ได้ถามในฟอร์ม — ตารางบังคับว่า latched ต้องมีที่มา
+    (`ck_kill_switch_latched_has_a_story`) แต่กล่องข้อความคั่นระหว่างคนกับปุ่มหยุด
+    ฉุกเฉินคือความช้าที่ไม่ควรมี · ใครกดอยู่ที่ `latched_by` อยู่แล้ว
+
+    **ไม่แตะ engine เลย** — latch กับ `should_run` เป็นคนละ state คนละ lifecycle
+    (spec/10 §`engine.should_run` ≠ `kill_switch.latched`) · engine ที่เดินอยู่จะเดินต่อ
+    และยังบันทึกการตัดสินใจที่ลงท้ายว่าถูกกั้น
+    """
+    target = require_profile(profile)
+    now = now_ms()
+    with db.begin() as conn:
+        killswitch_repo.latch(conn, target, reason=f"กดจากคอนโซล · {user.name}", by=user.email)
+        audit.record(
+            conn,
+            action="killswitch.latch",
+            ts=now,
+            actor_user_id=user.id,
+            target=target,
+            ip=client_ip(request),
+        )
+    return _card(request, db, mode=mode, user=user, oob=False)
+
+
+@router.get("/partials/risk/{profile}/unlatch", response_class=HTMLResponse)
+def unlatch_modal(
+    profile: str,
+    request: Request,
+    _: User = Depends(require_cap("killswitch_unlatch")),
+) -> HTMLResponse:
+    return _unlatch_modal(request, target=require_profile(profile))
+
+
+@router.post("/api/{profile}/killswitch/unlatch", response_class=HTMLResponse)
+def unlatch(
+    profile: str,
+    request: Request,
+    profile_name: str = Form(""),
+    step_up_code: str = Form(""),
+    db: Engine = Depends(get_db),
+    user: User = Depends(require_cap("killswitch_unlatch")),
+    mode: str = Depends(current_mode),
+) -> HTMLResponse:
+    """ปลดสวิตช์ — ทางออกทางเดียวจากสถานะ latched
+
+    **ลำดับด่านมีผลจริง**: ตรวจชื่อโปรไฟล์ก่อน แล้วค่อยตรวจรหัส · `verify_step_up()`
+    เขียน counter ของ TOTP เมื่อผ่าน และ counter ใช้ร่วมกับ login — ตรวจกลับด้าน
+    เมื่อไหร่ คนที่พิมพ์ชื่อผิดจะเสียรหัสรอบนั้นไปโดยที่ยังไม่ได้ปลดอะไรเลย
+
+    ชื่อไม่ตรงคืน **200** ไม่ใช่ 4xx เพราะ htmx ทิ้งคำตอบ 4xx ทุกตัวยกเว้นที่อยู่ใน
+    `responseHandling` ของ `base.html` (มีแค่ 403 ของ step-up) — modal ที่เงียบหาย
+    แปลว่าปุ่มเสียในสายตาคนกด
+
+    ยืนยัน step-up **ในตัว handler** ไม่ใช่ผ่าน `require_step_up` ด้วยเหตุผลเดียวกับ
+    `config.activate`: handler ของ `StepUpFailed` แกะ URL เป็น
+    `/api/{profile}/engine/{action}` ตายตัว เส้นนี้จะได้ modal ที่ยิงกลับผิด router
+    """
+    target = require_profile(profile)
+    now = now_ms()
+
+    if profile_name.strip() != target:
+        return _unlatch_modal(
+            request,
+            target=target,
+            error=f"ชื่อโปรไฟล์ไม่ตรง — ต้องพิมพ์ {target} · ยังไม่ได้ใช้รหัสรอบนี้",
+        )
+
+    with db.begin() as conn:
+        ok = service.verify_step_up(conn, user, step_up_code.strip(), now=now)
+        if not ok:
+            audit.record(
+                conn,
+                action="killswitch.unlatch_refused",
+                ts=now,
+                actor_user_id=user.id,
+                target=target,
+                ip=client_ip(request),
+            )
+    if not ok:
+        return _unlatch_modal(
+            request, target=target, error="รหัส 6 หลักไม่ถูกต้อง", status_code=403
+        )
+
+    with db.begin() as conn:
+        killswitch_repo.unlatch(conn, target)
+        audit.record(
+            conn,
+            action="killswitch.unlatch",
+            ts=now,
+            actor_user_id=user.id,
+            target=target,
+            ip=client_ip(request),
+            step_up_verified=True,
+        )
+    return _card(request, db, mode=mode, user=user, oob=True)

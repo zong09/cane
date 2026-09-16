@@ -24,6 +24,7 @@ from cane.auth.matrix import DEFAULT_MATRIX
 from cane.config import load_profile
 from cane.db.repo import config as config_repo
 from cane.db.repo import decisions as decisions_repo
+from cane.db.repo import killswitch as killswitch_repo
 from cane.db.repo import permissions as perms
 from cane.db.repo import sessions as sessions_repo
 from cane.db.repo import users as users_repo
@@ -439,3 +440,94 @@ def test_every_ceiling_on_the_risk_page_follows_the_mode_being_viewed(
     # paper มีเหรียญ spot อยู่ด้วย live ไม่มี — ตารางท้ายหน้าจึงต้องต่างกัน
     assert "ไม่มี (spot)" in as_paper
     assert "ไม่มี (spot)" not in as_live
+
+
+# ── สวิตช์หยุดฉุกเฉินผ่านเส้นทาง HTTP · ใบ 23 ─────────────────────────────────
+
+
+def _counter_of(db: Connection, user_id: int) -> int | None:
+    return users_repo.by_id(db, user_id).totp_last_counter
+
+
+def test_the_console_role_gets_past_the_trigger_that_guards_unlatching(
+    db: Connection, owner, clean_config: None
+) -> None:
+    """เกณฑ์เสร็จของใบ — ปลดได้จริงจากหน้าจอ ไม่ใช่แค่จากชั้น repo
+
+    migration 0008 มี trigger ที่ปฏิเสธการปลดของทุก role ยกเว้น `cane_console` ·
+    `tests/test_risk.py` พิสูจน์ชั้น repo ไว้แล้ว ที่นี่พิสูจน์ว่า **แอปจริงถือ role
+    ที่ผ่านด่านนั้น** ตลอดเส้นทาง route → repo → ตาราง
+    """
+    seeded(db, "paper")
+    killswitch_repo.latch(db, "paper", reason="เทสต์", by="engine")
+
+    with client_in(db, owner, "paper") as client:
+        response = client.post(
+            "/api/paper/killswitch/unlatch",
+            data={"profile_name": "paper", **right_now_code()},
+        )
+
+    assert response.status_code == 200
+    assert killswitch_repo.is_latched(db, "paper") is False
+
+
+def test_pressing_stop_twice_through_the_route_keeps_the_first_story(
+    db: Connection, owner, clean_config: None
+) -> None:
+    """spec/10 §เขียน — กดซ้ำคืน 200 และ **ไม่เขียนทับเหตุผลกับเวลาของครั้งแรก**"""
+    seeded(db, "paper")
+
+    with client_in(db, owner, "paper") as client:
+        first = client.post("/api/paper/killswitch/latch")
+        state = killswitch_repo.read(db, "paper")
+        second = client.post("/api/paper/killswitch/latch")
+
+    again = killswitch_repo.read(db, "paper")
+    assert first.status_code == 200 and second.status_code == 200
+    assert again.latched is True
+    assert again.reason == state.reason
+    assert again.latched_ts == state.latched_ts
+
+
+def test_a_wrong_profile_name_leaves_the_switch_latched_and_the_code_unspent(
+    db: Connection, owner, clean_config: None
+) -> None:
+    """ด่านชื่อโปรไฟล์ต้องมาก่อนด่านรหัส — counter ของ TOTP ใช้ร่วมกับ login
+
+    ถ้าสลับลำดับ คนที่พิมพ์ชื่อผิดจะเสียรหัสรอบนั้นไปทั้งที่ยังไม่ได้ปลดอะไรเลย ·
+    เทสต์นี้เป็นที่เดียวที่พิสูจน์ลำดับได้ เพราะต้องอ่าน `totp_last_counter` ของจริง
+    """
+    session, user = owner
+    seeded(db, "paper")
+    killswitch_repo.latch(db, "paper", reason="เทสต์", by="engine")
+    before = _counter_of(db, user.id)
+
+    with client_in(db, owner, "paper") as client:
+        response = client.post(
+            "/api/paper/killswitch/unlatch",
+            data={"profile_name": "live", **right_now_code()},
+        )
+
+    assert response.status_code == 200
+    assert killswitch_repo.is_latched(db, "paper") is True
+    assert _counter_of(db, user.id) == before
+
+
+def test_unlatching_leaves_an_audit_row_marked_step_up_verified(
+    db: Connection, owner, clean_config: None
+) -> None:
+    """spec/09 §step-up TOTP — สภาพอ่านจากตารางเดียว ประวัติอ่านจากตารางที่ลบไม่ได้"""
+    seeded(db, "paper")
+    killswitch_repo.latch(db, "paper", reason="เทสต์", by="engine")
+
+    with client_in(db, owner, "paper") as client:
+        client.post(
+            "/api/paper/killswitch/unlatch",
+            data={"profile_name": "paper", **right_now_code()},
+        )
+
+    row = db.execute(
+        select(user_audit_log).where(user_audit_log.c.action == "killswitch.unlatch")
+    ).one()
+    assert row.step_up_verified is True
+    assert row.target == "paper"

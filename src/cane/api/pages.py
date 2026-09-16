@@ -75,6 +75,6 @@ def page(
         elif slug == "overview":
             ctx |= overview_routes.page_context(conn, profile=mode)
         elif slug == "risk":
-            ctx |= risk_routes.page_context(conn, profile=mode)
+            ctx |= risk_routes.page_context(conn, profile=mode, user=user)
     ctx |= {"page_label": label, "page_ticket": ticket}
     return templates.TemplateResponse(request, BODIES.get(slug, "pages/placeholder.html"), ctx)

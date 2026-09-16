@@ -1323,3 +1323,205 @@ def test_the_risk_page_reloads_its_own_body_when_the_mode_changes(
         page = client.get("/risk").text
 
     assert 'hx-trigger="cane:mode from:body"' in page
+
+
+# ── สวิตช์หยุดฉุกเฉิน · ใบ 23 ──────────────────────────────────────────────────
+
+
+class RecordingSwitch:
+    """จดว่ามีการกด latch/unlatch อะไรบ้าง · ความ idempotent ของจริงอยู่ที่ repo
+
+    `latch()` เป็น `ON CONFLICT DO UPDATE … WHERE latched IS false` และมีเทสต์กับ
+    Postgres จริงอยู่แล้วที่ `tests/test_risk.py` — ที่นี่ตรวจว่า route ไม่เพิ่มด่าน
+    ของตัวเองมาทับความ idempotent นั้น
+    """
+
+    def __init__(self, latched: bool = False) -> None:
+        self.state = killswitch_repo.KillSwitch(profile="paper", latched=latched)
+        self.latched: list[tuple[str, str]] = []
+        self.unlatched: list[str] = []
+
+    def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(killswitch_repo, "read", lambda conn, profile: self.state)
+        monkeypatch.setattr(killswitch_repo, "latch", self._latch)
+        monkeypatch.setattr(killswitch_repo, "unlatch", self._unlatch)
+
+    def _latch(self, conn, profile, *, reason, by=None):
+        self.latched.append((profile, reason))
+        if not self.state.latched:
+            self.state = killswitch_repo.KillSwitch(
+                profile=profile, latched=True, reason=reason, latched_by=by
+            )
+        return self.state
+
+    def _unlatch(self, conn, profile):
+        self.unlatched.append(profile)
+        self.state = killswitch_repo.KillSwitch(profile=profile, latched=False)
+        return self.state
+
+
+def test_pressing_the_stop_button_latches_without_asking_for_a_code_at_all(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """spec/09 §3. ตารางสิทธิ์ — 13 สิทธิ์ × 5 role ให้ latch กว้างและไม่ต้องยืนยันซ้ำ
+
+    ความช้าตอนฉุกเฉินแพงกว่าการกดเกิน · modal ที่ขวางปุ่มหยุดคือความช้าแบบนั้น
+    """
+    with_risk(monkeypatch)
+    switch = RecordingSwitch()
+    switch.install(monkeypatch)
+    client, _ = build()
+    with client:
+        response = client.post("/api/paper/killswitch/latch")
+
+    assert response.status_code == 200
+    assert len(switch.latched) == 1
+    assert "Kill switch — latched" in response.text
+
+
+def test_pressing_the_stop_button_twice_answers_both_times(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """spec/10 §เขียน — "การกดหยุดฉุกเฉินซ้ำต้องไม่เคยล้มเหลว"
+
+    คนที่กดแล้วเห็น error เพราะมันถูก latch อยู่แล้ว จะไม่รู้ว่าตัวเองหยุดสำเร็จหรือยัง
+    แล้วจะไปกดอย่างอื่น · route จึงต้องไม่มีด่าน "latched อยู่แล้ว" ของตัวเอง
+    """
+    with_risk(monkeypatch)
+    switch = RecordingSwitch()
+    switch.install(monkeypatch)
+    client, _ = build()
+    with client:
+        first = client.post("/api/paper/killswitch/latch")
+        second = client.post("/api/paper/killswitch/latch")
+
+    assert first.status_code == 200 and second.status_code == 200
+    assert len(switch.latched) == 2
+
+
+def test_latching_never_touches_either_engine(monkeypatch: pytest.MonkeyPatch) -> None:
+    """spec/10 §`engine.should_run` ≠ `kill_switch.latched` — คนละ state คนละ lifecycle
+
+    latch แล้ว engine ยังเดินอยู่ ยังบันทึกการตัดสินใจที่ลงท้ายว่าถูกกั้น ·
+    ประวัติที่ขาดหายไปตอนฉุกเฉินคือประวัติที่ขาดหายไปตรงที่อยากอ่านที่สุด
+    """
+    with_risk(monkeypatch)
+    RecordingSwitch().install(monkeypatch)
+    client, sup = build({"paper": RUNNING, "live": STOPPED})
+    with client:
+        client.post("/api/paper/killswitch/latch")
+
+    assert sup.commands == []
+
+
+def test_the_stop_button_is_not_rendered_for_someone_who_cannot_press_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ปุ่มที่ render แล้วได้ 403 ตอนกด = htmx เอา JSON ของ FastAPI มาแปะหน้าจอ"""
+    with_risk(monkeypatch)
+    RecordingSwitch().install(monkeypatch)
+    monkeypatch.setattr(
+        perms, "allowed", lambda conn, *, role, cap: cap == "view_overview"
+    )
+    client, _ = build(role="VIEWER")
+    with client:
+        page = client.get("/risk").text
+
+    assert "หยุดยิงออเดอร์ทันที" not in page
+
+
+def test_the_unlock_button_asks_for_the_profile_name_as_well_as_a_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """สามด่านตอบคำถามคนละข้อ จึงไม่มีข้อไหนแทนกันได้ (spec/10 §2. สาม state ที่คนละเรื่องกัน)"""
+    with_risk(monkeypatch)
+    RecordingSwitch(latched=True).install(monkeypatch)
+    client, _ = build()
+    with client:
+        page = client.get("/risk").text
+        modal = client.get("/partials/risk/paper/unlatch").text
+
+    assert "ปลดล็อก — ต้องพิมพ์ชื่อ profile ยืนยัน" in page
+    assert 'name="profile_name"' in modal
+    assert 'name="step_up_code"' in modal
+    assert "/api/paper/killswitch/unlatch" in modal
+
+
+def test_typing_the_wrong_profile_name_never_spends_the_totp_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`verify_step_up()` เขียน counter เมื่อผ่าน และ counter ใช้ร่วมกับ login
+
+    ตรวจรหัสก่อนชื่อเมื่อไหร่ คนที่พิมพ์ชื่อผิดจะเสียรหัสรอบนั้นไปโดยยังไม่ได้ปลดอะไรเลย
+    """
+    with_risk(monkeypatch)
+    switch = RecordingSwitch(latched=True)
+    switch.install(monkeypatch)
+
+    def never(*args, **kwargs):
+        raise AssertionError("ต้องไม่เรียก verify_step_up เมื่อชื่อโปรไฟล์ยังไม่ตรง")
+
+    monkeypatch.setattr(auth_service, "verify_step_up", never)
+    client, _ = build()
+    with client:
+        response = client.post(
+            "/api/paper/killswitch/unlatch", data={"profile_name": "live", **GOOD_CODE}
+        )
+
+    assert response.status_code == 200
+    assert "ชื่อโปรไฟล์ไม่ตรง" in response.text
+    assert switch.unlatched == []
+
+
+def test_a_wrong_step_up_code_reopens_the_unlock_modal_rather_than_returning_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """403 อยู่ในลิสต์ `responseHandling` ของ `base.html` จึง swap ได้ · 4xx อื่นหายเงียบ"""
+    with_risk(monkeypatch)
+    switch = RecordingSwitch(latched=True)
+    switch.install(monkeypatch)
+    client, _ = build()
+    with client:
+        response = client.post(
+            "/api/paper/killswitch/unlatch",
+            data={"profile_name": "paper", "step_up_code": "000000"},
+        )
+
+    assert response.status_code == 403
+    assert "รหัส 6 หลักไม่ถูกต้อง" in response.text
+    assert 'name="profile_name"' in response.text
+    assert switch.unlatched == []
+
+
+def test_unlocking_past_all_three_gates_clears_the_switch_and_closes_the_modal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """สำเร็จแล้วคืนเนื้อหน้าแบบ out-of-band — htmx เอาไปวางที่ `#risk-body` แล้ว
+    เหลือความว่างมาแทน modal ซึ่งคือการปิด modal โดยไม่ต้องมี JS
+    """
+    with_risk(monkeypatch)
+    switch = RecordingSwitch(latched=True)
+    switch.install(monkeypatch)
+    client, _ = build()
+    with client:
+        response = client.post(
+            "/api/paper/killswitch/unlatch", data={"profile_name": "paper", **GOOD_CODE}
+        )
+
+    assert response.status_code == 200
+    assert switch.unlatched == ["paper"]
+    assert 'hx-swap-oob="true"' in response.text
+    assert "Kill switch — ปกติ" in response.text
+
+
+def test_the_latch_answer_is_not_out_of_band_because_the_button_targets_the_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ปุ่มหยุดยิงตรงไปที่ `#risk-body` · ติดธง oob ด้วยจะได้ความว่างทับทั้งหน้า"""
+    with_risk(monkeypatch)
+    RecordingSwitch().install(monkeypatch)
+    client, _ = build()
+    with client:
+        response = client.post("/api/paper/killswitch/latch")
+
+    assert 'hx-swap-oob="true"' not in response.text

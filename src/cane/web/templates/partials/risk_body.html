@@ -8,7 +8,7 @@
   แล้ว htmx เอาก้อนนี้ไปวางที่ id ของมัน เหลือความว่างมาแทน modal ซึ่งคือการปิด modal ·
   มีสองก้อนเมื่อไหร่ modal จะไม่ปิด
 #}
-<div id="risk-body" class="rk"
+<div id="risk-body"{% if risk_oob %} hx-swap-oob="true"{% endif %} class="rk"
      hx-get="/partials/risk" hx-trigger="cane:mode from:body" hx-swap="outerHTML">
   {% if risk_settings is none %}
   <div class="cfg__banner cfg__banner--warn">
