@@ -49,10 +49,11 @@ from cane.api.deps import (
     require_cap,
     require_profile,
 )
+from cane.api import config as config_routes
 from cane.api.templating import templates
 from cane.auth import service
 from cane.config.settings import Settings, SymbolConfig
-from cane.config.validate import ConfigError
+from cane.config.validate import ConfigError, validate_settings
 from cane.data.exchange import default_type
 from cane.db.repo import audit
 from cane.db.repo import config as config_repo
@@ -225,7 +226,9 @@ def _bucket(rows: tuple[SymbolRow, ...], *, side: str) -> float:
     return sum(row.bucket_short or 0.0 for row in rows if row.allow_short)
 
 
-def page_context(conn: Connection, *, profile: str, user: User) -> dict[str, object]:
+def page_context(
+    conn: Connection, *, profile: str, user: User, notice: str = ""
+) -> dict[str, object]:
     """ทุกอย่างที่ `partials/risk_body.html` ต้องใช้ · คีย์ขึ้นต้นด้วย `risk_`
 
     เรียก `active_settings()` เองแบบเดียวกับหน้าภาพรวม เพราะ `context.build()` กลืน
@@ -245,8 +248,11 @@ def page_context(conn: Connection, *, profile: str, user: User) -> dict[str, obj
     kill = killswitch_repo.read(conn, profile)
     gates = {
         "risk_oob": False,
+        "risk_notice": notice,
         "risk_can_latch": perms.allowed(conn, role=user.role, cap="killswitch_latch"),
         "risk_can_unlatch": perms.allowed(conn, role=user.role, cap="killswitch_unlatch"),
+        "risk_can_dry_run": perms.allowed(conn, role=user.role, cap="toggle_dry_run"),
+        "risk_can_allow_short": perms.allowed(conn, role=user.role, cap="edit_profile"),
     }
     if settings is None:
         return {
@@ -305,7 +311,15 @@ def body(
 # ── kill switch ───────────────────────────────────────────────────────────────
 
 
-def _card(request: Request, db: Engine, *, mode: str, user: User, oob: bool) -> HTMLResponse:
+def _card(
+    request: Request,
+    db: Engine,
+    *,
+    mode: str,
+    user: User,
+    oob: bool,
+    notice: str = "",
+) -> HTMLResponse:
     """คืนเนื้อหน้าใหม่หลังจากสวิตช์เปลี่ยนสถานะ
 
     `oob=True` เฉพาะคำตอบที่ออกมาจากฟอร์มใน `#modal-slot` — htmx เอาก้อนนี้ไปวางที่
@@ -314,7 +328,7 @@ def _card(request: Request, db: Engine, *, mode: str, user: User, oob: bool) -> 
     ด้วยจะได้ความว่างทับหน้าจอทั้งหน้า
     """
     with db.connect() as conn:
-        ctx = page_context(conn, profile=mode, user=user)
+        ctx = page_context(conn, profile=mode, user=user, notice=notice)
     ctx["risk_oob"] = oob
     return templates.TemplateResponse(request, "partials/risk_body.html", ctx)
 
@@ -449,3 +463,223 @@ def unlatch(
             step_up_verified=True,
         )
     return _card(request, db, mode=mode, user=user, oob=True)
+
+
+# ── สวิตช์ dry_run / allow_short ──────────────────────────────────────────────
+
+#: ป้ายของสวิตช์แต่ละตัวบน modal · คีย์ตรงกับชื่อฟิลด์ใน `Settings`
+_SWITCH_COPY = {
+    "dry_run": (
+        "โหมดทดลอง",
+        "เปิด = คำนวณครบทุกขั้นและบันทึกครบ แต่ไม่ส่งคำสั่งจริง · "
+        "ปิด = ออเดอร์จริงถูกส่งไปที่ venue ตั้งแต่รอบถัดไป",
+    ),
+    "allow_short": (
+        "ฝั่ง short ทั้งระบบ",
+        "ปิด = ระบบยังปิด long ตามสัญญาณ short แต่ไม่เปิดไม้ใหม่ฝั่งลง · "
+        "เหรียญ spot ไม่ได้รับผลอยู่แล้วเพราะฐานบังคับ long-only",
+    ),
+}
+
+
+def _switch_modal(
+    request: Request,
+    *,
+    target: str,
+    field: str,
+    value: str,
+    error: str = "",
+    status_code: int = 200,
+) -> HTMLResponse:
+    """modal ของสวิตช์ · ส่ง **ค่าที่ต้องการ** ไปกับฟอร์ม ไม่ใช่คำสั่ง "กลับด้านให้ฉัน"
+
+    กดปุ่มเดิมซ้ำจึงลงที่เดิมเสมอ · ถ้าให้เซิร์ฟเวอร์กลับด้านเอง สองคำขอที่ซ้อนกัน
+    จะสลับกันไปมาแล้วผลสุดท้ายขึ้นกับว่าใครถึงก่อน
+    """
+    label, detail = _SWITCH_COPY[field]
+    want = "เปิด" if value == "true" else "ปิด"
+    return templates.TemplateResponse(
+        request,
+        "partials/stepup_modal.html",
+        {
+            "title": f"{want}{label} · {target}",
+            "detail": f"{detail} · บันทึกเป็นเวอร์ชันใหม่แล้วเปิดใช้ทันที",
+            "action": f"/api/{target}/config/{field}",
+            "hidden": (("value", value),),
+            "error": error,
+        },
+        status_code=status_code,
+    )
+
+
+def _toggled(
+    request: Request,
+    db: Engine,
+    *,
+    target: str,
+    field: str,
+    value: str,
+    code: str,
+    user: User,
+    mode: str,
+) -> HTMLResponse:
+    """สลับสวิตช์ = **สร้างเวอร์ชันใหม่แล้วเลื่อนตัวชี้ในคำขอเดียว** (spec/10 §เขียน)
+
+    ตัวเขียนเป็นคู่เดิมของใบ 21 (`insert_version` + `activate`) ไม่ใช่ทางเขียน config
+    เส้นที่สอง · ที่ต่างคือ **ช่องที่รับ** ซึ่งส่งเป็น `editable` เข้าไปที่ `patched()`
+    แทนที่จะไปเพิ่มใน `EDITABLE` ที่ฟอร์มหน้าตั้งค่าใช้อยู่ — ใบ 21 ไม่ต้อง step-up
+    ตอนบันทึกร่าง ถ้าสองช่องนี้ไปอยู่ในนั้นด่านที่สเปกแยกไว้ก็หายไปเงียบๆ
+
+    **ทุกด่านที่ไม่ต้องใช้รหัสอยู่ก่อนด่านรหัส** ด้วยเหตุผลเดียวกับการปลด kill switch:
+    `verify_step_up()` กิน counter ของ TOTP ที่ใช้ร่วมกับ login · คนที่กดสวิตช์ที่ฐาน
+    ปฏิเสธอยู่แล้วต้องไม่เสียรหัสไปด้วย
+    """
+    now = now_ms()
+    if value not in ("true", "false"):
+        return _card(request, db, mode=mode, user=user, oob=False,
+                     notice=f"ค่าของสวิตช์ต้องเป็น true หรือ false ไม่ใช่ {value!r}")
+
+    with db.connect() as conn:
+        try:
+            base = config_repo.active_settings(conn, target)
+        except ConfigError:
+            base = None
+    if base is None:
+        return _card(request, db, mode=mode, user=user, oob=False,
+                     notice="ยังไม่มีเวอร์ชันที่เปิดใช้ให้ลอก — แก้ที่หน้า ตั้งค่า ก่อน")
+
+    if field == "dry_run" and target == "paper" and value == "false":
+        # ฐานปฏิเสธด้วย CHECK `ck_config_settings_paper_dry_run` อยู่แล้ว · บอกเหตุ
+        # ก่อนจะกินรหัสของคนกด ดีกว่าปล่อยให้ไปตายที่ INSERT (spec/06 §dry_run)
+        return _card(request, db, mode=mode, user=user, oob=False,
+                     notice="paper บังคับ dry_run = true ที่ฐาน — โปรไฟล์จำลองยิงจริงไม่ได้")
+
+    with db.begin() as conn:
+        ok = service.verify_step_up(conn, user, code.strip(), now=now)
+        if not ok:
+            audit.record(
+                conn,
+                action=f"config.{field}_refused",
+                ts=now,
+                actor_user_id=user.id,
+                target=f"{target} {field}={value}",
+                ip=client_ip(request),
+            )
+    if not ok:
+        return _switch_modal(
+            request, target=target, field=field, value=value,
+            error="รหัส 6 หลักไม่ถูกต้อง", status_code=403,
+        )
+
+    raw, problems = config_routes.patched(base, {field: value}, editable={field: "bool"})
+    try:
+        settings = validate_settings(raw, source="console")
+    except ConfigError as exc:
+        problems.extend(exc.problems)
+    if problems:
+        # วันนี้ไม่มีกฎไหนพามาถึงตรงนี้ได้ — `paper` + `dry_run=false` ถูกกันไว้ข้างบน
+        # แล้ว และ `allow_short` ระดับระบบไม่มีกฎของตัวเองเลย · ด่านนี้อยู่เพื่อให้กฎที่
+        # เพิ่มมาทีหลังตกฝั่งปลอดภัย (ไม่เขียน) แทนที่จะไปตายที่ INSERT
+        #
+        # **ต้องมี audit แถวนี้** เพราะมาถึงตรงนี้ได้แปลว่ารหัส TOTP ถูกใช้ไปแล้วหนึ่งรอบ ·
+        # spec/10 §เขียน เขียนไว้ที่แถว activate ว่าจังหวะที่กินรหัสแล้วไม่ได้ผลลัพธ์
+        # "ไม่ใช่ no-op เงียบ"
+        message = " · ".join(problem.message for problem in problems)
+        with db.begin() as conn:
+            audit.record(
+                conn,
+                action=f"config.{field}_rejected",
+                ts=now,
+                actor_user_id=user.id,
+                target=f"{target} {field}={value}",
+                detail={"problems": message},
+                ip=client_ip(request),
+                step_up_verified=True,
+            )
+        return _card(request, db, mode=mode, user=user, oob=True, notice=message)
+
+    with db.begin() as conn:
+        head = config_repo.insert_version(
+            conn,
+            settings,
+            source="console",
+            note=f"สลับ {field} = {value} จากหน้าความเสี่ยง",
+            created_by_user_id=user.id,
+            created_ts=now,
+        )
+        config_repo.activate(conn, head.id)
+        audit.record(
+            conn,
+            action=f"config.{field}",
+            ts=now,
+            actor_user_id=user.id,
+            target=f"{target} v{head.version} {field}={value}",
+            ip=client_ip(request),
+            step_up_verified=True,
+        )
+    return _card(request, db, mode=mode, user=user, oob=True,
+                 notice=f"{field} = {value} แล้ว · เปิดใช้เป็นเวอร์ชัน v{head.version}")
+
+
+@router.get("/partials/risk/{profile}/dry-run", response_class=HTMLResponse)
+def dry_run_modal(
+    profile: str,
+    value: str,
+    request: Request,
+    _: User = Depends(require_cap("toggle_dry_run")),
+) -> HTMLResponse:
+    return _switch_modal(
+        request, target=require_profile(profile), field="dry_run", value=value
+    )
+
+
+@router.post("/api/{profile}/config/dry_run", response_class=HTMLResponse)
+def toggle_dry_run(
+    profile: str,
+    request: Request,
+    value: str = Form(""),
+    step_up_code: str = Form(""),
+    db: Engine = Depends(get_db),
+    user: User = Depends(require_cap("toggle_dry_run")),
+    mode: str = Depends(current_mode),
+) -> HTMLResponse:
+    """สิทธิ์ `toggle_dry_run` แยกจาก `edit_profile` เพราะการปิดโหมดทดลองคือการเริ่ม
+    ส่งเงินจริง ไม่ใช่การแก้ค่าอีกช่องหนึ่ง (spec/09 §3. ตารางสิทธิ์ — 13 สิทธิ์ × 5 role)
+    """
+    return _toggled(
+        request, db,
+        target=require_profile(profile), field="dry_run", value=value,
+        code=step_up_code, user=user, mode=mode,
+    )
+
+
+@router.get("/partials/risk/{profile}/allow-short", response_class=HTMLResponse)
+def allow_short_modal(
+    profile: str,
+    value: str,
+    request: Request,
+    _: User = Depends(require_cap("edit_profile")),
+) -> HTMLResponse:
+    return _switch_modal(
+        request, target=require_profile(profile), field="allow_short", value=value
+    )
+
+
+@router.post("/api/{profile}/config/allow_short", response_class=HTMLResponse)
+def toggle_allow_short(
+    profile: str,
+    request: Request,
+    value: str = Form(""),
+    step_up_code: str = Form(""),
+    db: Engine = Depends(get_db),
+    user: User = Depends(require_cap("edit_profile")),
+    mode: str = Depends(current_mode),
+) -> HTMLResponse:
+    """`allow_short` เป็นค่าในโปรไฟล์ สิทธิ์จึงเป็น `edit_profile` ตัวเดิม · ที่ต้อง
+    step-up เพราะมันเลื่อนตัวชี้ให้ในคำขอเดียว ไม่ใช่เพราะเป็นการกระทำชนิดใหม่
+    """
+    return _toggled(
+        request, db,
+        target=require_profile(profile), field="allow_short", value=value,
+        code=step_up_code, user=user, mode=mode,
+    )

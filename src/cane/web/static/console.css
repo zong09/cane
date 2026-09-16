@@ -546,3 +546,8 @@ a.btn--block { padding: 12px; }
 .rk__killbtn--stop { border: 1px solid var(--live-border-2); color: var(--live-text); }
 .rk__killbtn--stop:hover { background: var(--live-tint); border-color: var(--live-text); }
 .modal__text { width: 100%; padding: 12px 13px; border: 1px solid var(--border-strong); background: #fff; font: 400 13px var(--mono); color: var(--text); }
+.rk__notice { margin-top: 16px; padding: 12px 15px; background: var(--surface-raised); border: 1px solid var(--border); font: 400 12.5px/1.6 var(--sans); color: var(--text-2); }
+.rk__switch { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 16px; }
+.rk__switchstate { font: 600 13px var(--mono); color: var(--live-text); }
+.rk__switchstate--on { color: var(--paper-text); }
+.rk__switchbtn { flex: none; padding: 10px 16px; background: #fff; }
