@@ -267,22 +267,25 @@ def _groups(
 
 
 def _switches(settings: Settings | None) -> tuple[tuple[str, str, str], ...]:
-    """`dry_run` / `allow_short` แสดงอย่างเดียว — ปุ่มสลับเป็นของใบ 23
+    """`dry_run` / `allow_short` แสดงอย่างเดียวที่หน้านี้ — ปุ่มสลับอยู่ที่หน้าความเสี่ยง
 
-    `paper` สลับ `dry_run` ไม่ได้เลยไม่ว่าจะใส่ปุ่มหรือไม่ เพราะ CHECK
-    `ck_config_settings_paper_dry_run` ปฏิเสธที่ฐาน · เขียนคำอธิบายไว้ข้างค่า
-    แทนที่จะให้คนกดแล้วเจอ constraint ของ Postgres
+    สองค่านี้มี endpoint ของตัวเองที่ต้อง step-up (spec/10 §เขียน) ต่างจากช่องอื่นใน
+    หน้านี้ที่บันทึกเป็นร่างได้โดยไม่ต้องยืนยันซ้ำ · การใส่ปุ่มไว้ที่นี่ด้วยแปลว่ามีสอง
+    ทางเข้าที่ด่านไม่เท่ากันไปหาค่าเดียวกัน
+
+    `paper` สลับ `dry_run` ไม่ได้เลยไม่ว่าจะกดจากที่ไหน เพราะ CHECK
+    `ck_config_settings_paper_dry_run` ปฏิเสธที่ฐาน
     """
     if settings is None:
         return ()
     forced = (
         "paper บังคับ true ที่ฐาน (ck_config_settings_paper_dry_run)"
         if settings.profile == "paper"
-        else "ปุ่มสลับเป็นของใบ 23"
+        else "สลับได้ที่หน้า ความเสี่ยง"
     )
     return (
         ("dry_run", str(settings.dry_run).lower(), forced),
-        ("allow_short", str(settings.allow_short).lower(), "สวิตช์ระดับระบบ — ปุ่มสลับเป็นของใบ 23"),
+        ("allow_short", str(settings.allow_short).lower(), "สวิตช์ระดับระบบ — สลับได้ที่หน้า ความเสี่ยง"),
     )
 
 
@@ -309,8 +312,11 @@ def _history(conn: Connection, profile: str) -> tuple[VersionRow, ...]:
 #: ซึ่งคืน `False` ให้ `"0.5"` — กฎ `leverage` ของเหรียญเทียบ `max_leverage` จะเงียบ
 #: ไปทั้งข้อ และนั่นเป็น **กฎเดียวที่ฐานเขียนเป็น CHECK ไม่ได้** (spec/07 §กฎการตรวจ config)
 #:
-#: `symbols` ไม่อยู่ในนี้ (ใบ 26) · `dry_run`/`allow_short` ไม่อยู่ (ใบ 23) ·
-#: `profile` ไม่อยู่เลย เวอร์ชันใหม่เป็นของ profile เดิมเสมอ
+#: `symbols` ไม่อยู่ในนี้ (ใบ 26) · `profile` ไม่อยู่เลย เวอร์ชันใหม่เป็นของ profile เดิมเสมอ
+#:
+#: **`dry_run` กับ `allow_short` ต้องไม่อยู่ในนี้** — สองค่านั้นมี endpoint ของตัวเองที่
+#: ต้อง step-up (spec/10 §เขียน) · ใส่ลงที่นี่เมื่อไหร่ ฟอร์มของหน้าตั้งค่าซึ่งไม่ต้อง
+#: ยืนยันซ้ำจะส่งมันมาได้ และด่านที่สเปกแยกไว้ก็หายไปเงียบๆ
 EDITABLE: dict[str, str] = {
     "timeframe": "text",
     "cold_start": "text?",
@@ -337,7 +343,15 @@ def _coerce(text: str, kind: str) -> object:
     ช่องว่างของค่าที่ **ไม่บังคับ** เป็น `None` · ช่องว่างของค่าที่ **บังคับ** คืน
     `_ABSENT` เพื่อให้ผู้เรียกลบคีย์นั้นทิ้ง แล้ว pydantic รายงานว่า "ขาด" ที่ฟิลด์นั้น
     ซึ่งเป็นข้อความที่ตรงกว่า "ค่าต้องเป็นตัวเลข" ของค่าว่าง
+
+    `bool` รับแค่ `"true"`/`"false"` ตรงตัว ไม่ใช่ความจริงเชิง truthiness — ค่าที่สะกด
+    อย่างอื่นต้องดังตรงนี้ ไม่ใช่เงียบแล้วกลายเป็น `False` ซึ่งกับสวิตช์ `dry_run`
+    แปลว่า "ยิงจริง" (ใบ 23)
     """
+    if kind == "bool":
+        if text not in ("true", "false"):
+            raise ValueError(f"{text!r} ไม่ใช่ true หรือ false")
+        return text == "true"
     if text == "":
         return None if kind.endswith("?") else _ABSENT
     if kind.startswith("number"):
@@ -362,11 +376,18 @@ def _dig(raw: dict, loc: Loc) -> dict | None:
     return node if isinstance(node, dict) else None
 
 
-def patched(base: Settings, form: Mapping[str, str]) -> tuple[dict, list[Problem]]:
+def patched(
+    base: Settings, form: Mapping[str, str], *, editable: Mapping[str, str] = EDITABLE
+) -> tuple[dict, list[Problem]]:
     """ลอกค่าของเวอร์ชันที่เปิดใช้อยู่ แล้วทับเฉพาะช่องที่ฟอร์มส่งมา
 
-    ลอกทั้งชุดไม่ใช่ประกอบใหม่จากฟอร์ม เพราะฟอร์มไม่มี `symbols` กับสวิตช์สองตัว
-    (เป็นของใบ 23/26) — เวอร์ชันใหม่ต้องพาของพวกนั้นไปด้วยครบถ้วน
+    ลอกทั้งชุดไม่ใช่ประกอบใหม่จากฟอร์ม เพราะฟอร์มไม่มี `symbols` (เป็นของใบ 26) —
+    เวอร์ชันใหม่ต้องพาของพวกนั้นไปด้วยครบถ้วน
+
+    `editable` เป็นพารามิเตอร์เพราะ **ทางเข้าคนละทางรับคนละช่อง** — หน้าความเสี่ยง
+    (ใบ 23) สลับ `dry_run`/`allow_short` ผ่าน endpoint ของตัวเองที่มีสิทธิ์ต่างกัน
+    (spec/10 §เขียน) · ใส่สองช่องนั้นลง `EDITABLE` แทนจะทำให้ฟอร์มหน้าตั้งค่าซึ่ง
+    **ไม่ต้อง step-up** ส่งมันมาได้ด้วย ซึ่งเป็นการยกเลิกการแยกทางเข้าที่สเปกจงใจทำ
 
     คืนค่าดิบที่พร้อมส่งเข้า `validate_settings()` กับรายการปัญหาของ **การแปลงค่า**
     ซึ่งเป็นคนละชั้นกับปัญหาของกฎ · ตัวเลขที่พิมพ์ผิดต้องชี้ที่ช่องนั้น ไม่ใช่โผล่มา
@@ -375,7 +396,7 @@ def patched(base: Settings, form: Mapping[str, str]) -> tuple[dict, list[Problem
     raw = deepcopy(base.model_dump())
     problems: list[Problem] = []
 
-    for path, kind in EDITABLE.items():
+    for path, kind in editable.items():
         if path not in form:
             continue
         loc: Loc = tuple(path.split("."))

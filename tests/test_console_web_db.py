@@ -531,3 +531,64 @@ def test_unlatching_leaves_an_audit_row_marked_step_up_verified(
     ).one()
     assert row.step_up_verified is True
     assert row.target == "paper"
+
+
+# ── สวิตช์ dry_run / allow_short ผ่านเส้นทาง HTTP · ใบ 23 ─────────────────────
+
+
+def test_flipping_dry_run_makes_the_new_version_the_active_one(
+    db: Connection, owner, clean_config: None
+) -> None:
+    """เกณฑ์ของสวิตช์: กดครั้งเดียวแล้ว **ค่าที่ engine จะอ่าน** เปลี่ยนจริง
+
+    ไม่ใช่แค่มีเวอร์ชันใหม่นอนรออยู่ในประวัติ · ตัวชี้ `is_active` ต้องขยับตามในคำขอ
+    เดียวกัน (spec/10 §เขียน)
+    """
+    before = seeded(db, "live")
+
+    with client_in(db, owner, "live") as client:
+        response = client.post(
+            "/api/live/config/dry_run", data={"value": "false", **right_now_code()}
+        )
+
+    active = config_repo.active_version(db, "live")
+    assert response.status_code == 200
+    assert active.id != before.id
+    assert config_repo.active_settings(db, "live").dry_run is False
+    assert [v.is_active for v in config_repo.versions(db, "live")] == [True, False]
+
+
+def test_paper_keeps_dry_run_true_and_writes_no_version_at_all(
+    db: Connection, owner, clean_config: None
+) -> None:
+    """`ck_config_settings_paper_dry_run` ปฏิเสธที่ฐาน — หน้าจอต้องบอกก่อนถึงตรงนั้น"""
+    seeded(db, "paper")
+    before = len(config_repo.versions(db, "paper"))
+
+    with client_in(db, owner, "paper") as client:
+        response = client.post(
+            "/api/paper/config/dry_run", data={"value": "false", **right_now_code()}
+        )
+
+    assert response.status_code == 200
+    assert config_repo.active_settings(db, "paper").dry_run is True
+    assert len(config_repo.versions(db, "paper")) == before
+
+
+def test_flipping_the_short_side_leaves_an_audit_row_marked_step_up_verified(
+    db: Connection, owner, clean_config: None
+) -> None:
+    """spec/09 §step-up TOTP — การกระทำที่ผ่านด่านต้องบันทึกว่าผ่านด่านอะไรมา"""
+    seeded(db, "live")
+
+    with client_in(db, owner, "live") as client:
+        client.post(
+            "/api/live/config/allow_short", data={"value": "false", **right_now_code()}
+        )
+
+    row = db.execute(
+        select(user_audit_log).where(user_audit_log.c.action == "config.allow_short")
+    ).one()
+    assert row.step_up_verified is True
+    assert "allow_short=false" in row.target
+    assert config_repo.active_settings(db, "live").allow_short is False

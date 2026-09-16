@@ -1525,3 +1525,150 @@ def test_the_latch_answer_is_not_out_of_band_because_the_button_targets_the_page
         response = client.post("/api/paper/killswitch/latch")
 
     assert 'hx-swap-oob="true"' not in response.text
+
+
+# ── สวิตช์ dry_run / allow_short · ใบ 23 ──────────────────────────────────────
+
+
+def test_flipping_dry_run_writes_a_new_version_and_activates_it_in_one_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """สวิตช์ความปลอดภัยที่ยังไม่มีผลจนกว่าใครจะไปกด activate คือสวิตช์ที่โกหก
+
+    ตัวเขียนยังเป็นคู่เดิมของใบ 21 (`insert_version` + `activate`) — ใบนี้ไม่เพิ่ม
+    ทางเขียน config เส้นที่สอง
+    """
+    inserted, activated = saving(monkeypatch)
+    RecordingSwitch().install(monkeypatch)
+    client, _ = build(mode="live")
+    with client:
+        response = client.post(
+            "/api/live/config/dry_run", data={"value": "false", **GOOD_CODE}
+        )
+
+    assert response.status_code == 200
+    assert len(inserted.calls) == 1
+    assert inserted.calls[0]["settings"].dry_run is False
+    assert activated == [99]
+    assert 'hx-swap-oob="true"' in response.text
+
+
+def test_the_switch_posts_the_value_it_wants_so_pressing_twice_lands_in_one_place(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ให้เซิร์ฟเวอร์กลับด้านเองเมื่อไหร่ สองคำขอที่ซ้อนกันจะสลับกันไปมา"""
+    inserted, _ = saving(monkeypatch)
+    RecordingSwitch().install(monkeypatch)
+    client, _ = build(mode="live")
+    with client:
+        client.post("/api/live/config/allow_short", data={"value": "false", **GOOD_CODE})
+        client.post("/api/live/config/allow_short", data={"value": "false", **GOOD_CODE})
+
+    assert [call["settings"].allow_short for call in inserted.calls] == [False, False]
+
+
+def test_paper_cannot_leave_dry_run_and_says_why_before_spending_the_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ฐานปฏิเสธด้วย `ck_config_settings_paper_dry_run` อยู่แล้ว (spec/06 §dry_run)
+
+    ด่านที่ไม่ต้องใช้รหัสต้องอยู่ก่อนด่านรหัส — คนที่กดสวิตช์ที่ฐานปฏิเสธอยู่แล้ว
+    ต้องไม่เสียรหัสของรอบนั้นไปด้วย
+    """
+    inserted, activated = saving(monkeypatch)
+    RecordingSwitch().install(monkeypatch)
+
+    def never(*args, **kwargs):
+        raise AssertionError("ต้องไม่เรียก verify_step_up เมื่อฐานปฏิเสธอยู่แล้ว")
+
+    monkeypatch.setattr(auth_service, "verify_step_up", never)
+    client, _ = build()
+    with client:
+        response = client.post(
+            "/api/paper/config/dry_run", data={"value": "false", **GOOD_CODE}
+        )
+
+    assert response.status_code == 200
+    assert "paper บังคับ dry_run = true" in response.text
+    assert inserted.calls == [] and activated == []
+
+
+def test_flipping_a_switch_with_a_wrong_code_writes_nothing_and_moves_no_pointer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inserted, activated = saving(monkeypatch)
+    RecordingSwitch().install(monkeypatch)
+    client, _ = build(mode="live")
+    with client:
+        response = client.post(
+            "/api/live/config/dry_run", data={"value": "false", "step_up_code": "000000"}
+        )
+
+    assert response.status_code == 403
+    assert "รหัส 6 หลักไม่ถูกต้อง" in response.text
+    assert inserted.calls == [] and activated == []
+
+
+def test_turning_the_short_side_off_carries_every_other_field_along(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ลอกทั้งชุดแล้วทับช่องเดียว — `symbols` กับ risk limit ต้องไปครบ ไม่ใช่หายไป"""
+    inserted, _ = saving(monkeypatch)
+    RecordingSwitch().install(monkeypatch)
+    client, _ = build(mode="live")
+    with client:
+        client.post("/api/live/config/allow_short", data={"value": "false", **GOOD_CODE})
+
+    written = inserted.calls[0]["settings"]
+    original = a_config("live")
+    assert written.allow_short is False
+    assert written.symbols == original.symbols
+    assert written.risk == original.risk
+    assert written.dry_run == original.dry_run
+
+
+def test_a_switch_value_that_is_neither_true_nor_false_is_a_message_not_a_500(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inserted, _ = saving(monkeypatch)
+    RecordingSwitch().install(monkeypatch)
+    client, _ = build(mode="live")
+    with client:
+        response = client.post(
+            "/api/live/config/dry_run", data={"value": "ปิด", **GOOD_CODE}
+        )
+
+    assert response.status_code == 200
+    assert "ต้องเป็น true หรือ false" in response.text
+    assert inserted.calls == []
+
+
+def test_the_switches_are_not_rendered_for_someone_who_cannot_flip_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with_risk(monkeypatch)
+    RecordingSwitch().install(monkeypatch)
+    monkeypatch.setattr(
+        perms, "allowed", lambda conn, *, role, cap: cap == "view_overview"
+    )
+    client, _ = build(role="TRADER", mode="live")
+    with client:
+        page = client.get("/risk").text
+
+    assert "ปิดฝั่ง short" not in page
+    assert "ปิดโหมดทดลอง" not in page
+    # แต่ค่าที่ใช้อยู่ยังต้องอ่านได้
+    assert "ฝั่ง short" in page and "โหมดทดลอง" in page
+
+
+def test_paper_shows_no_button_for_a_switch_the_database_pins(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with_risk(monkeypatch)
+    RecordingSwitch().install(monkeypatch)
+    client, _ = build()
+    with client:
+        page = client.get("/risk").text
+
+    assert "ปิดโหมดทดลอง" not in page
+    assert "paper บังคับเปิดที่ฐาน" in page

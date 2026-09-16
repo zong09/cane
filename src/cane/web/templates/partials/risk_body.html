@@ -26,6 +26,7 @@
   {# การ์ด kill switch อ่านจากตาราง จึงแสดงได้แม้ config จะพัง #}
   {% include "partials/killswitch_card.html" %}
   {% else %}
+  {% if risk_notice %}<div class="rk__notice">{{ risk_notice }}</div>{% endif %}
 
   <div class="rk__grid">
     <div class="rk__col">
@@ -52,6 +53,54 @@
         <div class="rk__hint">
           จำนวนไม้ มาร์จิ้น และไม้ที่รอส่ง ต้องอ่านสถานะจริงจาก venue — ยังไม่มีตารางเก็บ (ใบ 13) ·
           ช่องที่ยังตอบไม่ได้ขึ้นเป็น — ไม่ใช่ 0
+        </div>
+      </div>
+
+      {#
+        สวิตช์สองตัว · ค่าที่เห็นคือค่าของเวอร์ชันที่เปิดใช้อยู่ การกดจึงสร้างเวอร์ชันใหม่
+        แล้วเลื่อนตัวชี้ในคำขอเดียว ไม่งั้นสวิตช์จะเลื่อนแต่ค่าจริงไม่เปลี่ยน
+      #}
+      <div class="rk__card">
+        <div class="rk__cardtitle">ฝั่ง short</div>
+        <div class="rk__switch">
+          <span class="rk__switchstate{% if risk_settings.allow_short %} rk__switchstate--on{% endif %}">
+            {% if risk_settings.allow_short %}เปิดอยู่{% else %}ปิดอยู่{% endif %}
+          </span>
+          {% if risk_can_allow_short %}
+          <button class="btn btn--ghost rk__switchbtn" type="button"
+                  hx-get="/partials/risk/{{ risk_profile }}/allow-short?value={{ 'false' if risk_settings.allow_short else 'true' }}"
+                  hx-target="#modal-slot" hx-swap="innerHTML">
+            {% if risk_settings.allow_short %}ปิดฝั่ง short{% else %}เปิดฝั่ง short{% endif %}
+          </button>
+          {% endif %}
+        </div>
+        <div class="rk__hint">
+          ปิดได้ทั้งระบบเมื่อไม่อยากถือฝั่งลง — ระบบจะยังปิด long ตามสัญญาณ short
+          แต่ไม่เปิดไม้ใหม่ · เหรียญ spot ไม่ได้รับผลอยู่แล้วเพราะฐานบังคับ long-only
+        </div>
+      </div>
+
+      <div class="rk__card">
+        <div class="rk__cardtitle">โหมดทดลอง</div>
+        <div class="rk__switch">
+          <span class="rk__switchstate{% if risk_settings.dry_run %} rk__switchstate--on{% endif %}">
+            {% if risk_settings.dry_run %}เปิดอยู่{% else %}ปิดอยู่ — ส่งคำสั่งจริง{% endif %}
+          </span>
+          {% if risk_can_dry_run and not (risk_profile == "paper" and risk_settings.dry_run) %}
+          <button class="btn btn--ghost rk__switchbtn" type="button"
+                  hx-get="/partials/risk/{{ risk_profile }}/dry-run?value={{ 'false' if risk_settings.dry_run else 'true' }}"
+                  hx-target="#modal-slot" hx-swap="innerHTML">
+            {% if risk_settings.dry_run %}ปิดโหมดทดลอง{% else %}เปิดโหมดทดลอง{% endif %}
+          </button>
+          {% endif %}
+        </div>
+        <div class="rk__hint">
+          ค่าตั้งต้นเป็นเปิดแม้ในโปรไฟล์จริง การส่งคำสั่งจริงต้องจงใจเสมอ ·
+          {% if risk_profile == "paper" %}
+          paper บังคับเปิดที่ฐาน (ck_config_settings_paper_dry_run) จึงไม่มีปุ่มให้กด
+          {% else %}
+          ปิดเมื่อไหร่ ออเดอร์จริงถูกส่งตั้งแต่รอบถัดไป
+          {% endif %}
         </div>
       </div>
 

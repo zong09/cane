@@ -20,6 +20,10 @@
         ทั้งสองทางเป็นการ swap เป้าเดียว ไม่ต้องมี JS มาช่วยปิดหน้าต่าง
       #}
       <form hx-post="{{ action }}" hx-target="#modal-slot" hx-swap="innerHTML">
+        {# ค่าที่ action นั้นต้องรู้แต่คนไม่ต้องพิมพ์ (ใบ 23: สวิตช์ส่งค่าที่ต้องการ) #}
+        {% for name, value in hidden | default(()) %}
+        <input type="hidden" name="{{ name }}" value="{{ value }}">
+        {% endfor %}
         {#
           ช่องเพิ่มของ action ที่มีด่านของตัวเองนอกเหนือจากรหัส (ใบ 23: ปลด kill switch
           ต้องพิมพ์ชื่อโปรไฟล์) · ไม่ส่ง `fields` มาก็ไม่มีอะไรเปลี่ยนสำหรับเส้นทางเดิม

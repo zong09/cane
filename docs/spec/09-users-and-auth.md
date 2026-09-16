@@ -87,7 +87,11 @@ login ไม่ใช่ที่หน้าจอ ถ้า `totp_enrolled_ts 
 - **ไม่มีสิทธิ์ "สลับโหมด live/paper"** — โหมดคือมุมมอง ทุก role ที่ login ได้สลับได้
   สิ่งที่กั้นการเข้าไปดู `live` คือ **step-up** (ข้อ 6) ไม่ใช่สิทธิ์ · ถ้าทำเป็นสิทธิ์
   VIEWER กับ AUDITOR จะดู live ไม่ได้ ซึ่งขัดกับหน้าที่ของสองบทบาทนั้นทั้งบทบาท
-- **`allow_short` และการตั้งค่าแจ้งเตือนไม่มีแถวของตัวเอง** อยู่ใต้ `edit_profile`
+- **การตั้งค่าแจ้งเตือนไม่มีแถวของตัวเอง** อยู่ใต้ `edit_profile`
+- **`allow_short` มีแถวของตัวเองแล้ว แต่ยังใช้ `edit_profile`** — มันเป็นสวิตช์บนหน้า
+  ความเสี่ยงที่เลื่อนตัวชี้ให้ในคำขอเดียว ([10](10-engine-and-console.md) §เขียน) จึงต้อง
+  step-up เหมือนทุกการเลื่อนตัวชี้ · สิทธิ์ยังเป็นตัวเดียวกับการแก้โปรไฟล์เพราะมันคือ
+  ค่าในโปรไฟล์ ไม่ใช่การกระทำชนิดใหม่
   ทั้งคู่เป็นการแก้ค่าในโปรไฟล์ การแยกแถวจะทำให้มีสามแถวที่ค่าเหมือนกันหมด
 - **`killswitch_latch` กับ `killswitch_unlatch` แยกกัน** เพราะเป็นการกระทำคนละทิศ:
   latch คือหยุด (กดได้กว้าง ไม่ต้องยืนยันซ้ำ — ความช้าตอนฉุกเฉินแพงกว่าการกดเกิน)
@@ -130,9 +134,10 @@ login ไม่ใช่ที่หน้าจอ ถ้า `totp_enrolled_ts 
 | `POST /api/{profile}/engine/start` · `/stop` | `engine_control` | **ต้อง** |
 | `POST /api/{profile}/killswitch/latch` | `killswitch_latch` | – |
 | `POST /api/{profile}/killswitch/unlatch` | `killswitch_unlatch` | **ต้อง** |
-| `POST /api/{profile}/config` (รวม `allow_short` และค่าแจ้งเตือน) — สร้างร่าง | `edit_profile` | – |
+| `POST /api/{profile}/config` (รวมค่าแจ้งเตือน) — สร้างร่าง | `edit_profile` | – |
 | `POST /api/{profile}/config/{version_id}/activate` — เลื่อนตัวชี้ | `edit_profile` | **ต้อง** |
-| `POST /api/{profile}/config/dry_run` | `toggle_dry_run` | **ต้อง** |
+| `POST /api/{profile}/config/dry_run` — สร้างเวอร์ชันแล้วเปิดใช้ในคำขอเดียว | `toggle_dry_run` | **ต้อง** |
+| `POST /api/{profile}/config/allow_short` — เหมือนกัน คนละฟิลด์ | `edit_profile` | **ต้อง** |
 | `POST /api/{profile}/symbols` · `DELETE …` | `edit_symbols` | **ต้อง** |
 | `POST /api/{profile}/positions/{symbol}/close` | `close_position_manual` | **ต้อง** |
 | `POST /api/{profile}/coldstart/{symbol}` | `choose_cold_start_route` | – |
