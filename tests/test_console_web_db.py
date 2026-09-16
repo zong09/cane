@@ -147,3 +147,40 @@ def test_a_profile_with_no_active_version_says_so_instead_of_pretending_to_be_fi
         page = client.get("/overview").text
 
     assert "ไม่มีเวอร์ชัน active" in page
+
+
+# ── หน้าตั้งค่า · ใบ 21 ───────────────────────────────────────────────────────
+
+
+def test_the_config_page_reads_the_active_version_from_the_database(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    """ค่าที่อยู่ในช่องกรอกมาจากแถวใน `config_*` ไม่ใช่จากไฟล์ `paper.toml`"""
+    head = config_repo.insert_version(
+        db, load_profile("config/paper.toml"), source="toml_seed"
+    )
+    config_repo.activate(db, head.id)
+
+    with client:
+        page = client.get("/config").text
+
+    assert 'name="base_pct"' in page
+    assert "โหลดผ่าน — ไม่พบข้อผิดพลาด" in page
+    assert f"v{head.version}" in page
+
+
+def test_the_version_history_lists_every_version_newest_first(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    """ประวัติคือเหตุผลทั้งหมดของการเก็บเป็นเวอร์ชัน — เวอร์ชันที่ไม่ active ต้องเห็นด้วย"""
+    settings = load_profile("config/paper.toml")
+    first = config_repo.insert_version(db, settings, source="toml_seed")
+    config_repo.activate(db, first.id)
+    second = config_repo.insert_version(db, settings, source="console", note="ลองแก้")
+
+    with client:
+        page = client.get("/config").text
+
+    assert page.index(f"v{second.version}") < page.index(f"v{first.version}")
+    assert "ลองแก้" in page
+    assert "เปิดใช้อยู่" in page

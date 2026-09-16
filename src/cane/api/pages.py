@@ -1,8 +1,11 @@
 """หน้า HTML ของคอนโซล
 
-ใบ 19 เป็น **โครง** — ทุกเมนูเปิดได้จริงและ render layout ครบ แต่ `<main>` ยังว่าง
+ใบ 19 เป็น **โครง** — ทุกเมนูเปิดได้จริงและ render layout ครบ แต่เนื้อยังว่าง
 ที่ทำอย่างนี้เพราะเกณฑ์เสร็จของใบคือ "เปิดคู่กับไฟล์ design แล้ว layout ตรงกัน"
 ซึ่งตรวจได้ก็ต่อเมื่อกดดูได้ทุกเมนู ไม่ใช่แค่หน้าเดียว
+
+ใบ 21 เติมเนื้อของ `ตั้งค่า` เป็นหน้าแรก · หน้าที่มีเนื้อแล้วอยู่ใน `BODIES`
+ที่เหลือยังไปที่ placeholder ตามเดิม
 """
 
 from __future__ import annotations
@@ -11,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import Engine
 
+from cane.api import config as config_routes
 from cane.api import context
 from cane.api.deps import current_mode, current_user, get_db, get_sup
 from cane.api.templating import templates
@@ -30,6 +34,9 @@ PAGES: dict[str, tuple[str, int]] = {
 #: และหน้าผู้ใช้เป็นของ `manage_users` เท่านั้น
 PAGE_CAP = {slug: "view_overview" for slug in PAGES}
 PAGE_CAP["users"] = "manage_users"
+
+#: slug → เทมเพลตของหน้าที่มีเนื้อแล้ว · ที่ไม่อยู่ในนี้ได้ placeholder ของใบ 19
+BODIES = {"config": "pages/config.html"}
 
 
 @router.get("/")
@@ -54,5 +61,10 @@ def page(
         if not perms.allowed(conn, role=user.role, cap=PAGE_CAP[slug]):
             raise HTTPException(status_code=403, detail=f"ต้องมีสิทธิ์ {PAGE_CAP[slug]}")
         ctx = context.build(conn, sup, user=user, mode=mode, active=slug)
+        if slug == "config":
+            # หน้าตั้งค่าเปิดที่โปรไฟล์ของโหมดที่ดูอยู่ · แท็บอีกใบสลับเองทาง partial
+            ctx |= config_routes.page_context(
+                conn, sup, profile=mode, user=user, mode=mode
+            )
     ctx |= {"page_label": label, "page_ticket": ticket}
-    return templates.TemplateResponse(request, "pages/placeholder.html", ctx)
+    return templates.TemplateResponse(request, BODIES.get(slug, "pages/placeholder.html"), ctx)
