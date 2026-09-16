@@ -20,9 +20,19 @@
         ทั้งสองทางเป็นการ swap เป้าเดียว ไม่ต้องมี JS มาช่วยปิดหน้าต่าง
       #}
       <form hx-post="{{ action }}" hx-target="#modal-slot" hx-swap="innerHTML">
+        {#
+          ช่องเพิ่มของ action ที่มีด่านของตัวเองนอกเหนือจากรหัส (ใบ 23: ปลด kill switch
+          ต้องพิมพ์ชื่อโปรไฟล์) · ไม่ส่ง `fields` มาก็ไม่มีอะไรเปลี่ยนสำหรับเส้นทางเดิม
+        #}
+        {% for name, label, placeholder in fields | default(()) %}
+        <label class="modal__field">
+          <span class="modal__fieldname">{{ label }}</span>
+          <input class="modal__text" name="{{ name }}" placeholder="{{ placeholder }}" required {% if loop.first %}autofocus{% endif %}>
+        </label>
+        {% endfor %}
         <label class="modal__field">
           <span class="modal__fieldname">รหัส 6 หลักจากแอป Authenticator</span>
-          <input class="modal__code" name="step_up_code" inputmode="numeric" maxlength="6" placeholder="000000" required autofocus>
+          <input class="modal__code" name="step_up_code" inputmode="numeric" maxlength="6" placeholder="000000" required {% if not fields %}autofocus{% endif %}>
         </label>
         <div class="modal__actions">
           <button class="btn btn--ghost" type="button"

@@ -542,3 +542,7 @@ a.btn--block { padding: 12px; }
 .rktable__sides { font: 400 12.5px var(--mono); color: var(--text-2); }
 .rktable__sides--long { color: var(--warn-text); }
 .rktable > .rktable__empty { grid-column: 1 / -1; padding: 20px 24px; font: 400 12.5px var(--sans); color: var(--muted); }
+.rk__killbtn { width: 100%; margin-top: 14px; padding: 15px; background: #fff; }
+.rk__killbtn--stop { border: 1px solid var(--live-border-2); color: var(--live-text); }
+.rk__killbtn--stop:hover { background: var(--live-tint); border-color: var(--live-text); }
+.modal__text { width: 100%; padding: 12px 13px; border: 1px solid var(--border-strong); background: #fff; font: 400 13px var(--mono); color: var(--text); }

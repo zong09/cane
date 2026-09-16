@@ -3,7 +3,11 @@
   อย่างที่ไฟล์ design เขียนไว้ — errata ที่หัว spec/10 ยกเลิกข้อนั้นไปแล้ว
 
   เหตุที่ติดมาจากคอลัมน์ `reason` ไม่ใช่ประโยคตายตัว เพราะ breaker กับคนกดให้เหตุ
-  คนละอย่าง · ปุ่มเป็นของคอมมิตถัดไปในใบเดียวกัน
+  คนละอย่าง
+
+  ปุ่มหยุดยิงตรงไปที่ `#risk-body` (ไม่มี modal ไม่มีรหัส) · ปุ่มปลดเปิด modal ที่
+  `#modal-slot` เพราะมันมีสามด่าน · ปุ่มที่คนนี้กดไม่ได้ **ไม่ render** ไม่ใช่ render
+  แล้วได้ 403 ตอนกด ซึ่ง htmx จะเอา JSON ของ FastAPI มาแปะหน้าจอ
 #}
 <div id="killswitch-card"
      class="rk__kill{% if risk_kill.latched %} rk__kill--latched{% endif %}">
@@ -20,6 +24,21 @@
     การรีสตาร์ททั้ง engine และเครื่อง
     {% endif %}
   </div>
+  {% if risk_kill.latched %}
+  {% if risk_can_unlatch %}
+  <button class="btn btn--ghost rk__killbtn" type="button"
+          hx-get="/partials/risk/{{ risk_profile }}/unlatch"
+          hx-target="#modal-slot" hx-swap="innerHTML">
+    ปลดล็อก — ต้องพิมพ์ชื่อ profile ยืนยัน
+  </button>
+  {% endif %}
+  {% elif risk_can_latch %}
+  <button class="btn rk__killbtn rk__killbtn--stop" type="button"
+          hx-post="/api/{{ risk_profile }}/killswitch/latch"
+          hx-target="#risk-body" hx-swap="outerHTML">
+    หยุดยิงออเดอร์ทันที
+  </button>
+  {% endif %}
   <div class="rk__killfoot">
     ปลดล็อกด้วยมือเท่านั้น ไม่หายเองเมื่อเวลาผ่านไปหรือเมื่อ restart ·
     หยุด engine ไม่ปลด และสตาร์ท engine ก็ไม่ปลด
