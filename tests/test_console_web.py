@@ -658,3 +658,177 @@ def test_the_other_profile_that_no_longer_validates_says_it_cannot_be_compared(
         page = client.get("/config").text
 
     assert "live โหลดไม่ผ่าน 2 ข้อ — เทียบไม่ได้" in page
+
+
+# ── บันทึกเป็นเวอร์ชันใหม่ · ใบ 21 ────────────────────────────────────────────
+
+
+class RecordingInsert:
+    """จดว่า `insert_version()` ถูกเรียกด้วยอะไร · คืนหัวเวอร์ชันปลอมกลับไป"""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def __call__(self, conn, settings, **kwargs):  # noqa: ANN001
+        self.calls.append({"settings": settings} | kwargs)
+        return config_repo.ConfigVersion(
+            id=99,
+            profile=settings.profile,
+            version=7,
+            source=kwargs["source"],
+            note=kwargs.get("note"),
+            created_ts=NOW,
+            created_by_user_id=kwargs.get("created_by_user_id"),
+            is_active=False,
+        )
+
+
+def saving(monkeypatch: pytest.MonkeyPatch, profile: str = "paper"):
+    """แทน `active_settings` ด้วย config จริง และดัก `insert_version`/`activate`"""
+    monkeypatch.setattr(
+        config_repo, "active_settings", lambda conn, p: a_config(p if p == profile else p)
+    )
+    inserted = RecordingInsert()
+    activated: list[int] = []
+    monkeypatch.setattr(config_repo, "insert_version", inserted)
+    monkeypatch.setattr(config_repo, "activate", lambda conn, version_id: activated.append(version_id))
+    return inserted, activated
+
+
+def test_saving_creates_a_draft_and_never_moves_the_pointer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ฐานให้คอนโซลแค่ INSERT — บันทึกจึงเป็นเวอร์ชันใหม่เสมอ และยังไม่เปิดใช้"""
+    inserted, activated = saving(monkeypatch)
+    client, _ = build()
+    with client:
+        response = client.post(
+            "/api/paper/config", data={"base_pct": "12.0", "note": "ลดขนาดไม้"}
+        )
+
+    assert response.status_code == 200
+    assert len(inserted.calls) == 1
+    assert inserted.calls[0]["source"] == "console"
+    assert inserted.calls[0]["note"] == "ลดขนาดไม้"
+    assert inserted.calls[0]["created_by_user_id"] == 7
+    assert inserted.calls[0]["settings"].base_pct == 12.0
+    assert activated == []
+    assert "ยังไม่เปิดใช้" in response.text
+
+
+def test_a_leverage_ceiling_below_a_symbol_leverage_is_caught_before_the_insert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """กฎเดียวที่ฐานเขียนเป็น CHECK ไม่ได้ — และมันเงียบถ้าส่งค่าเป็นสตริง
+
+    `cross_checks()` ใช้ `_is_number()` ซึ่งคืน False ให้ `"0.5"` · ถ้า route โยนค่า
+    จากฟอร์มเข้า `validate_settings()` ดิบๆ เวอร์ชันที่ leverage เกินเพดานจะลงฐานได้
+    """
+    inserted, _ = saving(monkeypatch)
+    client, _ = build()
+    with client:
+        response = client.post("/api/paper/config", data={"risk.max_leverage": "0.5"})
+
+    assert response.status_code == 200
+    assert "symbols[0].leverage" in response.text
+    assert inserted.calls == []
+
+
+def test_a_value_out_of_range_comes_back_200_with_the_error_on_that_field(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """htmx ทิ้ง 4xx ทุกตัวยกเว้น 403 — รายการที่ต้องแก้ต้องมาเป็น 200"""
+    inserted, _ = saving(monkeypatch)
+    client, _ = build()
+    with client:
+        response = client.post("/api/paper/config", data={"base_pct": "32.0"})
+
+    assert response.status_code == 200
+    assert "อยู่นอกช่วง 5–20" in response.text
+    assert inserted.calls == []
+
+
+def test_a_field_that_is_not_a_number_at_all_is_a_field_error_not_a_500(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inserted, _ = saving(monkeypatch)
+    client, _ = build()
+    with client:
+        response = client.post("/api/paper/config", data={"base_pct": "สิบ"})
+
+    assert response.status_code == 200
+    assert "ไม่ใช่ตัวเลข" in response.text
+    assert inserted.calls == []
+
+
+def test_a_blank_required_field_reads_as_missing_not_as_a_bad_number(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """"ขาด consecutive_loss_breaker" บอกสิ่งที่ต้องทำ ส่วน "ต้องเป็นตัวเลข" ไม่บอก"""
+    inserted, _ = saving(monkeypatch)
+    client, _ = build()
+    with client:
+        response = client.post(
+            "/api/paper/config", data={"risk.consecutive_loss_breaker": ""}
+        )
+
+    assert response.status_code == 200
+    assert "ขาด consecutive_loss_breaker" in response.text
+    assert inserted.calls == []
+
+
+def test_an_empty_optional_field_is_saved_as_none_rather_than_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`taker_fee_pct` เว้นว่างได้โดยเจตนา — ศูนย์แปลว่า "ไม่มีค่าธรรมเนียม" ซึ่งคนละเรื่อง"""
+    inserted, _ = saving(monkeypatch)
+    client, _ = build()
+    with client:
+        client.post("/api/paper/config", data={"broker.taker_fee_pct": ""})
+
+    assert inserted.calls[0]["settings"].broker.taker_fee_pct is None
+
+
+def test_the_fields_the_form_never_shows_come_from_the_active_version_untouched(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`symbols` (ใบ 26) กับ `dry_run`/`allow_short` (ใบ 23) ไม่ได้อยู่ในฟอร์ม
+
+    ลอกมาทั้งชุดแล้วทับเฉพาะช่องที่ส่งมา ไม่ใช่ประกอบใหม่จากฟอร์ม ไม่งั้นเวอร์ชันใหม่
+    จะไม่มีเหรียญเลย
+    """
+    inserted, _ = saving(monkeypatch)
+    client, _ = build()
+    with client:
+        client.post("/api/paper/config", data={"base_pct": "12.0", "dry_run": "false"})
+
+    saved = inserted.calls[0]["settings"]
+    assert [s.symbol for s in saved.symbols] == ["BTC/USDT", "ETH/USDT"]
+    assert saved.dry_run is True
+
+
+def test_saving_needs_edit_profile_even_though_the_page_opens_for_everyone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inserted, _ = saving(monkeypatch)
+    client, _ = build(role="VIEWER")
+    with client:
+        response = client.post("/api/paper/config", data={"base_pct": "12.0"})
+
+    assert response.status_code == 403
+    assert inserted.calls == []
+
+
+def test_saving_with_no_active_version_is_refused_rather_than_inventing_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ไม่มีของให้ลอก · ทางเข้าครั้งแรกคือ `cane db seed` ไม่ใช่ฟอร์มเปล่า"""
+    inserted = RecordingInsert()
+    monkeypatch.setattr(config_repo, "insert_version", inserted)
+    client, _ = build()
+    with client:
+        response = client.post("/api/paper/config", data={"base_pct": "12.0"})
+
+    assert response.status_code == 200
+    assert "cane db seed" in response.text
+    assert inserted.calls == []

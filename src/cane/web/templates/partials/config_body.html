@@ -56,6 +56,26 @@
   </div>
   {% endif %}
 
+  {% if cfg_saved %}
+  <div class="cfg__banner cfg__banner--ok">
+    <div>
+      <div class="cfg__bannertitle">{{ cfg_saved }}</div>
+      <div class="cfg__bannernote">กด "ใช้เวอร์ชันนี้" ในประวัติเพื่อให้ engine อ่านค่าชุดใหม่</div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if cfg_unplaced %}
+  <div class="cfg__banner cfg__banner--bad">
+    <div>
+      <div class="cfg__bannertitle">บันทึกไม่ผ่าน {{ cfg_unplaced | length }} ข้อที่ไม่ได้อยู่ในช่องกรอก</div>
+      {% for p in cfg_unplaced %}
+      <div class="cfg__bannernote">{{ p }}</div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   <div class="cfg__grid">
     <div class="cfg__card">
       <div class="cfg__cardhead">
@@ -63,6 +83,10 @@
         <span class="cfg__cardnote">เวอร์ชันที่เปิดใช้อยู่</span>
       </div>
 
+      {% if cfg_groups %}
+      <form hx-post="/api/{{ cfg_profile }}/config"
+            hx-target="#config-body" hx-swap="outerHTML">
+      {% endif %}
       {% for title, fields in cfg_groups %}
       <div class="cfg__group">
         <div class="cfg__eyebrow">{{ title }}</div>
@@ -83,10 +107,27 @@
                  {% if not cfg_can_edit %}disabled{% endif %}>
           {% endif %}
           {% if f.hint %}<span class="cfg__hint">{{ f.hint }}</span>{% endif %}
+          {% if f.error %}
+          <span class="cfg__error">{{ f.error.message }}{% if f.error.detail %} — {{ f.error.detail }}{% endif %}</span>
+          {% endif %}
         </label>
         {% endfor %}
       </div>
       {% endfor %}
+
+      {% if cfg_groups %}
+      <div class="cfg__group">
+        <label class="field">
+          <span class="field__name">หมายเหตุของเวอร์ชันนี้</span>
+          <input class="field__input" name="note" placeholder="แก้อะไร เพราะอะไร"
+                 {% if not cfg_can_edit %}disabled{% endif %}>
+        </label>
+        <button class="btn btn--primary btn--block" type="submit"
+                {% if not cfg_can_edit %}disabled{% endif %}>บันทึกเป็นเวอร์ชันใหม่</button>
+        <div class="cfg__hint">บันทึกแล้วยังไม่มีผล — ต้องกด "ใช้เวอร์ชันนี้" อีกครั้ง</div>
+      </div>
+      </form>
+      {% endif %}
 
       {% if cfg_switches %}
       <div class="cfg__group">
