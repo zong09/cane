@@ -683,11 +683,9 @@ class RecordingInsert:
         )
 
 
-def saving(monkeypatch: pytest.MonkeyPatch, profile: str = "paper"):
+def saving(monkeypatch: pytest.MonkeyPatch):
     """แทน `active_settings` ด้วย config จริง และดัก `insert_version`/`activate`"""
-    monkeypatch.setattr(
-        config_repo, "active_settings", lambda conn, p: a_config(p if p == profile else p)
-    )
+    monkeypatch.setattr(config_repo, "active_settings", lambda conn, p: a_config(p))
     inserted = RecordingInsert()
     activated: list[int] = []
     monkeypatch.setattr(config_repo, "insert_version", inserted)
@@ -832,3 +830,121 @@ def test_saving_with_no_active_version_is_refused_rather_than_inventing_defaults
     assert response.status_code == 200
     assert "cane db seed" in response.text
     assert inserted.calls == []
+
+
+# ── เปิดใช้เวอร์ชัน · ใบ 21 ───────────────────────────────────────────────────
+
+
+def a_version(version_id: int, version: int, *, is_active: bool = False):
+    return config_repo.ConfigVersion(
+        id=version_id,
+        profile="paper",
+        version=version,
+        source="console",
+        note=None,
+        created_ts=NOW,
+        created_by_user_id=7,
+        is_active=is_active,
+    )
+
+
+def with_history(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """ประวัติสองเวอร์ชันของ paper · คืนลิสต์ที่ `activate()` จะเขียนลงไป"""
+    monkeypatch.setattr(config_repo, "active_settings", lambda conn, p: a_config(p))
+    # live มีเวอร์ชันของตัวเองด้วย — ถ้าปล่อยว่าง เทสต์ข้ามโปรไฟล์จะผ่านเพราะ
+    # "ไม่มีเวอร์ชันเลย" ไม่ใช่เพราะด่านความเป็นเจ้าของทำงาน
+    monkeypatch.setattr(
+        config_repo,
+        "versions",
+        lambda conn, profile: [a_version(2, 2), a_version(1, 1, is_active=True)]
+        if profile == "paper"
+        else [a_version(5, 1, is_active=True)],
+    )
+    activated: list[int] = []
+    monkeypatch.setattr(
+        config_repo, "activate", lambda conn, version_id: activated.append(version_id)
+    )
+    return activated
+
+
+def test_the_activate_button_opens_the_step_up_modal_instead_of_firing_directly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """spec/09 §step-up TOTP — รหัสต้องมากับคำขอที่ลงมือ ปุ่มจึงเปิด modal ก่อน"""
+    with_history(monkeypatch)
+    client, _ = build()
+    with client:
+        page = client.get("/config").text
+
+    assert 'hx-get="/partials/config/paper/activate/2"' in page
+    # เวอร์ชันที่เปิดใช้อยู่แล้วไม่มีปุ่มให้กดซ้ำ
+    assert 'hx-get="/partials/config/paper/activate/1"' not in page
+
+
+def test_activating_without_the_right_code_is_refused_with_the_modal_not_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """403 อยู่ในลิสต์ `responseHandling` ของ `base.html` จึง swap ขึ้นจอได้จริง"""
+    activated = with_history(monkeypatch)
+    client, _ = build()
+    with client:
+        response = client.post("/api/paper/config/2/activate", data={"step_up_code": "000000"})
+
+    assert response.status_code == 403
+    assert 'class="modal__warn"' in response.text
+    assert 'name="step_up_code"' in response.text
+    assert 'hx-post="/api/paper/config/2/activate"' in response.text
+    assert activated == []
+
+
+def test_activating_moves_the_pointer_and_closes_the_modal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    activated = with_history(monkeypatch)
+    client, _ = build()
+    with client:
+        response = client.post("/api/paper/config/2/activate", data=GOOD_CODE)
+
+    assert response.status_code == 200
+    assert activated == [2]
+    # การ์ดกลับไปแบบ out-of-band แล้วเหลือความว่างมาแทน modal — modal จึงปิดเอง
+    assert 'hx-swap-oob="true"' in response.text
+    assert "เปิดใช้เวอร์ชัน v2 แล้ว" in response.text
+
+
+def test_activating_a_version_that_belongs_to_the_other_profile_is_not_found(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`activate()` เลื่อนตัวชี้ของ profile ที่อยู่ในแถว ไม่ใช่ของที่อยู่ใน URL
+
+    live มีเวอร์ชันของตัวเองอยู่ (id 5) · id 2 เป็นของ paper — ถ้าด่านนี้หายไป
+    คำขอนี้จะไปเปิดใช้เวอร์ชันของ paper โดยที่ URL บอกว่ากำลังทำอะไรกับ live
+    """
+    activated = with_history(monkeypatch)
+    client, _ = build()
+    with client:
+        response = client.post("/api/live/config/2/activate", data=GOOD_CODE)
+
+    assert response.status_code == 404
+    assert activated == []
+
+
+def test_a_version_that_does_not_exist_cannot_be_activated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with_history(monkeypatch)
+    client, _ = build()
+    with client:
+        assert client.get("/partials/config/paper/activate/404").status_code == 404
+
+
+def test_someone_without_edit_profile_cannot_activate_anything(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    activated = with_history(monkeypatch)
+    client, _ = build(role="VIEWER")
+    with client:
+        response = client.post("/api/paper/config/2/activate", data=GOOD_CODE)
+
+    assert response.status_code == 403
+    assert activated == []

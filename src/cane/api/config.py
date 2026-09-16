@@ -34,7 +34,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import Connection, Engine
 
@@ -47,6 +47,7 @@ from cane.api.deps import (
     require_profile,
 )
 from cane.api.templating import templates
+from cane.auth import service
 from cane.config import diff as config_diff
 from cane.config.settings import Loc, Settings
 from cane.config.validate import ConfigError, Problem, validate_settings
@@ -426,6 +427,7 @@ def page_context(
     errors: Mapping[str, Problem] | None = None,
     unplaced: tuple[Problem, ...] = (),
     saved: str = "",
+    saved_note: str = "",
 ) -> dict[str, object]:
     """ทุกอย่างที่ `partials/config_body.html` ต้องใช้ · คีย์ขึ้นต้นด้วย `cfg_` ทั้งหมด
 
@@ -459,6 +461,8 @@ def page_context(
         "cfg_errors": found,
         "cfg_unplaced": unplaced,
         "cfg_saved": saved,
+        "cfg_saved_note": saved_note,
+        "cfg_oob": False,
         "cfg_switches": _switches(settings),
         "cfg_history": _history(conn, profile),
         "cfg_can_edit": perms.allowed(conn, role=user.role, cap="edit_profile"),
@@ -512,6 +516,7 @@ def _rendered(
     errors: Mapping[str, Problem] | None = None,
     unplaced: tuple[Problem, ...] = (),
     saved: str = "",
+    saved_note: str = "",
 ) -> HTMLResponse:
     with db.connect() as conn:
         ctx = page_context(
@@ -523,6 +528,7 @@ def _rendered(
             errors=errors,
             unplaced=unplaced,
             saved=saved,
+            saved_note=saved_note,
         )
     return templates.TemplateResponse(request, "partials/config_body.html", ctx)
 
@@ -601,4 +607,119 @@ def save(
     return _rendered(
         request, db, sup, profile=target, user=user, mode=mode,
         saved=f"บันทึกเป็นเวอร์ชัน v{head.version} แล้ว — ยังไม่เปิดใช้",
+        saved_note='กด "ใช้เวอร์ชันนี้" ในประวัติเพื่อให้ engine อ่านค่าชุดใหม่',
     )
+
+
+def _owned(conn: Connection, profile: str, version_id: int) -> config_repo.ConfigVersion:
+    """เวอร์ชันที่ไม่ใช่ของ profile นี้ = **404**
+
+    `activate()` เลื่อนตัวชี้ของ profile ที่อยู่ในแถวที่มันอ่าน ไม่ใช่ของ profile ที่
+    อยู่ใน URL · ถ้าไม่กันไว้ `/api/paper/config/<id ของ live>/activate` จะไปเปิดใช้
+    เวอร์ชันของ live โดยที่หน้าจอบอกว่ากำลังทำอะไรกับ paper
+    """
+    for head in config_repo.versions(conn, profile):
+        if head.id == version_id:
+            return head
+    raise HTTPException(status_code=404, detail=f"ไม่มีเวอร์ชัน {version_id} ของ {profile}")
+
+
+@router.get(
+    "/partials/config/{profile}/activate/{version_id}", response_class=HTMLResponse
+)
+def activate_modal(
+    profile: str,
+    version_id: int,
+    request: Request,
+    db: Engine = Depends(get_db),
+    _: User = Depends(require_cap("edit_profile")),
+) -> HTMLResponse:
+    target = require_profile(profile)
+    with db.connect() as conn:
+        head = _owned(conn, target, version_id)
+    return templates.TemplateResponse(
+        request,
+        "partials/stepup_modal.html",
+        {
+            "title": f"ใช้เวอร์ชัน v{head.version} · {target}",
+            "detail": "engine จะอ่านค่าชุดนี้ในรอบถัดไป · เวอร์ชันเดิมยังอ่านย้อนหลังได้",
+            "action": f"/api/{target}/config/{version_id}/activate",
+        },
+    )
+
+
+@router.post("/api/{profile}/config/{version_id}/activate", response_class=HTMLResponse)
+def activate(
+    profile: str,
+    version_id: int,
+    request: Request,
+    step_up_code: str = Form(""),
+    db: Engine = Depends(get_db),
+    sup: Supervisor = Depends(get_sup),
+    user: User = Depends(require_cap("edit_profile")),
+    mode: str = Depends(current_mode),
+) -> HTMLResponse:
+    """เลื่อนตัวชี้ — จังหวะเดียวของหน้านี้ที่เปลี่ยนสิ่งที่ engine อ่านจริง
+
+    ยืนยัน step-up **ในตัว handler** แบบเดียวกับ `session.switch_mode` ไม่ใช่ผ่าน
+    dependency `require_step_up` · `StepUpFailed` ถูกแปลงที่ `app.py` ด้วย handler ที่
+    แกะ URL เป็น `/api/{profile}/engine/{action}` ตายตัว — เส้นทางนี้จะได้ modal ที่
+    ยิงกลับไปที่ router ของ engine ซึ่งผิดทั้งเส้น
+
+    คืน 403 พร้อม modal ใบเดิม (403 อยู่ในลิสต์ `responseHandling` ของ `base.html`
+    จึง swap ได้จริง) · สำเร็จแล้วคืนเนื้อหน้าแบบ out-of-band ซึ่งทำให้ modal ปิดเอง
+    """
+    target = require_profile(profile)
+    now = now_ms()
+
+    with db.connect() as conn:
+        head = _owned(conn, target, version_id)
+
+    with db.begin() as conn:
+        ok = service.verify_step_up(conn, user, step_up_code.strip(), now=now)
+        if not ok:
+            audit.record(
+                conn,
+                action="config.activate_refused",
+                ts=now,
+                actor_user_id=user.id,
+                target=f"{target} v{head.version}",
+                ip=client_ip(request),
+            )
+    if not ok:
+        return templates.TemplateResponse(
+            request,
+            "partials/stepup_modal.html",
+            {
+                "title": f"ใช้เวอร์ชัน v{head.version} · {target}",
+                "detail": "รหัสเปลี่ยนทุก 30 วินาที — ใช้รหัสล่าสุดจากแอป",
+                "action": f"/api/{target}/config/{version_id}/activate",
+                "error": "รหัส 6 หลักไม่ถูกต้อง",
+            },
+            status_code=403,
+        )
+
+    with db.begin() as conn:
+        config_repo.activate(conn, version_id)
+        audit.record(
+            conn,
+            action="config.activate",
+            ts=now,
+            actor_user_id=user.id,
+            target=f"{target} v{head.version}",
+            ip=client_ip(request),
+            step_up_verified=True,
+        )
+
+    with db.connect() as conn:
+        ctx = page_context(
+            conn,
+            sup,
+            profile=target,
+            user=user,
+            mode=mode,
+            saved=f"เปิดใช้เวอร์ชัน v{head.version} แล้ว",
+            saved_note="engine อ่านค่าชุดนี้ในรอบถัดไป · เวอร์ชันเดิมยังอ่านย้อนหลังได้",
+        )
+    ctx["cfg_oob"] = True
+    return templates.TemplateResponse(request, "partials/config_body.html", ctx)

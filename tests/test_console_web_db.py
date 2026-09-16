@@ -12,18 +12,19 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Connection
+from sqlalchemy import Connection, select
 
 from cane.api.app import create_app
 from cane.api.deps import signed_in
 from cane.auth import secrets as auth_secrets
+from cane.auth import totp
 from cane.auth.matrix import DEFAULT_MATRIX
 from cane.config import load_profile
 from cane.db.repo import config as config_repo
 from cane.db.repo import permissions as perms
 from cane.db.repo import sessions as sessions_repo
 from cane.db.repo import users as users_repo
-from cane.db.schema import AUTH_TABLES, CONFIG_TABLES, engine_state
+from cane.db.schema import AUTH_TABLES, CONFIG_TABLES, engine_state, user_audit_log
 from cane.db.types import now_ms
 from cane.engine.state import PROFILES, STOPPED
 
@@ -251,3 +252,65 @@ def test_a_form_that_breaks_three_rules_writes_no_row_at_all(
     assert "ขาด consecutive_loss_breaker" in page
     assert "ไม่ระบุ exchange" in page
     assert len(config_repo.versions(db, "live")) == before
+
+
+def right_now_code(secret: str = "JBSWY3DPEHPK3PXP") -> dict[str, str]:
+    """รหัสจริงของวินาทีนี้ — `owner` ผูก secret ตัวนี้ไว้"""
+    return {"step_up_code": totp.code(secret, totp.counter_at(now_ms()))}
+
+
+def test_activating_moves_the_pointer_and_closes_the_previous_version(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    """`is_active` เป็นตัวชี้ · active ได้ profile ละหนึ่งเวอร์ชัน (partial unique index)"""
+    first = seeded(db, "paper")
+    draft = config_repo.insert_version(
+        db, load_profile("config/paper.toml"), source="console"
+    )
+
+    with client:
+        response = client.post(
+            f"/api/paper/config/{draft.id}/activate", data=right_now_code()
+        )
+
+    assert response.status_code == 200
+    assert config_repo.active_version(db, "paper").id == draft.id
+    assert [v.is_active for v in config_repo.versions(db, "paper")] == [True, False]
+    assert first.id != draft.id
+
+
+def test_a_wrong_step_up_code_leaves_the_pointer_where_it_was(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    """เกณฑ์เสร็จข้อสามของใบ 21"""
+    active = seeded(db, "paper")
+    draft = config_repo.insert_version(
+        db, load_profile("config/paper.toml"), source="console"
+    )
+
+    with client:
+        response = client.post(
+            f"/api/paper/config/{draft.id}/activate", data={"step_up_code": "000000"}
+        )
+
+    assert response.status_code == 403
+    assert config_repo.active_version(db, "paper").id == active.id
+
+
+def test_activating_leaves_an_audit_row_marked_step_up_verified(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    """spec/09 §step-up TOTP — สิ่งที่ทำต้องบันทึก ไม่ใช่แค่ด่านที่ผ่าน"""
+    seeded(db, "paper")
+    draft = config_repo.insert_version(
+        db, load_profile("config/paper.toml"), source="console"
+    )
+
+    with client:
+        client.post(f"/api/paper/config/{draft.id}/activate", data=right_now_code())
+
+    row = db.execute(
+        select(user_audit_log).where(user_audit_log.c.action == "config.activate")
+    ).one()
+    assert row.step_up_verified is True
+    assert row.target == f"paper v{draft.version}"
