@@ -49,7 +49,8 @@
     <div class="symbols__list">
       {% for row in symbols %}
       <a class="sym" href="/symbols">
-        <span class="sym__dot" style="background:{{ row.dot }}"></span>
+        {# สีมาจาก token `--zone-*` ใน console.css ที่เดียว · Python ถือแค่ชื่อโซน #}
+      <span class="sym__dot" style="background:var(--zone-{{ row.zone | lower }})"></span>
         <span class="sym__pair">{{ row.pair }}</span>
       </a>
       {% else %}

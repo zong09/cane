@@ -12,9 +12,11 @@ from importlib.metadata import version
 from sqlalchemy import Connection
 
 from cane.db.repo.users import User
+from cane.db.types import store_symbol
 from cane.config.settings import Settings
 from cane.config.validate import ConfigError
 from cane.db.repo import config as config_repo
+from cane.db.repo import decisions as decisions_repo
 from cane.engine.state import PROFILES
 from cane.engine.supervisor import EngineView, Supervisor
 
@@ -32,9 +34,12 @@ NAV: tuple[tuple[str, str, int], ...] = (
 #: กลุ่ม "ทั้งระบบ" — ไม่ผูกกับโหมด จึงไม่มีเลข ใช้จุดเป็น marker แทน
 GLOBAL_NAV: tuple[tuple[str, str, int], ...] = (("users", "ผู้ใช้", 20),)
 
-#: สีจุดของ symbol ใน rail · ใบ 19 ยังไม่มีการคำนวณโซน (เป็นของใบ 22) จึงใช้สี
-#: BLACK ของ zone palette ซึ่งแปลว่า "ไม่มีข้อมูล" อยู่แล้ว — ดีกว่าเดาสีเขียวไว้ก่อน
-ZONE_UNKNOWN = "#c3d4e0"
+#: โซนของเหรียญที่ยังไม่มีบันทึกการตัดสินใจ · `BLACK` แปลว่า "ไม่เข้าเงื่อนไขสีใดเลย"
+#: อยู่แล้วตาม spec/02 §นิยามโซนทั้ง 6 สี จึงไม่ต้องคิดค่าพิเศษขึ้นมาใหม่
+#:
+#: เก็บเป็น **ชื่อโซน ไม่ใช่รหัสสี** — สีอยู่ที่ `--zone-*` ใน `console.css` ที่เดียว
+#: การถือ hex ไว้ใน Python ด้วยแปลว่ามีสองที่ที่ต้องแก้ตรงกันตลอดไป
+ZONE_UNKNOWN = "BLACK"
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,8 +62,10 @@ def _initials(name: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class SymbolRow:
+    """หนึ่งบรรทัดใน rail · `zone` เป็นชื่อโซนตัวใหญ่ (`GREEN` … `BLACK`)"""
+
     pair: str
-    dot: str
+    zone: str
 
 
 def profile_chip(profile: str, settings: Settings | None) -> Chip:
@@ -107,6 +114,30 @@ def _settings_or_none(conn: Connection, profile: str) -> Settings | None:
         return None
 
 
+def _rail(conn: Connection, settings: Settings | None, *, mode: str) -> list[SymbolRow]:
+    """เหรียญที่เปิดใช้ พร้อมโซนล่าสุดของแต่ละตัว
+
+    โซนมาจากตาราง `decisions` ไม่ใช่การคำนวณใหม่ในคอนโซล — เหรียญที่ยังไม่มีบันทึก
+    (เช่นคู่ที่เพิ่งเพิ่ม หรือฐานที่ engine ยังไม่เคยเดิน) ได้ `BLACK` ซึ่งอ่านว่า
+    "ยังไม่มีข้อมูล" ไม่ใช่ศูนย์หรือสีเขียวที่เดาไว้ก่อน
+    """
+    if settings is None:
+        return []
+    latest = decisions_repo.latest_per_symbol(conn, mode, settings.timeframe)
+    return [
+        SymbolRow(
+            pair=sym.symbol,
+            zone=(
+                found.zone
+                if (found := latest.get((sym.market, store_symbol(sym.symbol))))
+                else ZONE_UNKNOWN
+            ),
+        )
+        for sym in settings.symbols
+        if sym.enabled
+    ]
+
+
 def build(
     conn: Connection,
     sup: Supervisor,
@@ -119,11 +150,7 @@ def build(
     settings = _settings_or_none(conn, mode)
     other = PROFILES[1] if mode == PROFILES[0] else PROFILES[0]
 
-    symbols = (
-        [SymbolRow(pair=s.symbol, dot=ZONE_UNKNOWN) for s in settings.symbols if s.enabled]
-        if settings is not None
-        else []
-    )
+    symbols = _rail(conn, settings, mode=mode)
 
     return {
         "app_version": version("cane"),
