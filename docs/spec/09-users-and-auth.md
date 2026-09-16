@@ -130,7 +130,8 @@ login ไม่ใช่ที่หน้าจอ ถ้า `totp_enrolled_ts 
 | `POST /api/{profile}/engine/start` · `/stop` | `engine_control` | **ต้อง** |
 | `POST /api/{profile}/killswitch/latch` | `killswitch_latch` | – |
 | `POST /api/{profile}/killswitch/unlatch` | `killswitch_unlatch` | **ต้อง** |
-| `POST /api/{profile}/config` (รวม `allow_short` และค่าแจ้งเตือน) | `edit_profile` | **ต้อง** |
+| `POST /api/{profile}/config` (รวม `allow_short` และค่าแจ้งเตือน) — สร้างร่าง | `edit_profile` | – |
+| `POST /api/{profile}/config/{version_id}/activate` — เลื่อนตัวชี้ | `edit_profile` | **ต้อง** |
 | `POST /api/{profile}/config/dry_run` | `toggle_dry_run` | **ต้อง** |
 | `POST /api/{profile}/symbols` · `DELETE …` | `edit_symbols` | **ต้อง** |
 | `POST /api/{profile}/positions/{symbol}/close` | `close_position_manual` | **ต้อง** |
@@ -139,6 +140,12 @@ login ไม่ใช่ที่หน้าจอ ถ้า `totp_enrolled_ts 
 | `POST /api/users/{id}/reset-2fa` | `reset_other_2fa` | **ต้อง** |
 | `GET /api/{profile}/records/export` | `export_records` | – |
 | `POST /api/session/mode` | — (ทุก role) | **ต้อง เมื่อเป้าหมายเป็น `live`** |
+
+> **step-up ของการแก้ config ย้ายไปอยู่ที่การเปิดใช้** (2026-09-16) · เดิม
+> `POST /api/{profile}/config` สร้างเวอร์ชันแล้วเลื่อนตัวชี้ในคำขอเดียว ด่านจึงอยู่ที่นั่น ·
+> ตอนนี้การบันทึกได้เวอร์ชันที่ `is_active = false` ซึ่ง **ไม่มีใครอ่าน** — engine อ่านเฉพาะ
+> เวอร์ชันที่ active · จังหวะที่เปลี่ยนสิ่งที่ระบบใช้จริงคือ `activate` ด่านจึงต้องอยู่ตรงนั้น
+> ไม่ใช่ตรงที่เขียนแถวลงตาราง
 
 **ค่าเริ่มต้นของ endpoint ที่ยังไม่มีในตารางนี้คือ 403** — ไม่ใช่ "ผ่านเพราะยังไม่ได้ผูกสิทธิ์"
 endpoint ใหม่ที่ลืมผูกต้องพังตอนเรียกครั้งแรก ตามแบบเดียวกับ GRANT ใน

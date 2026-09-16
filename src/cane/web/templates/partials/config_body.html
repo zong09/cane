@@ -5,7 +5,7 @@
   badge ข้างรายการที่ต้องแก้เป็น **path ของฟิลด์** ไม่ใช่เลขบรรทัดอย่างที่ mockup
   วาดไว้ · ไม่มีไฟล์ก็ไม่มีบรรทัด (spec/07 §path ของฟิลด์ที่ผิด)
 #}
-<div id="config-body" class="cfg">
+<div id="config-body"{% if cfg_oob %} hx-swap-oob="true"{% endif %} class="cfg">
   <div class="cfg__tabs">
     {% for tab in cfg_tabs %}
     <button class="cfg__tab{% if tab.current %} cfg__tab--on{% endif %}" type="button"
@@ -60,7 +60,7 @@
   <div class="cfg__banner cfg__banner--ok">
     <div>
       <div class="cfg__bannertitle">{{ cfg_saved }}</div>
-      <div class="cfg__bannernote">กด "ใช้เวอร์ชันนี้" ในประวัติเพื่อให้ engine อ่านค่าชุดใหม่</div>
+      {% if cfg_saved_note %}<div class="cfg__bannernote">{{ cfg_saved_note }}</div>{% endif %}
     </div>
   </div>
   {% endif %}
@@ -211,6 +211,12 @@
           </div>
           <div class="cfg__versionmeta">{{ row.when }} · {{ row.who }}</div>
           {% if row.note %}<div class="cfg__versionnote">{{ row.note }}</div>{% endif %}
+          {% if cfg_can_edit and not row.is_active %}
+          {# ยิงเปิด modal ก่อน ไม่ยิง activate ตรง — spec/09 §step-up TOTP #}
+          <button class="btn btn--ghost btn--xs" type="button"
+                  hx-get="/partials/config/{{ cfg_profile }}/activate/{{ row.id }}"
+                  hx-target="#modal-slot" hx-swap="innerHTML">ใช้เวอร์ชันนี้</button>
+          {% endif %}
         </div>
         {% else %}
         <div class="cfg__hint">ยังไม่มีเวอร์ชันของโปรไฟล์นี้เลย</div>

@@ -186,7 +186,8 @@ start  →  [ วนรอบ: รอแท่งปิด → อ่าน conf
 | `POST /api/{profile}/killswitch/latch` | `latched = true` พร้อมคนกดและเหตุ | no-op คืน 200 — **การกดหยุดฉุกเฉินซ้ำต้องไม่เคยล้มเหลว** |
 | `POST /api/{profile}/killswitch/unlatch` | `latched = false` | no-op คืน 200 |
 | `POST /api/session/mode` | เปลี่ยนโหมดที่ session นี้ดู · **ไม่แตะ engine** | idempotent |
-| `POST /api/{profile}/config` | สร้าง **เวอร์ชันใหม่** แล้วเลื่อนตัวชี้ ([ข้อ 18](../decisions.md)) | สร้างเวอร์ชันใหม่อีกใบที่เนื้อเหมือนกัน — ไม่ใช่ error |
+| `POST /api/{profile}/config` | สร้าง **เวอร์ชันใหม่** ที่ยังไม่เปิดใช้ ([ข้อ 18](../decisions.md)) — **ไม่เลื่อนตัวชี้** | สร้างเวอร์ชันใหม่อีกใบที่เนื้อเหมือนกัน — ไม่ใช่ error |
+| `POST /api/{profile}/config/{version_id}/activate` | เลื่อนตัวชี้ไปที่เวอร์ชันนั้น · เวอร์ชันของอีก profile = 404 | ตัวชี้ไม่เปลี่ยน คืน 200 — แต่กินรหัส TOTP ไปหนึ่งรอบและได้ audit อีกแถว ไม่ใช่ no-op เงียบ |
 | `POST /api/{profile}/config/dry_run` | เวอร์ชันใหม่ที่ต่างกันฟิลด์เดียว — แยก endpoint เพราะสิทธิ์ต่างกัน | เวอร์ชันใหม่ที่เนื้อเหมือนกัน |
 | `POST /api/{profile}/symbols` · `DELETE /api/{profile}/symbols/{symbol}` | เวอร์ชันใหม่ที่บล็อก `[[symbols]]` ต่างไป | เวอร์ชันใหม่ที่เนื้อเหมือนกัน |
 | `POST /api/{profile}/positions/{symbol}/close` | ปิดไม้ฉุกเฉิน — **ไม่แตะ engine และไม่แตะ kill switch** | **ไม่ idempotent** — ปิดไม้ที่ปิดแล้วคืน 409 ไม่ใช่ 200 |
