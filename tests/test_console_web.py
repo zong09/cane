@@ -178,6 +178,14 @@ def no_db_reads(monkeypatch: pytest.MonkeyPatch) -> None:
         "read",
         lambda conn, profile: killswitch_repo.KillSwitch(profile=profile, latched=False),
     )
+    # หน้าบันทึก (ใบ 24) อ่านหัวของ `decisions` ทั้งโปรไฟล์ทีละหน้า · ตัวนับของชิป
+    # เป็น `count(*) FILTER` ที่ `FakeConn` ตอบไม่ได้ ของจริงอยู่ที่ชุด db
+    monkeypatch.setattr(decisions_repo, "journal", lambda conn, profile, **kw: [])
+    monkeypatch.setattr(
+        decisions_repo,
+        "journal_counts",
+        lambda conn, profile: dict.fromkeys(decisions_repo.CHIPS, 0),
+    )
     monkeypatch.setattr(users_repo, "everyone", lambda conn: [])
     monkeypatch.setattr(perms, "allowed", lambda conn, *, role, cap: role != "VIEWER")
     monkeypatch.setattr(
@@ -327,8 +335,9 @@ def test_the_rail_renders_both_groups_and_every_menu_item() -> None:
     assert "OWNER" in page and "นพ" in page  # ตัวย่อของ "นภัส พ."
 
 
-#: `config` (21) `overview` (22) `risk` (23) มีเนื้อของตัวเองแล้ว ที่เหลือยังเป็นโครง
-@pytest.mark.parametrize("slug", ["symbols", "log", "report", "users"])
+#: `config` (21) `overview` (22) `risk` (23) `log` (24) มีเนื้อของตัวเองแล้ว
+#: ที่เหลือยังเป็นโครง
+@pytest.mark.parametrize("slug", ["symbols", "report", "users"])
 def test_every_menu_item_opens_even_though_its_body_belongs_to_a_later_ticket(
     slug: str
 ) -> None:
@@ -1672,3 +1681,49 @@ def test_paper_shows_no_button_for_a_switch_the_database_pins(
 
     assert "ปิดโหมดทดลอง" not in page
     assert "paper บังคับเปิดที่ฐาน" in page
+
+
+# ── หน้าบันทึก · ใบ 24 ────────────────────────────────────────────────────────
+
+
+def test_the_journal_asks_for_read_decisions_at_both_doors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """spec/09 ผูก `records` ไว้กับ `read_decisions` — เปลือกกับเนื้อต้องขอตัวเดียวกัน
+
+    ถ้าหน้า HTML ขอแค่ `view_overview` แล้ว partial ขอ `read_decisions` role ที่มี
+    สิทธิ์แรกอย่างเดียวจะเปิดหน้าได้ แล้วตารางกลับ 403 เงียบๆ เพราะ htmx กลืน 4xx
+    """
+    asked: list[str] = []
+
+    def record(conn, *, role: str, cap: str) -> bool:
+        asked.append(cap)
+        return True
+
+    monkeypatch.setattr(perms, "allowed", record)
+    client, _ = build()
+    with client:
+        client.get("/log")
+        client.get("/partials/log")
+        client.get("/partials/log/rows?before_ts=1&before_id=1")
+
+    assert asked == ["read_decisions", "read_decisions", "read_decisions"]
+
+
+def test_every_chip_of_the_journal_is_on_the_page_even_with_nothing_to_count() -> None:
+    client, _ = build()
+    with client:
+        page = client.get("/log").text
+
+    for label in (
+        "ทั้งหมด",
+        "มีออเดอร์",
+        "ฝั่ง long",
+        "ฝั่ง short",
+        "กลับข้าง",
+        "risk ปฏิเสธ",
+        "LLM ตอบไม่ได้",
+        "ถูกเพดานตัด",
+    ):
+        assert label in page
+    assert "ยังไม่มีบันทึกในโปรไฟล์นี้" in page

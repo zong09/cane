@@ -21,6 +21,7 @@ from sqlalchemy import Engine
 from cane.api import auth_routes
 from cane.api import config as config_routes
 from cane.api import engine as engine_routes
+from cane.api import log as log_routes
 from cane.api import overview as overview_routes
 from cane.api import pages
 from cane.api import risk as risk_routes
@@ -62,6 +63,7 @@ def create_app(
     app.include_router(engine_routes.router)
     app.include_router(config_routes.router)
     app.include_router(overview_routes.router)
+    app.include_router(log_routes.router)
     app.include_router(risk_routes.router)
     app.include_router(session.router)
 

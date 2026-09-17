@@ -1,0 +1,40 @@
+{#
+  เนื้อของหน้าบันทึก · ชิป + ตาราง + ปุ่มแสดงเพิ่ม
+
+  ฟัง `cane:mode` แบบเดียวกับหน้าภาพรวม — การสลับโหมด swap แค่การ์ด PROFILE กับ
+  engine ถ้าไม่ฟัง ตัวนับของชิปจะค้างอยู่ที่โหมดเดิมทั้งที่แถบบนเปลี่ยนไปแล้ว ·
+  ยิงกลับพร้อม `chip` ปัจจุบันเพื่อไม่ให้การสลับโหมดรีเซ็ตตัวกรองที่คนเลือกไว้
+
+  กดชิปแล้ว swap ทั้งก้อน ไม่ใช่แค่แถว เพราะชิปที่ active เปลี่ยน และ cursor ของ
+  ปุ่มแสดงเพิ่มต้องเริ่มนับใหม่ทั้งชุด
+#}
+<div id="log-body" class="lg"
+     hx-get="/partials/log?chip={{ lg_chip }}"
+     hx-trigger="cane:mode from:body" hx-swap="outerHTML">
+
+  <div class="lg__chips">
+    {% for chip in lg_chips %}
+    <button class="lg__chip lg__chip--{{ chip.key }}{% if chip.active %} lg__chip--on{% endif %}"
+            hx-get="/partials/log?chip={{ chip.key }}"
+            hx-target="#log-body" hx-swap="outerHTML">
+      {{ chip.label }} <span class="lg__count">{{ chip.count }}</span>
+    </button>
+    {% endfor %}
+  </div>
+
+  <div class="lg__card">
+    <div class="lgtable">
+      <div class="lgtable__row lgtable__head">
+        <div>BAR</div>
+        <div>SYMBOL</div>
+        <div>ZONE</div>
+        <div>SIDE</div>
+        <div>SIGNAL</div>
+        <div>FACTORS</div>
+        <div>SIZE</div>
+        <div class="lgtable__head--th">ผลลัพธ์</div>
+      </div>
+      {% include "partials/log_rows.html" %}
+    </div>
+  </div>
+</div>

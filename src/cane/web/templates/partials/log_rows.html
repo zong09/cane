@@ -1,0 +1,60 @@
+{#
+  แถวของตารางบันทึก หนึ่งชุด · ใช้ทั้งตอน render หน้าเต็มและตอนกด `แสดงเพิ่ม`
+
+  ปุ่มแสดงเพิ่ม swap **ตัวเอง** (`outerHTML` โดยไม่ระบุ target) คำตอบคือแถวชุดถัดไป
+  บวกปุ่มใบใหม่ ซึ่งลงตรงที่ปุ่มเดิมอยู่พอดี = ต่อท้ายตาราง · ถ้าเปลี่ยนเป็น
+  `beforeend` ที่ตัวตาราง แถวใหม่จะไปอยู่ **หลัง** ปุ่ม แล้วปุ่มจะค้างกลางตาราง
+
+  `lg_next` เป็น `None` เมื่อหมดแล้ว — ปุ่มหายไปเอง ไม่ต้องมีสถานะ disabled
+#}
+{% for line in lg_lines %}
+<div class="lgtable__row{% if line.tint %} lgtable__row--{{ line.tint }}{% endif %}">
+  <div>{{ line.bar }}</div>
+  <div class="lgtable__pair">{{ line.pair }}<span class="lgtable__sub">{{ line.market }}</span></div>
+  <div>
+    <span class="lgtable__zone" style="border-left-color:var(--zone-{{ line.zone | lower }})">{{ line.zone }}</span>
+  </div>
+  <div>
+    <span class="lgtable__side lgtable__side--{{ line.side | lower }}">{{ line.side }}</span>
+  </div>
+  <div class="lgtable__sig{% if line.signal_side %} lgtable__sig--{{ line.signal_side }}{% endif %}">
+    {{ line.signal }}
+  </div>
+  {% if line.factors_kind == "none" %}
+  <div class="lgtable__muted">ไม่เรียก</div>
+  {% elif line.factors_kind == "fallback" %}
+  <div><span class="lgtable__fallback">ไม้พื้นฐาน</span></div>
+  {% else %}
+  <div class="lgtable__boxes">
+    {% for slot in range(3) %}
+    <span class="lgtable__box{% if slot < line.factors_filled %} lgtable__box--{{ line.factors_side }}{% endif %}"></span>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if line.capped %}
+  <div class="lgtable__size">
+    <span class="lgtable__struck">{{ line.size_from }}</span>
+    <span>→ {{ line.size_to }}</span>
+    <span class="lgtable__cap">เพดาน</span>
+  </div>
+  {% elif line.size_to %}
+  <div class="lgtable__num">{{ line.size_from }} → {{ line.size_to }}</div>
+  {% else %}
+  <div class="lgtable__muted">{{ line.size_from }}</div>
+  {% endif %}
+  <div class="lgtable__out{% if line.outcome_kind %} lgtable__out--{{ line.outcome_kind }}{% endif %}">
+    {{ line.outcome }}
+  </div>
+</div>
+{% else %}
+<div class="lgtable__empty">
+  ยังไม่มีบันทึกในโปรไฟล์นี้ — engine ยังไม่ได้เดินสักรอบ (ใบ 12)
+</div>
+{% endfor %}
+{% if lg_next %}
+<button class="lgtable__more"
+        hx-get="/partials/log/rows?chip={{ lg_chip }}&before_ts={{ lg_next[0] }}&before_id={{ lg_next[1] }}"
+        hx-swap="outerHTML">
+  แสดงเพิ่ม
+</button>
+{% endif %}
