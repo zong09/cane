@@ -1125,3 +1125,368 @@ def test_the_other_profile_never_leaks_in(db, live_version, paper_version):
 def test_a_profile_with_no_decisions_yet_is_an_empty_map_not_an_error(db, live_version):
     """ฐานที่ engine ยังไม่เคยเดิน — คอนโซลต้องเปิดได้ ไม่ใช่ 500"""
     assert repo.latest_per_symbol(db, "live", "1d") == {}
+
+
+# ── หน้าบันทึก (ใบ 24) ───────────────────────────────────────────────────────
+
+
+def _journal_run(version_id) -> list[DecisionRecord]:
+    """เก้าแท่งที่ครอบทุกชิปของหน้าบันทึก อย่างน้อยชิปละหนึ่งแถว
+
+    แท่งสุดท้ายซ้ำเวลากับแท่งแรกโดยเจตนา (restart กลางแท่ง) — กุญแจธรรมชาติไม่ unique
+    การเลื่อนหน้าจึงต้องตัดสินด้วย `id` เป็นตัวที่สอง ไม่ใช่เวลาอย่างเดียว
+    """
+
+    def bar(index, **overrides):
+        return quiet_bar(
+            version_id,
+            bar_close_ts=T0 + index * DAY_MS,
+            decided_ts=T0 + index * DAY_MS + 500,
+            leverage=2.0,
+            margin_mode="isolated",
+            **overrides,
+        )
+
+    def order(**overrides):
+        base = {
+            "leg": "open",
+            "order_side": "buy",
+            "order_type": "market",
+            "reduce_only": False,
+            "qty": 0.0005,
+            "client_order_id": "cane-journal",
+            "sent": True,
+            "accepted": True,
+        }
+        return OrderAttempt(**{**base, **overrides})
+
+    passing_risk = (
+        RiskCheck(seq=1, layer="kill_switch", passed=True),
+        RiskCheck(seq=2, layer="daily_loss", passed=True),
+    )
+
+    return [
+        # 1 · ไม่ทำอะไร — เข้าเฉพาะชิป `ทั้งหมด`
+        bar(1),
+        # 2 · เข้าไม้ long จริง
+        bar(
+            2,
+            zone="GREEN",
+            state="BULLISH",
+            long_signal=True,
+            side="long",
+            skip_reason=None,
+            judge_called=True,
+            # LLM ตอบได้ตามปกติ · แถวนี้มีไว้ให้ชิป `LLM ตอบไม่ได้` แยก `false` ออกจาก
+            # "ไม่มีค่า" ได้จริง — ถ้าทุกแถวที่ไม่ fallback เป็น NULL หมด เงื่อนไข
+            # `IS TRUE` กับ `IS NOT NULL` จะนับได้เท่ากันทั้งที่คนละความหมาย
+            llm_fallback=False,
+            factors_present=2,
+            size_rule="confluence",
+            size_pct_formula=45.0,
+            size_pct_final=45.0,
+            capped=False,
+            margin=45.0,
+            notional=90.0,
+            qty=0.00116129,
+            ref_px=77_500.0,
+            risk_checks=passing_risk,
+            orders=(order(client_order_id="cane-2-open", qty=0.00116129),),
+        ),
+        # 3 · เข้าไม้ short ที่ถูกเพดานตัด
+        bar(
+            3,
+            symbol=ETH,
+            zone="RED",
+            state="BEARISH",
+            short_signal=True,
+            side="short",
+            skip_reason=None,
+            judge_called=True,
+            factors_present=3,
+            size_rule="confluence",
+            size_pct_formula=100.0,
+            size_pct_final=50.0,
+            capped=True,
+            margin=50.0,
+            notional=100.0,
+            qty=0.03,
+            ref_px=3_300.0,
+            risk_checks=passing_risk,
+            orders=(
+                order(
+                    order_side="sell",
+                    client_order_id="cane-3-open",
+                    qty=0.03,
+                ),
+            ),
+        ),
+        # 4 · กลับข้างครบสองขา
+        bar(
+            4,
+            zone="RED",
+            state="BULLISH",
+            short_signal=True,
+            side="short",
+            skip_reason=None,
+            judge_called=True,
+            factors_present=2,
+            size_rule="confluence",
+            size_pct_formula=25.0,
+            size_pct_final=25.0,
+            capped=False,
+            margin=25.0,
+            notional=50.0,
+            qty=0.00064516,
+            ref_px=77_500.0,
+            risk_checks=passing_risk,
+            orders=(
+                order(
+                    leg="close",
+                    order_side="sell",
+                    reduce_only=True,
+                    client_order_id="cane-4-close",
+                    qty=0.00116129,
+                ),
+                order(
+                    order_side="sell",
+                    client_order_id="cane-4-open",
+                    qty=0.00064516,
+                ),
+            ),
+            flip=Flip(
+                close_qty_intended=0.00116129,
+                close_qty_filled=0.00116129,
+                residual_qty=0.0,
+                aborted=False,
+            ),
+        ),
+        # 5 · กลับข้างที่ขาปิดไม่ครบ — ขาเปิดไม่ถูกส่ง (spec/03 §โปรโตคอล flip — จุดที่พังแล้วเปิดสถานะสวนกัน)
+        bar(
+            5,
+            zone="RED",
+            state="BULLISH",
+            short_signal=True,
+            skip_reason="flip_aborted",
+            flip=Flip(
+                close_qty_intended=0.00064516,
+                close_qty_filled=0.0003,
+                residual_qty=0.00034516,
+                residual_side="short",
+                aborted=True,
+            ),
+        ),
+        # 6 · risk ปฏิเสธ
+        bar(
+            6,
+            symbol=ETH,
+            zone="GREEN",
+            state="BULLISH",
+            long_signal=True,
+            side="long",
+            skip_reason="risk_rejected",
+            risk_checks=(
+                RiskCheck(seq=1, layer="kill_switch", passed=True),
+                RiskCheck(
+                    seq=2, layer="daily_loss", passed=False, value=3.1, limit_value=3.0
+                ),
+            ),
+        ),
+        # 7 · LLM ตอบไม่ได้ แต่ **ยังลงไม้** ที่ base_pct (decisions #6)
+        bar(
+            7,
+            zone="GREEN",
+            state="BULLISH",
+            long_signal=True,
+            side="long",
+            skip_reason=None,
+            judge_called=True,
+            llm_fallback=True,
+            llm_fallback_reason="timeout",
+            factors_present=0,
+            size_rule="confluence",
+            size_pct_formula=5.0,
+            size_pct_final=5.0,
+            capped=False,
+            margin=5.0,
+            notional=10.0,
+            qty=0.00012903,
+            ref_px=77_500.0,
+            risk_checks=passing_risk,
+            orders=(order(client_order_id="cane-7-open", qty=0.00012903),),
+        ),
+        # 8 · dry run — คำนวณครบแต่ไม่ส่งคำสั่ง
+        bar(
+            8,
+            symbol=ETH,
+            zone="GREEN",
+            state="BULLISH",
+            long_signal=True,
+            side="long",
+            dry_run=True,
+            skip_reason="dry_run",
+            judge_called=True,
+            factors_present=1,
+            size_rule="confluence",
+            size_pct_formula=15.0,
+            size_pct_final=15.0,
+            capped=False,
+        ),
+        # 9 · restart กลางแท่งที่ 1 — เวลาเดียวกับแถวแรก คนละ `id`
+        bar(1),
+    ]
+
+
+#: การนับแบบที่คนตรวจจะเขียนเอง — SQL ดิบ ไม่ผ่านนิพจน์ชุดเดียวกับที่ repo ใช้
+#:
+#: เกณฑ์เสร็จของใบ 24 คือ "ตัวนับของทุก chip ตรงกับการนับจาก SQL บนตารางเดียวกัน"
+#: ถ้าเทียบกับนิพจน์ของ repo เอง เทสต์จะผ่านต่อไปแม้เงื่อนไขทั้งชุดจะผิดพร้อมกัน
+_COUNT_SQL = {
+    "all": "",
+    "orders": "AND skip_reason IS NULL",
+    "long": "AND side = 'long'",
+    "short": "AND side = 'short'",
+    "flip": (
+        "AND id IN (SELECT decision_id FROM decision_flip WHERE profile = 'live')"
+    ),
+    "risk": "AND skip_reason = 'risk_rejected'",
+    "llm": "AND llm_fallback",
+    "capped": "AND capped",
+}
+
+
+@pytest.fixture
+def journal_rows(db, live_version):
+    for record in _journal_run(live_version):
+        repo.insert_decision(db, record)
+
+
+def test_every_chip_counts_the_same_rows_that_sql_counts(db, journal_rows):
+    counts = repo.journal_counts(db, "live")
+
+    assert counts["all"] == 9, "fixture ต้องมีแถวจริง ไม่งั้นทุกชิปตรงกันที่ศูนย์"
+    for chip, clause in _COUNT_SQL.items():
+        expected = db.execute(
+            text(f"SELECT count(*) FROM decisions WHERE profile = 'live' {clause}")
+        ).scalar_one()
+        assert counts[chip] == expected, f"ชิป {chip}"
+
+
+def test_a_profile_with_no_decisions_counts_zero_for_every_chip(db, live_version):
+    counts = repo.journal_counts(db, "live")
+
+    assert counts == dict.fromkeys(repo.CHIPS, 0)
+
+
+def test_the_other_profile_never_leaks_into_the_journal(
+    db, live_version, paper_version, journal_rows
+):
+    repo.insert_decision(
+        db, quiet_bar(paper_version, profile="paper", bar_close_ts=T0 + 99 * DAY_MS)
+    )
+
+    assert repo.journal_counts(db, "paper")["all"] == 1
+    assert [row.id for row in repo.journal(db, "live", limit=99)] == [
+        row.id for row in repo.journal(db, "live", limit=99)
+    ]
+    assert repo.journal(db, "paper", limit=99)[0].bar_close_ts == T0 + 99 * DAY_MS
+
+
+def _walk(conn, *, chip: str = "all", size: int) -> list:
+    """เดินทุกหน้าจนหมด · **มีเพดานรอบ** เพราะ cursor ที่ไม่เลื่อนต้องทำให้เทสต์แดง
+
+    `while` เปล่าจะวนไม่รู้จบเมื่อการเลื่อนหน้าคืนแถวเดิมซ้ำ (เช่นเปลี่ยน `<` เป็น
+    `<=`) ซึ่งเป็นความผิดที่เทสต์ชุดนี้มีไว้จับพอดี — เทสต์ที่ค้างไม่ได้บอกอะไรใคร
+    """
+    walked: list = []
+    cursor = None
+    for _ in range(100):
+        page = repo.journal(conn, "live", chip=chip, before=cursor, limit=size)
+        if not page:
+            return walked
+        walked.extend(page)
+        cursor = (page[-1].bar_close_ts, page[-1].id)
+    raise AssertionError("เดินไม่จบใน 100 รอบ — cursor ไม่เลื่อน")
+
+
+def test_walking_the_pages_visits_every_row_exactly_once(db, journal_rows):
+    everything = repo.journal(db, "live", limit=99)
+    walked = _walk(db, size=2)
+
+    assert [row.id for row in walked] == [row.id for row in everything]
+    assert len({row.id for row in walked}) == len(walked)
+
+
+def test_the_newest_bar_comes_first_and_a_restart_breaks_the_tie_by_id(db, journal_rows):
+    rows = repo.journal(db, "live", limit=99)
+
+    keys = [(row.bar_close_ts, row.id) for row in rows]
+    assert keys == sorted(keys, reverse=True)
+    first_bar = [row.id for row in rows if row.bar_close_ts == T0 + DAY_MS]
+    assert first_bar == sorted(first_bar, reverse=True), "แท่งเดียวกันเรียงด้วย id"
+
+
+def test_a_row_written_between_two_pages_does_not_hide_an_older_one(db, journal_rows):
+    """เหตุผลทั้งหมดที่หน้านี้ใช้ keyset แทน `OFFSET` อยู่ในเทสต์นี้
+
+    `OFFSET 3` หลังจากมีแถวใหม่แทรกที่หัวจะเริ่มที่แถวที่สามของเดิม คนอ่านจึงข้าม
+    แถวที่เคยอยู่ลำดับสี่ไปหนึ่งแถวโดยไม่มีอะไรบอก
+    """
+    everything = repo.journal(db, "live", limit=99)
+    cursor = (everything[2].bar_close_ts, everything[2].id)
+
+    # engine เขียนแท่งใหม่ที่หัวตารางระหว่างที่คนกำลังอ่านหน้าสอง
+    repo.insert_decision(
+        db, quiet_bar(_version_of(db), bar_close_ts=T0 + 50 * DAY_MS)
+    )
+    second = repo.journal(db, "live", before=cursor, limit=3)
+
+    assert [row.id for row in second] == [row.id for row in everything[3:6]]
+
+
+def _version_of(conn) -> int:
+    return conn.execute(
+        select(decisions.c.config_version_id).limit(1)
+    ).scalar_one()
+
+
+def test_a_chip_narrows_the_page_as_well_as_the_count(db, journal_rows):
+    counts = repo.journal_counts(db, "live")
+    rows = repo.journal(db, "live", chip="orders", limit=99)
+
+    assert len(rows) == counts["orders"]
+    assert all(row.skip_reason is None for row in rows)
+
+
+def test_paging_inside_a_chip_stays_inside_that_chip(db, journal_rows):
+    walked = _walk(db, chip="long", size=1)
+
+    assert walked, "ชิปนี้ต้องมีแถว ไม่งั้นเทสต์ผ่านโดยไม่ได้เดินเลย"
+    assert {row.side for row in walked} == {"long"}
+    assert len(walked) == repo.journal_counts(db, "live")["long"]
+
+
+def test_a_flip_row_carries_the_closing_leg_and_the_rest_do_not(db, journal_rows):
+    rows = {row.bar_close_ts: row for row in repo.journal(db, "live", limit=99)}
+
+    complete = rows[T0 + 4 * DAY_MS]
+    assert complete.flip_close_qty == pytest.approx(0.00116129)
+    assert complete.flip_aborted is False
+    aborted = rows[T0 + 5 * DAY_MS]
+    assert aborted.flip_aborted is True
+    assert aborted.flip_residual_qty == pytest.approx(0.00034516)
+    assert rows[T0 + 2 * DAY_MS].flip_close_qty is None
+
+
+def test_the_size_pair_reads_back_as_the_percentages_that_were_written(db, journal_rows):
+    capped = next(
+        row for row in repo.journal(db, "live", chip="capped", limit=99)
+    )
+
+    assert (capped.size_pct_formula, capped.size_pct_final) == (100.0, 50.0)
+    assert capped.capped is True
+
+
+def test_an_unknown_chip_is_refused_instead_of_quietly_showing_everything(db, live_version):
+    with pytest.raises(ValueError, match="ไม่มีชิป"):
+        repo.journal(db, "live", chip="ทุกอย่าง")
