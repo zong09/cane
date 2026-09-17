@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block screen %}
+<h1 class="h1">บันทึกการตัดสินใจ</h1>
+<div class="lg__sub">
+  ตาราง <code>decisions</code> · append-only บังคับด้วยสิทธิ์ของฐาน ไม่ใช่ข้อตกลง ·
+  หนึ่งแถวต่อหนึ่งแท่งต่อหนึ่งเหรียญ · ขาปิดและขาเปิดของการกลับข้างอยู่ในบรรทัดเดียวกัน ·
+  เวลาของแท่งเป็น UTC · ทั้งโปรไฟล์ ไม่จำกัด timeframe
+</div>
+{% include "partials/log_body.html" %}
+{% endblock %}

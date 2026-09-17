@@ -16,6 +16,7 @@ from sqlalchemy import Engine
 
 from cane.api import config as config_routes
 from cane.api import context
+from cane.api import log as log_routes
 from cane.api import overview as overview_routes
 from cane.api import risk as risk_routes
 from cane.api.deps import current_mode, current_user, get_db, get_sup
@@ -36,10 +37,14 @@ PAGES: dict[str, tuple[str, int]] = {
 #: และหน้าผู้ใช้เป็นของ `manage_users` เท่านั้น
 PAGE_CAP = {slug: "view_overview" for slug in PAGES}
 PAGE_CAP["users"] = "manage_users"
+#: spec/09 ผูก `GET /api/{profile}/records` ไว้กับ `read_decisions` — เปลือกของหน้า
+#: จึงต้องขอสิทธิ์เดียวกับ partial ที่มันจะยิงต่อ ไม่งั้นหน้าเปิดได้แล้วเนื้อ 403
+PAGE_CAP["log"] = "read_decisions"
 
 #: slug → เทมเพลตของหน้าที่มีเนื้อแล้ว · ที่ไม่อยู่ในนี้ได้ placeholder ของใบ 19
 BODIES = {
     "config": "pages/config.html",
+    "log": "pages/log.html",
     "overview": "pages/overview.html",
     "risk": "pages/risk.html",
 }
@@ -74,6 +79,8 @@ def page(
             )
         elif slug == "overview":
             ctx |= overview_routes.page_context(conn, profile=mode)
+        elif slug == "log":
+            ctx |= log_routes.page_context(conn, profile=mode)
         elif slug == "risk":
             ctx |= risk_routes.page_context(conn, profile=mode, user=user)
     ctx |= {"page_label": label, "page_ticket": ticket}

@@ -16,6 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Connection, select
 
+from cane.api import log as log_routes
 from cane.api.app import create_app
 from cane.api.deps import signed_in
 from cane.auth import secrets as auth_secrets
@@ -592,3 +593,234 @@ def test_flipping_the_short_side_leaves_an_audit_row_marked_step_up_verified(
     assert row.step_up_verified is True
     assert "allow_short=false" in row.target
     assert config_repo.active_settings(db, "live").allow_short is False
+
+
+# ── หน้าบันทึก · ใบ 24 ────────────────────────────────────────────────────────
+
+_DAY_MS = 86_400_000
+
+
+def _accepted_open(**overrides):
+    base = {
+        "leg": "open",
+        "order_side": "buy",
+        "order_type": "market",
+        "reduce_only": False,
+        "qty": 0.001,
+        "client_order_id": "cane-log",
+        "sent": True,
+        "accepted": True,
+    }
+    return decisions_repo.OrderAttempt(**{**base, **overrides})
+
+
+def _journal_bars(version_id: int, *, profile: str):
+    """ห้าแท่งที่กระจายตัวให้ทุกชิปมีตัวนับที่ไม่เท่ากัน
+
+    ตัวนับที่เท่ากันหมดทำให้เทสต์ผ่านได้แม้เงื่อนไขของชิปจะสลับกันทั้งชุด
+    """
+    base = a_decision(version_id, profile=profile, zone="GREEN")
+    start = base.bar_close_ts
+    return [
+        base,
+        replace(
+            base,
+            bar_close_ts=start + _DAY_MS,
+            long_signal=True,
+            side="long",
+            skip_reason="risk_rejected",
+        ),
+        replace(
+            base,
+            bar_close_ts=start + 2 * _DAY_MS,
+            symbol="ETH/USDT",
+            zone="RED",
+            short_signal=True,
+            side="short",
+            skip_reason="short_disabled",
+        ),
+        replace(
+            base,
+            bar_close_ts=start + 3 * _DAY_MS,
+            long_signal=True,
+            side="long",
+            skip_reason="dry_run",
+            judge_called=True,
+            factors_present=3,
+            size_rule="confluence",
+            size_pct_formula=100.0,
+            size_pct_final=50.0,
+            capped=True,
+        ),
+        replace(
+            base,
+            bar_close_ts=start + 4 * _DAY_MS,
+            dry_run=False,
+            long_signal=True,
+            side="long",
+            skip_reason=None,
+            judge_called=True,
+            factors_present=2,
+            size_rule="confluence",
+            size_pct_formula=45.0,
+            size_pct_final=45.0,
+            capped=False,
+            margin=45.0,
+            notional=90.0,
+            qty=0.001,
+            ref_px=90_000.0,
+            orders=(_accepted_open(),),
+        ),
+    ]
+
+
+@pytest.fixture
+def journal(db: Connection, clean_config: None):
+    db.execute(decisions_table.delete())
+    head = seeded(db, "paper")
+    for record in _journal_bars(head.id, profile="paper"):
+        decisions_repo.insert_decision(db, record)
+    return head
+
+
+def test_the_journal_page_shows_every_chip_with_the_count_from_the_table(
+    client: TestClient, journal
+) -> None:
+    with client:
+        page = client.get("/log").text
+
+    assert 'ทั้งหมด <span class="lg__count">5</span>' in page
+    assert 'มีออเดอร์ <span class="lg__count">1</span>' in page
+    assert 'ฝั่ง long <span class="lg__count">3</span>' in page
+    assert 'ฝั่ง short <span class="lg__count">1</span>' in page
+    assert 'risk ปฏิเสธ <span class="lg__count">1</span>' in page
+    assert 'ถูกเพดานตัด <span class="lg__count">1</span>' in page
+    assert 'กลับข้าง <span class="lg__count">0</span>' in page
+
+
+def test_the_journal_renders_one_row_per_bar_with_the_columns_the_ticket_asks_for(
+    client: TestClient, journal
+) -> None:
+    with client:
+        page = client.get("/log").text
+
+    assert page.count('class="lgtable__row"') + page.count(
+        'class="lgtable__row lgtable__row--long"'
+    ) == 5
+    assert "BTC/USDT" in page and "ETH/USDT" in page
+    assert "var(--zone-green)" in page and "var(--zone-red)" in page
+    # SIZE ที่ถูกเพดานตัดต้องเห็นทั้งสองตัวเลขพร้อม badge ไม่ใช่ตัวเดียว
+    assert ">100</span>" in page and "→ 50" in page and "เพดาน" in page
+    assert "risk ปฏิเสธ — ไม่เกิดไม้" in page
+    # สีของแถวตอบว่า "ลงไม้ฝั่งไหน" — แท่ง dry_run นับด้วย (paper ถูกบังคับ dry_run
+    # ตายตัว ถ้าไม่นับ บันทึกของ paper จะไม่มีสีเลยสักแถว) ส่วนแท่งที่ risk ปฏิเสธ
+    # กับแท่งที่ฝั่ง short ปิดอยู่ไม่ได้ลงไม้ จึงไม่ย้อม
+    assert page.count("lgtable__row--long") == 2
+    assert "lgtable__row--short" not in page
+
+
+def test_a_chip_filters_the_table_without_touching_the_counts(
+    client: TestClient, journal
+) -> None:
+    with client:
+        short_only = client.get("/partials/log?chip=short").text
+
+    assert "ETH/USDT" in short_only
+    assert "BTC/USDT" not in short_only
+    # ตัวนับมาจาก SQL บนทั้งโปรไฟล์ จึงไม่ยุบตามตัวกรอง
+    assert 'ทั้งหมด <span class="lg__count">5</span>' in short_only
+
+
+def test_a_chip_that_does_not_exist_falls_back_to_everything(
+    client: TestClient, journal
+) -> None:
+    """query string เป็นของที่คนแก้เองได้ · 404 ตรงนี้คือหน้าที่อ่านบันทึกไม่ได้"""
+    with client:
+        page = client.get("/partials/log?chip=ไม่มีชิปนี้").text
+
+    assert "BTC/USDT" in page and "ETH/USDT" in page
+
+
+def test_an_empty_journal_says_so_instead_of_showing_a_bare_table(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    seeded(db, "paper")
+    db.execute(decisions_table.delete())
+
+    with client:
+        page = client.get("/log").text
+
+    assert "ยังไม่มีบันทึกในโปรไฟล์นี้" in page
+    assert 'ทั้งหมด <span class="lg__count">0</span>' in page
+
+
+def test_show_more_carries_on_after_the_last_row_instead_of_starting_over(
+    db: Connection, client: TestClient, clean_config: None, monkeypatch
+) -> None:
+    """เกณฑ์ของ paginate — หน้าถัดไปต้องเป็นแถวที่ **ยังไม่เคยเห็น**
+
+    ย่อหน้าละสองแถวแทนห้าสิบ เพื่อไม่ต้องเขียนบันทึกห้าสิบแถวเพื่อพิสูจน์เรื่องเดียว
+    """
+    monkeypatch.setattr(log_routes, "PAGE_SIZE", 2)
+    db.execute(decisions_table.delete())
+    head = seeded(db, "paper")
+    for record in _journal_bars(head.id, profile="paper"):
+        decisions_repo.insert_decision(db, record)
+
+    with client:
+        first = client.get("/partials/log").text
+        cursor = first.split('hx-get="/partials/log/rows?')[1].split('"')[0]
+        second = client.get(f"/partials/log/rows?{cursor}").text
+
+    # หน้าแรกคือสองแท่งใหม่สุด (ที่ 5 กับที่ 4) หน้าสองคือที่ 3 กับที่ 2
+    assert "เปิด long 0.001 BTC · margin 45.00" in first
+    assert "เปิด long 0.001 BTC · margin 45.00" not in second
+    assert "ฝั่ง short ปิดอยู่" in second
+    assert "risk ปฏิเสธ — ไม่เกิดไม้" in second
+
+
+def test_the_journal_follows_the_mode_being_viewed(
+    db: Connection, owner, clean_config: None
+) -> None:
+    db.execute(decisions_table.delete())
+    paper = seeded(db, "paper")
+    live = seeded(db, "live")
+    decisions_repo.insert_decision(
+        db, a_decision(paper.id, profile="paper", zone="GREEN", symbol="BTC/USDT")
+    )
+    decisions_repo.insert_decision(
+        db, a_decision(live.id, profile="live", zone="RED", symbol="BTC/USDT")
+    )
+
+    with client_in(db, owner, "paper") as client:
+        as_paper = client.get("/log").text
+    with client_in(db, owner, "live") as client:
+        as_live = client.get("/log").text
+
+    assert "var(--zone-green)" in as_paper and "var(--zone-red)" not in as_paper
+    assert "var(--zone-red)" in as_live and "var(--zone-green)" not in as_live
+
+
+def test_the_journal_opens_even_when_the_profile_has_no_active_config(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    """หน้าอื่นขึ้นแบนเนอร์ "ไม่มีเวอร์ชัน active" แล้วหยุด · หน้านี้ต้องอ่านได้ต่อ
+
+    ไม่มี config ที่เปิดใช้ = ไม่เทรด ซึ่งเป็นตอนที่คนอยากรู้ที่สุดว่าเมื่อวานเกิดอะไร
+    ถ้าหน้านี้ผูกกับ `active_settings()` แบบหน้าภาพรวม บันทึกจะอ่านไม่ได้พอดีตอนนั้น
+    """
+    db.execute(decisions_table.delete())
+    # เวอร์ชันที่ยังไม่ได้เปิดใช้ — มีแถวให้ FK ของบันทึกชี้ แต่ `active_settings()` คืน None
+    draft = config_repo.insert_version(
+        db, load_profile("config/paper.toml"), source="toml_seed"
+    )
+    decisions_repo.insert_decision(
+        db, a_decision(draft.id, profile="paper", zone="GREEN")
+    )
+
+    with client:
+        response = client.get("/log")
+
+    assert response.status_code == 200
+    assert "var(--zone-green)" in response.text
+    assert "ยังไม่มีบันทึก" not in response.text

@@ -44,6 +44,16 @@
   --paper-border: #b9dfca;
   --paper-border-2: #a9cdb9;
 
+  /* ชิป `ถูกเพดานตัด` — ฟ้าอมเขียวของ handoff §9.4 ไม่ซ้ำกับสีไหนที่มีอยู่
+     เพราะ "ไม้เล็กเพราะชนเพดาน" ไม่ใช่คำเตือนและไม่ใช่ความผิดพลาด */
+  --cap-tint: #dbe8ee;
+  --cap-text: #0e8ba6;
+  --cap-border: #c3d4e0;
+
+  /* แถวที่เกิดไม้จริง — อ่อนกว่า `--paper-tint`/`--live-tint` เพราะย้อมทั้งแถว */
+  --entry-long-tint: #eaf7f0;
+  --entry-short-tint: #fdeeec;
+
   --warn-text: #8a6a15;
   --warn-tint: linear-gradient(160deg, #f6e7bd 0%, #fdf8ea 100%);
   --warn-border: #f4e6bd;
@@ -551,3 +561,83 @@ a.btn--block { padding: 12px; }
 .rk__switchstate { font: 600 13px var(--mono); color: var(--live-text); }
 .rk__switchstate--on { color: var(--paper-text); }
 .rk__switchbtn { flex: none; padding: 10px 16px; background: #fff; }
+
+
+/* ── หน้า บันทึก (ใบ 24) ──────────────────────────────────────────────────── */
+
+.lg__sub { font: 400 12px/1.75 var(--sans); color: var(--label); margin-top: 8px; }
+
+.lg__chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+.lg__chip {
+  padding: 7px 14px; border: 1px solid var(--border); background: var(--surface);
+  color: var(--text-2); font: 500 12px var(--sans); cursor: pointer;
+}
+.lg__chip:hover { border-color: var(--primary-edge); color: var(--primary-text); }
+.lg__count { font-family: var(--mono); }
+.lg__chip--long { background: var(--paper-tint); border-color: var(--paper-border); color: var(--paper-text); }
+.lg__chip--short { background: var(--live-tint); border-color: var(--live-border); color: var(--live-text); }
+.lg__chip--llm { background: var(--warn-tint); border-color: var(--warn-border); color: var(--warn-text); }
+.lg__chip--capped { background: var(--cap-tint); border-color: var(--cap-border); color: var(--cap-text); }
+/* ชิปที่เลือกอยู่ต้องมาหลังทุกตัวแปรสี ไม่งั้นสีประจำชิปทับสถานะ active */
+.lg__chip--on { background: var(--border-strong); border-color: var(--border-strong); color: #fff; }
+
+.lg__card { margin-top: 18px; background: var(--surface); border: 1px solid var(--border); }
+
+.lgtable__row {
+  display: grid;
+  grid-template-columns: 82px 118px 86px 80px 84px 118px 168px minmax(0, 1fr);
+  gap: 13px; align-items: center; padding: 17px 24px;
+  border-bottom: 1px solid var(--divider); font: 400 12.5px var(--mix);
+}
+.lgtable__row:last-child { border-bottom: 0; }
+.lgtable__row--long { background: var(--entry-long-tint); }
+.lgtable__row--short { background: var(--entry-short-tint); }
+.lgtable__head {
+  padding: 15px 24px; background: var(--surface-raised);
+  border-bottom: 1px solid var(--divider-soft);
+  font: 500 10.5px var(--mix); letter-spacing: .07em; color: var(--label);
+}
+.lgtable__head--th { font-family: var(--sans); letter-spacing: 0; }
+
+.lgtable__pair { font: 500 12.5px var(--sans); }
+.lgtable__sub { display: block; font: 400 11px var(--mono); color: var(--label); margin-top: 3px; }
+.lgtable__zone, .lgtable__side {
+  padding: 3px 0 3px 8px; border-left: 2px solid var(--zone-black);
+  font: 600 11px var(--mono); letter-spacing: .09em; color: var(--label);
+}
+.lgtable__side--long { border-left-color: var(--zone-green); color: var(--paper-text); }
+.lgtable__side--short { border-left-color: var(--zone-red); color: var(--live-text); }
+.lgtable__sig { color: var(--muted); }
+.lgtable__sig--long { color: var(--paper-text); font-weight: 500; }
+.lgtable__sig--short { color: var(--live-text); font-weight: 500; }
+
+.lgtable__boxes { display: flex; gap: 6px; }
+.lgtable__box { width: 17px; height: 17px; background: var(--surface); border: 1.5px solid var(--border-strong); }
+.lgtable__box--long { background: var(--zone-green); border-color: var(--zone-green); }
+.lgtable__box--short { background: var(--live); border-color: var(--live-text); }
+.lgtable__fallback {
+  padding: 3px 8px; background: var(--warn-tint); border: 1px solid var(--warn-border);
+  font: 500 11px var(--mono); letter-spacing: .06em; color: var(--warn-text);
+}
+
+.lgtable__size { display: flex; align-items: center; gap: 8px; }
+.lgtable__struck { color: var(--muted); text-decoration: line-through; }
+.lgtable__cap {
+  padding: 3px 8px; background: var(--cap-tint); border: 1px solid var(--cap-border);
+  font: 400 10.5px var(--mono); color: var(--cap-text);
+}
+.lgtable__num { color: var(--text-2); }
+.lgtable__muted { color: var(--muted); }
+
+.lgtable__out { font-family: var(--sans); color: var(--text-2); }
+.lgtable__out--good { color: var(--paper-text); }
+.lgtable__out--bad { color: var(--live-text); }
+.lgtable__out--warn { color: var(--warn-text); }
+
+.lgtable__empty { padding: 22px 24px; font: 400 12.5px var(--sans); color: var(--muted); }
+.lgtable__more {
+  display: block; width: 100%; padding: 14px; border: 0;
+  border-top: 1px solid var(--divider); background: var(--surface-raised);
+  color: var(--primary-text); font: 500 12.5px var(--sans); cursor: pointer;
+}
+.lgtable__more:hover { background: var(--hover); }
