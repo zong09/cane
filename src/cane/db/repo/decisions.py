@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
-from sqlalchemy import Connection, select
+from sqlalchemy import Connection, and_, func, or_, select, true
 
 from cane.config.settings import require_scale
 from cane.db.schema import (
@@ -793,3 +793,202 @@ def _load(conn: Connection, rows: Sequence) -> list[DecisionRecord]:  # noqa: AN
         )
         for row in rows
     ]
+
+
+# ── หน้าบันทึก (ใบ 24) ───────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True, slots=True)
+class JournalRow:
+    """หนึ่งบรรทัดของหน้า บันทึก — หัวของ `decisions` บวกขาปิดของ flip เท่านั้น
+
+    **ไม่ใช่ `DecisionRecord`** โดยเจตนา · `DecisionRecord` ประกอบผ่าน `_load()`
+    ซึ่งอ่านลูกครบหกตารางต่อหนึ่งชุด คุ้มตอนอ่านลำดับของเหรียญเดียวเพื่อไล่ปัญหา
+    แต่หน้านี้อ่านข้ามเหรียญทั้งโปรไฟล์ทีละหน้า และห้าในหกตารางนั้นไม่มีช่องให้แสดงเลย
+
+    `flip_close_qty` เป็น `None` แปลว่า **แถวนี้ไม่ใช่การกลับข้าง** ไม่ใช่ "กลับข้าง
+    แล้วปิดได้ศูนย์" — ขาที่ปิดไม่ได้เลยมี `aborted = true` กำกับแทน
+    """
+
+    id: int
+    bar_close_ts: int
+    market: str
+    symbol: str
+    zone: str
+    side: str | None
+    long_signal: bool
+    short_signal: bool
+    dry_run: bool
+    judge_called: bool | None
+    llm_fallback: bool | None
+    factors_present: int | None
+    size_pct_formula: float | None
+    size_pct_final: float | None
+    capped: bool | None
+    qty: float | None
+    margin: float | None
+    skip_reason: str | None
+    cold_start: str | None
+    flip_close_qty: float | None = None
+    flip_residual_qty: float | None = None
+    flip_residual_side: str | None = None
+    flip_aborted: bool | None = None
+
+
+#: ชิปกรองของหน้าบันทึก — ชื่อในโค้ดและใน query string
+#:
+#: ป้ายภาษาไทยของแต่ละชิปอยู่ที่ `api/log.py` ไม่ใช่ที่นี่ · repo ตอบได้แค่ว่า
+#: "แถวไหนเข้าพวก" ส่วนคำที่หน้าจอเรียกมันเป็นเรื่องของชั้นที่ render
+CHIPS: tuple[str, ...] = (
+    "all",
+    "orders",
+    "long",
+    "short",
+    "flip",
+    "risk",
+    "llm",
+    "capped",
+)
+
+#: ขาปิดของ flip อยู่คนละตารางกับหัว และเป็นลูกแบบหนึ่งต่อหนึ่ง (PK คือ
+#: `decision_id`) · outer join จึงไม่ทำให้จำนวนแถวเปลี่ยน ตัวนับที่นับบน join นี้
+#: จึงเท่ากับตัวนับที่นับบนหัวเปล่า
+_JOURNAL_FROM = decisions.outerjoin(
+    decision_flip,
+    and_(
+        decision_flip.c.decision_id == decisions.c.id,
+        decision_flip.c.profile == decisions.c.profile,
+    ),
+)
+
+#: ชิป → เงื่อนไข · ทุกตัวอ่านจากหัว ยกเว้น `flip` ที่ต้องถามตารางลูก
+#:
+#: `orders` ใช้ `skip_reason IS NULL` ได้เพราะคอลัมน์นั้นตอบคำถามเดียวว่า "ทำไม
+#: ไม่มีออเดอร์เปิดถูก venue รับ" และ `_check_skip_reason()` บังคับ biconditional
+#: ไว้ตอนเขียน · การไปนับ `decision_orders` เองคือการตั้งแหล่งความจริงที่สอง
+_CHIP_WHERE = {
+    "all": true(),
+    "orders": decisions.c.skip_reason.is_(None),
+    "long": decisions.c.side == "long",
+    "short": decisions.c.side == "short",
+    "flip": decision_flip.c.decision_id.isnot(None),
+    "risk": decisions.c.skip_reason == "risk_rejected",
+    "llm": decisions.c.llm_fallback.is_(True),
+    "capped": decisions.c.capped.is_(True),
+}
+
+_JOURNAL_COLUMNS = (
+    decisions.c.id,
+    decisions.c.bar_close_ts,
+    decisions.c.market,
+    decisions.c.symbol,
+    decisions.c.zone,
+    decisions.c.side,
+    decisions.c.long_signal,
+    decisions.c.short_signal,
+    decisions.c.dry_run,
+    decisions.c.judge_called,
+    decisions.c.llm_fallback,
+    decisions.c.factors_present,
+    decisions.c.size_pct_formula,
+    decisions.c.size_pct_final,
+    decisions.c.capped,
+    decisions.c.qty,
+    decisions.c.margin,
+    decisions.c.skip_reason,
+    decisions.c.cold_start,
+    decision_flip.c.close_qty_filled,
+    decision_flip.c.residual_qty,
+    decision_flip.c.residual_side,
+    decision_flip.c.aborted,
+)
+
+
+def journal(
+    conn: Connection,
+    profile: str,
+    *,
+    chip: str = "all",
+    before: tuple[int, int] | None = None,
+    limit: int = 50,
+) -> list[JournalRow]:
+    """บันทึกหนึ่งหน้า เรียงใหม่สุดก่อน · `before` คือกุญแจของแถวสุดท้ายหน้าก่อน
+
+    **เลื่อนหน้าด้วย keyset ไม่ใช่ `OFFSET`** — ตารางนี้ append-only และ engine
+    เขียนแถวใหม่ระหว่างที่คนกำลังอ่านอยู่ได้ · บนลำดับที่กลับหัว ของใหม่แทรกข้างบน
+    เสมอ `OFFSET n` จึงข้ามแถวที่เลื่อนลงไปพอดีกับจำนวนที่แทรก คนอ่านเห็นบันทึกหาย
+    ทั้งที่ไม่มีใครลบ — ซึ่งบนหน้าที่มีไว้ตรวจย้อนหลังเป็นความผิดพลาดที่แพงที่สุด
+
+    **ไม่กรองด้วย `timeframe`** ต่างจาก `latest_per_symbol()` · หน้านี้เป็นบันทึก
+    ย้อนหลังไม่ใช่สถานะปัจจุบัน ถ้าผูกกับ timeframe ของ config เวอร์ชันที่ active
+    วันที่มีใครสลับ `1d` เป็น `1h` บันทึกเก่าทั้งกองจะหายจากหน้าจอโดยไม่มีคำอธิบาย
+    """
+    if chip not in _CHIP_WHERE:
+        raise ValueError(f"ไม่มีชิป {chip!r} — มีแต่ {', '.join(CHIPS)}")
+
+    stmt = (
+        select(*_JOURNAL_COLUMNS)
+        .select_from(_JOURNAL_FROM)
+        .where(decisions.c.profile == profile, _CHIP_WHERE[chip])
+        .order_by(decisions.c.bar_close_ts.desc(), decisions.c.id.desc())
+        .limit(limit)
+    )
+    if before is not None:
+        bar_ts, row_id = before
+        stmt = stmt.where(
+            or_(
+                decisions.c.bar_close_ts < bar_ts,
+                and_(decisions.c.bar_close_ts == bar_ts, decisions.c.id < row_id),
+            )
+        )
+    return [_journal_row(row) for row in conn.execute(stmt).all()]
+
+
+def journal_counts(conn: Connection, profile: str) -> dict[str, int]:
+    """จำนวนแถวของทุกชิปในคำขอเดียว — `count(*) FILTER (WHERE ...)` แปดตัว
+
+    นับจากฐาน ไม่ใช่จากแถวที่โหลดมาแล้ว · หน้าจอแสดงทีละหน้า การนับจากหน่วยความจำ
+    จึงตรงเฉพาะตอนที่บันทึกมีไม่ถึงหนึ่งหน้า แล้วเริ่มโกหกเงียบๆ ตั้งแต่หน้าที่สอง
+    """
+    row = conn.execute(
+        select(*[func.count().filter(_CHIP_WHERE[chip]).label(chip) for chip in CHIPS])
+        .select_from(_JOURNAL_FROM)
+        .where(decisions.c.profile == profile)
+    ).one()
+    return {chip: getattr(row, chip) for chip in CHIPS}
+
+
+def _journal_row(row) -> JournalRow:  # noqa: ANN001
+    return JournalRow(
+        id=row.id,
+        bar_close_ts=row.bar_close_ts,
+        market=row.market,
+        symbol=row.symbol,
+        zone=row.zone,
+        side=row.side,
+        long_signal=row.long_signal,
+        short_signal=row.short_signal,
+        dry_run=row.dry_run,
+        judge_called=row.judge_called,
+        llm_fallback=row.llm_fallback,
+        factors_present=row.factors_present,
+        size_pct_formula=(
+            None if row.size_pct_formula is None else pct_from_db(row.size_pct_formula)
+        ),
+        size_pct_final=(
+            None if row.size_pct_final is None else pct_from_db(row.size_pct_final)
+        ),
+        capped=row.capped,
+        qty=None if row.qty is None else price_from_db(row.qty),
+        margin=None if row.margin is None else price_from_db(row.margin),
+        skip_reason=row.skip_reason,
+        cold_start=row.cold_start,
+        flip_close_qty=(
+            None if row.close_qty_filled is None else price_from_db(row.close_qty_filled)
+        ),
+        flip_residual_qty=(
+            None if row.residual_qty is None else price_from_db(row.residual_qty)
+        ),
+        flip_residual_side=row.residual_side,
+        flip_aborted=row.aborted,
+    )
