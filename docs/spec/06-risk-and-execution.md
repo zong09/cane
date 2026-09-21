@@ -87,6 +87,8 @@ fail-closed หมายถึงหยุด*ทำสิ่งใหม่* �
 
 profile `paper` บังคับ `true` ตายตัว — ตั้งเป็น `false` แล้วโหลดไม่ผ่าน
 
+**ธงนี้กั้นเฉพาะ broker ที่ส่งคำสั่งจริงได้ (`broker.kind = "ccxt"`)** — paper ส่งคำสั่งให้ `PaperBroker` จำลองเสมอ เพราะมันไม่มีทางออกไปหา exchange อยู่แล้ว · ถ้า `dry_run` กั้น paper ด้วย ระบบจะไม่เคยเปิดไม้บน paper เลย และ replay จะพิสูจน์อะไรไม่ได้ ดู [ADR 31](../adr/0031-dry-run-gates-only-a-real-broker.md)
+
 ## Broker interface
 
 ```

@@ -280,6 +280,10 @@ class FakeDb:
     def __init__(self, should_run: list[bool]) -> None:
         self.should_run = list(should_run)
         self.log: list[str] = []
+        #: `blocked_reason` ของการเต้นแต่ละครั้ง (ตามลำดับ)
+        self.reasons: list[str | None] = []
+        #: สิ่งที่ `config_repo.active_settings()` ปลอมจะคืน · `None` = ไม่มี config ที่ active
+        self.settings = None
 
     def begin(self):
         return FakeConn(self)
@@ -322,9 +326,11 @@ def patched(monkeypatch):
 
     def fake_beat(conn, profile, *, blocked_reason=None):
         db.log.append("beat")
+        db.reasons.append(blocked_reason)
 
     monkeypatch.setattr(loop.enginestate, "read", fake_read)
     monkeypatch.setattr(loop.enginestate, "beat", fake_beat)
+    monkeypatch.setattr(loop.config_repo, "active_settings", lambda conn, profile: db.settings)
     return db
 
 
@@ -420,3 +426,102 @@ def test_the_wait_is_sliced_so_the_heartbeat_never_goes_stale_while_waiting(patc
 
 def test_the_two_profiles_are_listed_live_first_so_the_console_never_reorders_them():
     assert PROFILES == ("live", "paper")
+
+
+
+# ── config กับการเรียกไปป์ไลน์ (ใบ 12) ─────────────────────────────────────────
+
+
+class FakeSettings:
+    """มีแค่ที่ลูปอ่าน — `timeframe`"""
+
+    timeframe = "1d"
+
+
+DAY = 86_400_000
+#: เที่ยงคืน UTC พอดี — ขอบของแท่ง 1d
+MIDNIGHT = 1_787_961_600_000
+
+
+def test_a_profile_without_an_active_config_is_reported_and_not_traded(patched, clock):
+    """ไม่มี config ที่ active = ยังไม่เทรด (fail-closed) · ลูปไม่ออก แต่บอกเหตุที่คอนโซลแสดงได้"""
+    patched.should_run = [True, False]
+    calls = []
+
+    loop.run("paper", db=patched, stopping=loop.StopFlag(), sleep=clock.sleep, now=clock.now,
+             on_bar=lambda *args: calls.append(args))
+
+    assert patched.reasons and "ยังไม่มี config ที่ active" in patched.reasons[0]
+    assert calls == [], "ไม่มี config ห้ามเรียกไปป์ไลน์แม้แท่งจะปิดแล้ว"
+
+
+def test_an_invalid_stored_config_blocks_with_a_reason_and_the_loop_keeps_running(patched, clock, monkeypatch):
+    def broken(conn, profile):
+        raise ValueError("bucket_quote_long ต้องมากกว่าศูนย์")
+
+    monkeypatch.setattr(loop.config_repo, "active_settings", broken)
+    patched.should_run = [True, False]
+
+    assert loop.run("paper", db=patched, stopping=loop.StopFlag(), sleep=clock.sleep, now=clock.now) == 0
+    assert "ไม่ผ่านการตรวจ" in patched.reasons[0] and "bucket_quote_long" in patched.reasons[0]
+
+
+def test_a_bar_that_has_closed_is_decided_once_after_the_grace_and_not_again_until_the_next(patched, clock):
+    """รอบแรกตัดสินแท่งล่าสุดที่ปิดแล้ว · รอบถัดไปในแท่งเดียวกันไม่เรียกซ้ำ · แท่งใหม่ปิดแล้วเรียกอีกครั้ง"""
+    patched.settings = FakeSettings()
+    clock.ms = MIDNIGHT + loop.BAR_GRACE_MS  # แท่งเพิ่งปิดและพ้นช่วงรอ
+    patched.should_run = [True] * 8 + [False]
+    calls = []
+
+    def on_bar(conn, settings, close_ts):
+        calls.append(close_ts)
+
+    def sleep(seconds):
+        clock.sleep(seconds)
+        if clock.ms >= MIDNIGHT + 3 * HEARTBEAT_PERIOD_S * 1000:
+            clock.ms = MIDNIGHT + DAY + loop.BAR_GRACE_MS  # ข้ามไปหลังแท่งถัดไปปิด
+
+    loop.run("paper", db=patched, stopping=loop.StopFlag(), sleep=sleep, now=clock.now, on_bar=on_bar)
+
+    assert calls == [MIDNIGHT, MIDNIGHT + DAY]
+
+
+def test_a_bar_is_not_decided_before_the_exchange_has_had_time_to_publish_it(patched, clock):
+    patched.settings = FakeSettings()
+    clock.ms = MIDNIGHT + loop.BAR_GRACE_MS - 1
+    patched.should_run = [True, False]
+    calls = []
+
+    loop.run("paper", db=patched, stopping=loop.StopFlag(), sleep=clock.sleep, now=clock.now,
+             on_bar=lambda *args: calls.append(args))
+
+    assert calls == []
+
+
+def test_a_pipeline_failure_is_reported_and_the_same_bar_is_not_retried_every_heartbeat(patched, clock):
+    """ยิงคำสั่งซ้ำรัวๆ ตอนที่ยังไม่รู้ว่าครั้งก่อนไปถึงไหน ใหญ่กว่าความเสี่ยงของการข้ามแท่ง (ขั้น 3 แท่งหน้าอ่านของจริง)"""
+    patched.settings = FakeSettings()
+    clock.ms = MIDNIGHT + loop.BAR_GRACE_MS
+    patched.should_run = [True] * 4 + [False]
+    attempts = []
+
+    def on_bar(conn, settings, close_ts):
+        attempts.append(close_ts)
+        raise ConnectionError("exchange ล่ม")
+
+    assert loop.run("paper", db=patched, stopping=loop.StopFlag(), sleep=clock.sleep, now=clock.now,
+                    on_bar=on_bar) == 0
+    assert attempts == [MIDNIGHT], "ล้มแล้วต้องไม่ลองแท่งเดิมซ้ำ"
+    # เหตุผลโผล่ที่การเต้นครั้งถัดไป และคงอยู่จนกว่าแท่งถัดไปจะสำเร็จ
+    assert patched.reasons[0] is None
+    assert all("exchange ล่ม" in (r or "") for r in patched.reasons[1:4])
+
+
+def test_due_close_maps_every_moment_to_the_right_bar():
+    grace = loop.BAR_GRACE_MS
+    assert loop.due_close("1d", MIDNIGHT + grace, 0) == MIDNIGHT
+    assert loop.due_close("1d", MIDNIGHT + grace, MIDNIGHT) is None  # ตัดสินแล้ว
+    assert loop.due_close("1d", MIDNIGHT + DAY - 1, MIDNIGHT) is None  # แท่งถัดไปยังไม่ปิด
+    assert loop.due_close("1h", MIDNIGHT + 3_600_000 + grace, MIDNIGHT) == MIDNIGHT + 3_600_000
+    with pytest.raises(ValueError):
+        loop.due_close("4h", MIDNIGHT, 0)

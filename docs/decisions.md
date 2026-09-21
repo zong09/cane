@@ -35,6 +35,10 @@
 | 25 | [ความลับไม่ลง DB แม้จะสั่งว่า "ทุกอย่างลง DB"](adr/0025-secrets-stay-out-of-the-database.md) | accepted |
 | 26 | [ตลาดเป็นค่าต่อ symbol ไม่ใช่ค่าของทั้งระบบ](adr/0026-market-is-per-symbol.md) | accepted |
 | 27 | [รูปของบันทึกการตัดสินใจ — กุญแจ เกณฑ์ "เข้าไม้แล้ว" และ `signal`](adr/0027-shape-of-the-decision-record.md) | accepted |
+| 28 | [ccxt สอง client ต่อ market ไม่ใช่ `params={'type': ...}` ต่อคำสั่ง](adr/0028-two-ccxt-clients-one-per-market.md) | accepted |
+| 29 | [replay รันบน scratch DB แยก มี cursor ต่อ profile ไว้กันรันซ้ำ](adr/0029-replay-runs-in-a-scratch-database.md) | accepted |
+| 30 | [Judge คุยกับ typesafe.ai ได้ผ่าน adapter ที่สอง](adr/0030-typesafe-adapter-for-the-judge.md) | accepted · แก้ข้อสมมติ "ปลายทางมีรูปเดียว" ของใบ 31 |
+| 31 | [`dry_run` กั้นเฉพาะ broker ที่ส่งคำสั่งจริงได้ — paper จำลองเสมอ](adr/0031-dry-run-gates-only-a-real-broker.md) | accepted · ปรับถ้อยคำ spec/06 §dry_run |
 
 ---
 

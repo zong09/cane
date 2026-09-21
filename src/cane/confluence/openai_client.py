@@ -76,6 +76,7 @@ import json
 import os
 import urllib.error
 import urllib.request
+from collections.abc import Sequence
 from typing import Any
 
 #: URL ฐานของ gateway พร้อม path เวอร์ชัน เช่น `http://localhost:11434/v1`
@@ -131,9 +132,21 @@ class OpenAICompatJudgeClient:
         return f"{self.base_url}|{self.model}"
 
     def ask(
-        self, *, system: str, user: str, schema: dict[str, object]
+        self,
+        *,
+        system: str,
+        user: str,
+        schema: dict[str, object],
+        factor: str | None = None,
+        side: str | None = None,
+        bar_indices: Sequence[int] = (),
     ) -> dict[str, object]:
-        """ยิงหนึ่งคำถาม คืน dict ที่แกะจาก JSON แล้ว · พังแล้วยก exception"""
+        """ยิงหนึ่งคำถาม คืน dict ที่แกะจาก JSON แล้ว · พังแล้วยก exception
+
+        `factor` / `side` / `bar_indices` **เมินทั้งหมด** — คำตอบตาม `schema` มี factor กับ side
+        ในตัวอยู่แล้ว และแท่งที่อ้างได้อยู่ในตารางที่ `user` เขียนไว้ · สามตัวนี้มีไว้ให้ปลายทาง
+        ที่ตอบเป็นค่ามีชนิด (ADR 30) ตามสัญญาของ `LlmClient`
+        """
         body = {
             "model": self.model,
             "temperature": 0,

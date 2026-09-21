@@ -317,8 +317,11 @@ def _check_dry_run(record: DecisionRecord) -> None:
 
     ขั้น 13 ของ spec/08 §สิบสี่ขั้นของหนึ่งรอบ ข้ามการเปิดสถานะ → ออเดอร์เปิดที่ `sent = True` บนแท่ง
     dry run คือหลักฐานว่ามีคำสั่งหลุดออกไปจริง ซึ่งเป็นเรื่องที่ต้องดังตอนเขียน
+
+    **ยกเว้น `profile = 'paper'`** — ธงนี้กั้นเฉพาะ broker ที่ส่งคำสั่งจริงได้ (ADR 31) paper ส่งให้
+    `PaperBroker` จำลองเสมอ `sent = True` บนแท่งของมันจึงไม่ใช่คำสั่งที่หลุดออกไป · live ยังถูกตรวจเหมือนเดิม
     """
-    if not record.dry_run:
+    if not record.dry_run or record.profile == "paper":
         return
     for order in _open_orders(record):
         if order.sent:
@@ -598,6 +601,52 @@ def decision_at(
     if row is None:
         return None
     return _load(conn, [row])[0]
+
+
+def latest_decision(
+    conn: Connection, profile: str, market: str, symbol: str, timeframe: str
+) -> DecisionRecord | None:
+    """บันทึกล่าสุดของเหรียญหนึ่ง (แท่งใหม่สุดก่อน แล้ว `id` สูงสุด) หรือ `None` ถ้ายังไม่เคยมี
+
+    ที่ตัดสินใจแท่งถัดไปต้องรู้ว่ารอบก่อนจบอย่างไร — ของค้างจาก `flip_aborted` ต้องถูกเขียนซ้ำ
+    ทุกแท่งจนกว่าคนจะปิด (spec/08 §กฎที่ห้ามผิดลำดับ) และจำจากหน่วยความจำไม่ได้ เพราะ process
+    ที่ตายกลางแท่งกลับมาแล้วต้องเห็นของค้างเหมือนเดิม
+    """
+    row = conn.execute(
+        select(decisions)
+        .where(
+            decisions.c.profile == profile,
+            decisions.c.market == market,
+            decisions.c.symbol == store_symbol(symbol),
+            decisions.c.timeframe == timeframe,
+        )
+        .order_by(decisions.c.bar_close_ts.desc(), decisions.c.id.desc())
+        .limit(1)
+    ).first()
+    return None if row is None else _load(conn, [row])[0]
+
+
+def last_entry(
+    conn: Connection, profile: str, market: str, symbol: str, timeframe: str
+) -> DecisionRecord | None:
+    """บันทึกล่าสุดที่ **เข้าไม้จริง** (`skip_reason IS NULL` ⟺ ขาเปิดถูก venue รับ) หรือ `None`
+
+    ใช้อนุมานว่าไม้ที่ถืออยู่ควรมี stop ของ cold start ทางที่ 2 หรือไม่ โดยไม่มี flag บนดิสก์ —
+    ตัวตนของไม้อยู่ในตารางที่แก้ไม่ได้อยู่แล้ว (spec/08 §การเลื่อน stop ตาม Slow Trail)
+    """
+    row = conn.execute(
+        select(decisions)
+        .where(
+            decisions.c.profile == profile,
+            decisions.c.market == market,
+            decisions.c.symbol == store_symbol(symbol),
+            decisions.c.timeframe == timeframe,
+            decisions.c.skip_reason.is_(None),
+        )
+        .order_by(decisions.c.bar_close_ts.desc(), decisions.c.id.desc())
+        .limit(1)
+    ).first()
+    return None if row is None else _load(conn, [row])[0]
 
 
 def latest_per_symbol(

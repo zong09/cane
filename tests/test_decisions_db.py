@@ -294,6 +294,72 @@ def test_a_restart_inside_the_same_bar_keeps_both_rows(db, live_version):
     assert repo.decision_at(db, "live", PERP, BTC, "1d", T0).id == second
 
 
+def _entered(version_id, bar_close_ts, **overrides) -> DecisionRecord:
+    """แท่งที่เข้าไม้จริง — ขาเปิดถูกรับ จึง `skip_reason` ต้องเป็น `None`"""
+    return quiet_bar(
+        version_id,
+        bar_close_ts=bar_close_ts,
+        zone="GREEN",
+        state="BULLISH",
+        long_signal=True,
+        side="long",
+        skip_reason=None,
+        orders=(
+            OrderAttempt(
+                leg="open",
+                order_side="buy",
+                order_type="market",
+                reduce_only=False,
+                qty=0.001,
+                client_order_id=f"open-{bar_close_ts}",
+                sent=True,
+                accepted=True,
+                venue_order_id=f"v-{bar_close_ts}",
+            ),
+        ),
+        **overrides,
+    )
+
+
+def test_latest_decision_is_the_newest_bar_then_the_highest_id(db, live_version):
+    """รอบก่อนของแท่งถัดไปคือแถวใหม่สุด — และถ้าแท่งเดียวกันมีสองแถว แถวหลังชนะ"""
+    assert repo.latest_decision(db, "live", PERP, BTC, "1d") is None
+
+    repo.insert_decision(db, quiet_bar(live_version), created_ts=T0 + 600)
+    repo.insert_decision(
+        db, quiet_bar(live_version, skip_reason="cane_rule"), created_ts=T0 + 900
+    )
+    assert repo.latest_decision(db, "live", PERP, BTC, "1d").skip_reason == "cane_rule"
+
+    later = repo.insert_decision(
+        db, quiet_bar(live_version, bar_close_ts=T0 + DAY_MS), created_ts=T0 + DAY_MS
+    )
+    assert repo.latest_decision(db, "live", PERP, BTC, "1d").id == later
+    # ไม่ปนกับตลาดอื่นที่ชื่อเหรียญเดียวกัน (ADR 26)
+    assert repo.latest_decision(db, "live", SPOT, BTC, "1d") is None
+
+
+def test_last_entry_skips_every_bar_that_did_not_enter(db, live_version):
+    """`last_entry()` คือไม้ล่าสุดที่เข้าจริง — แท่ง "ไม่ทำอะไร" หลังจากนั้นไม่ทำให้มันเปลี่ยน"""
+    assert repo.last_entry(db, "live", PERP, BTC, "1d") is None
+
+    entered = repo.insert_decision(
+        db, _entered(live_version, T0), created_ts=T0 + 600
+    )
+    repo.insert_decision(
+        db, quiet_bar(live_version, bar_close_ts=T0 + DAY_MS), created_ts=T0 + DAY_MS
+    )
+
+    found = repo.last_entry(db, "live", PERP, BTC, "1d")
+    assert found is not None and found.id == entered
+    assert found.side == "long"
+
+    newer = repo.insert_decision(
+        db, _entered(live_version, T0 + 2 * DAY_MS), created_ts=T0 + 2 * DAY_MS
+    )
+    assert repo.last_entry(db, "live", PERP, BTC, "1d").id == newer
+
+
 def test_insert_refuses_a_record_that_breaks_an_invariant(db, live_version):
     """`insert_decision()` เรียก `validate_record()` เอง ไม่ใช่ของที่ผู้เรียกเลือกเรียก"""
     with pytest.raises(ValueError, match="skip_reason เป็น None"):

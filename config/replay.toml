@@ -1,0 +1,44 @@
+# config ของ replay ย้อนหลัง — ใช้ seed เข้า scratch database เท่านั้น (ADR 29) ไม่ใช่ config ของ paper จริง
+#
+#   uv run cane db seed --profile paper --from config/replay.toml    (CANE_DB_DSN ชี้ไป cane_replay)
+#
+# ต่างจาก paper.toml สามข้อ และทั้งสามข้อมีเหตุผล:
+#   1. มีแต่ BTC/USDT perp — ข้อมูลที่นำเข้าได้ตอนนี้มีตัวเดียว (fixture ของ TradingView)
+#   2. bucket ใหญ่พอให้ไม้ส่งได้ — bucket 100 ของ paper.toml ให้ notional ต่ำกว่า min_notional ของ BTC (100)
+#      จึงถูกสูตรปฏิเสธทุกไม้ · ค่านั้นมีไว้ให้ seed ผ่าน ไม่ใช่ให้เทรด
+#   3. cold_start = "trailing" — ให้ replay เดินเส้นทางที่ 2 (stop ที่ exchange) ตั้งแต่แท่งแรกด้วย
+profile     = "paper"
+timeframe   = "1d"
+cold_start  = "trailing"
+base_pct    = 10.0
+dry_run     = true          # paper บังคับ true — ไม่กั้น PaperBroker (ADR 31)
+allow_short = true
+
+[[symbols]]
+symbol             = "BTC/USDT"
+market             = "usdtm_perp"
+bucket_quote_long  = 5000.0
+bucket_quote_short = 3000.0
+leverage           = 2.0
+allow_short        = true
+enabled            = true
+
+[risk]
+max_position_pct_long    = 50.0
+max_position_pct_short   = 40.0
+max_leverage             = 2.0
+min_liq_buffer_pct       = 35.0
+max_daily_loss_pct       = 5.0
+consecutive_loss_breaker = 4
+
+[broker]
+kind          = "paper"
+margin_mode   = "isolated"
+position_mode = "one_way"
+seed_quote    = 10000.0
+# ค่าของการจำลอง เหมือน paper.toml: Binance USDT-M taker 0.05% · maintenance margin ขั้นแรก 0.4%
+taker_fee_pct          = 0.05
+maintenance_margin_pct = 0.4
+
+[data]
+exchange = "binance"

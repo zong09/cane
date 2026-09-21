@@ -46,6 +46,7 @@ if TYPE_CHECKING:
 
 from cane.db.repo.decisions import RiskCheck
 from cane.db.repo.killswitch import is_latched
+from cane.db.types import PRICE_SCALE
 
 #: ลำดับของด่าน (spec/08 ขั้น 12) · ตรงกับ `ck_decision_risk_checks_layer`
 LAYERS = ("kill_switch", "daily_loss", "liq_buffer")
@@ -99,6 +100,12 @@ def check_all(
     checks: list[RiskCheck] = []
 
     def record(layer: str, passed: bool, **fields) -> RiskVerdict | None:
+        # ปัดเฉพาะค่าที่ **บันทึก** — การตัดสินผ่าน/ไม่ผ่านเทียบค่าดิบไปแล้วก่อนถึงตรงนี้ · ตารางเก็บได้แค่
+        # `PRICE_SCALE` ตำแหน่งและ `validate_record()` ปฏิเสธค่าที่ละเอียดกว่า (ไม่ปัดให้) ระยะเป็น % ที่หาร
+        # แล้วมีทศนิยมยาวเสมอ จึงต้องปัดที่ต้นทางของค่า ไม่ใช่ปล่อยให้ไปพังตอนเขียนบันทึกของแท่งนั้นทั้งแถว
+        for name in ("value", "limit_value"):
+            if isinstance(fields.get(name), float):
+                fields[name] = round(fields[name], PRICE_SCALE)
         checks.append(RiskCheck(seq=len(checks) + 1, layer=layer, passed=passed, **fields))
         return None if passed else RiskVerdict(checks=tuple(checks), passed=False)
 

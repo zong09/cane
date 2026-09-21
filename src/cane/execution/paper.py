@@ -490,9 +490,18 @@ class PaperBroker:
         """`None` บน spot — ตลาดนั้นไม่มี liquidation อยู่จริง (ADR 26)"""
         if self.market == SPOT or sim.qty <= 0:
             return None
-        mmr = (self.maintenance_margin_pct or 0.0) / 100
-        edge = 1 / sim.leverage - mmr
-        return sim.entry_px * (1 - edge) if sim.side == "long" else sim.entry_px * (1 + edge)
+        return liq_price(sim.side, sim.entry_px, sim.leverage, self.maintenance_margin_pct or 0.0)
+
+
+def liq_price(side: str, entry_px: float, leverage: float, maintenance_margin_pct: float) -> float:
+    """ราคา liquidation ของ isolated perp — สูตรเดียวกับที่ engine ใช้หา `liquidation_px` ก่อนเปิดไม้
+
+    แยกเป็นฟังก์ชันบริสุทธิ์เพราะขั้น 12 ของ spec/08 §สิบสี่ขั้นของหนึ่งรอบ ตรวจ `min_liq_buffer_pct`
+    กับไม้ที่ **ยังไม่เปิด** ซึ่งไม่มี `_Sim` ให้ถาม · คำนวณสองสูตรแยกกันคือการเปิดช่องให้
+    ด่าน risk เห็นราคาหนึ่ง ส่วนตัวจำลองยิง liquidation ที่อีกราคาหนึ่ง
+    """
+    edge = 1 / leverage - maintenance_margin_pct / 100
+    return entry_px * (1 - edge) if side == "long" else entry_px * (1 + edge)
 
 
 def _pnl(side: str, entry_px: float, px: float, qty: float) -> float:

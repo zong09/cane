@@ -540,7 +540,8 @@ decisions = Table(
         name="ck_decisions_size_rule",
     ),
     # ชุดปิดที่ตกลงกันไว้ในใบ · เป็น TEXT + CHECK ไม่ใช่ ENUM เพราะชุดนี้จะโตอีก
-    # (ขั้น 1 ของ spec/08 ที่ข้ามเหรียญไปเลยยังไม่มีค่าของตัวเอง — ใบ 12 ตัดสิน)
+    # (ขั้น 1 ของ spec/08 ที่ข้ามเหรียญไป — แท่งไม่ถึง 85 หรือ `enabled = false` — **ไม่เขียนแถว** จึงไม่มีค่าของตัวเอง:
+    # ไม่มี zone/state/close_px ให้แถวบังคับมี · log แทน ดู spec/08 §กฎที่ห้ามผิดลำดับ · ใบ 12 ตัดสินแล้ว)
     CheckConstraint(
         "skip_reason IS NULL OR skip_reason IN ("
         "'flip_aborted', 'no_signal', 'already_positioned', 'short_disabled', "
@@ -1027,6 +1028,37 @@ engine_state = Table(
     CheckConstraint(
         "last_heartbeat_ts IS NULL OR last_heartbeat_ts > 0",
         name="ck_engine_state_heartbeat_is_epoch_ms",
+    ),
+)
+
+
+#: ความคืบหน้าของ replay ย้อนหลัง — **ตัวบอกความคืบหน้ากับตัวกันรันซ้ำ ไม่ใช่จุด resume** (ADR 29)
+#:
+#: ตารางที่เขียนทับได้อีกตัว คู่กับ `engine_state` ข้างบน · เงินสดของ replay อยู่ในหน่วยความจำ
+#: ของ `PaperBroker` จึง resume นอก process เดิมไม่ได้ · reset ด้วยการ drop scratch database
+#: ไม่ใช่ลบแถว (ไม่มีใครมี DELETE)
+#:
+#: **ข้อบังคับสำคัญของตารางนี้ไม่ได้อยู่ในคำประกาศนี้** — GRANT ระดับคอลัมน์ของ migration 0011
+#: ให้ engine เขียน `as_of_ms` / `updated_ts` ได้อย่างเดียว ส่วน console อ่านได้อย่างเดียว ·
+#: SQLAlchemy ประกาศสิทธิ์ระดับคอลัมน์ไม่ได้
+replay_cursor = Table(
+    "replay_cursor",
+    metadata,
+    Column("profile", PROFILE_T, primary_key=True),
+    Column("as_of_ms", BigInteger, nullable=False),
+    Column("end_ts", BigInteger, nullable=False),
+    Column("updated_ts", BigInteger, nullable=False),
+    CheckConstraint(
+        "as_of_ms > 0",
+        name="ck_replay_cursor_as_of_is_epoch_ms",
+    ),
+    CheckConstraint(
+        "end_ts >= as_of_ms",
+        name="ck_replay_cursor_end_not_before_as_of",
+    ),
+    CheckConstraint(
+        "updated_ts > 0",
+        name="ck_replay_cursor_updated_is_epoch_ms",
     ),
 )
 

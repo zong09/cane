@@ -55,6 +55,22 @@ def test_a_trade_that_clears_every_layer_records_all_three(db):
 
 
 @pytest.mark.db
+def test_recorded_distances_are_rounded_to_what_the_table_can_hold_but_the_verdict_is_not(db):
+    """ระยะเป็น % ที่หารแล้วมีทศนิยมยาวเสมอ — `validate_record()` ปฏิเสธค่าที่ละเอียดกว่าตาราง (ไม่ปัดให้)
+
+    ปัดที่ค่าที่ **บันทึก** เท่านั้น: ผ่าน/ไม่ผ่านเทียบค่าดิบ ไม่ใช่ค่าที่ปัดแล้ว ไม่งั้นค่าที่ห่างเกณฑ์น้อยกว่าครึ่งหน่วย
+    ของตำแหน่งสุดท้ายจะถูกตัดสินตามค่าที่ตาราง(และคนที่อ่านตาราง)เห็น ซึ่งไม่ใช่ค่าที่ระบบคำนวณจริง
+    """
+    entry = 7_319.123_456_79  # ระยะออกมา 44.8… % ที่ทศนิยมไม่จบ
+    got = run(db, entry_px=entry, liquidation_px=entry * 0.55, min_liq_buffer_pct=44.0)
+
+    liq = got.checks[-1]
+    assert got.passed and liq.layer == "liq_buffer"
+    assert len(repr(liq.value).split(".")[-1]) <= 8
+    assert liq.value == round(liq.value, 8)
+
+
+@pytest.mark.db
 def test_a_latched_kill_switch_stops_the_trade_at_the_first_layer(db):
     """ชั้นที่ไม่มีในตารางคือ**หลักฐานว่าลำดับถูกเคารพ** ไม่ใช่ข้อมูลที่หายไป
 

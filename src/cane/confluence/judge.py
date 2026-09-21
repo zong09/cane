@@ -118,10 +118,22 @@ class LlmClient(Protocol):
     ตัว adapter จริงต้องส่ง `schema` เข้าพารามิเตอร์ structured output ของผู้ให้บริการ
     **ไม่ใช่แปะลงใน prompt แล้วหวัง** — ความต่างคือคำตอบที่ผิดรูปเป็นไปไม่ได้
     กับคำตอบที่ผิดรูปได้แต่เราขอไว้ว่าอย่า
+
+    `factor` / `side` / `bar_indices` บอกว่ากำลังถามอะไรและอ้างแท่งไหนได้บ้าง · adapter
+    ที่รับ JSON schema เมินสามตัวนี้ได้ทั้งหมด (คำตอบมี factor กับ side ในตัวอยู่แล้ว) แต่
+    ปลายทางที่ตอบเป็นค่ามีชนิด (ADR 30) ต้องใช้มันประกอบคำถามกับแปลงคำตอบกลับเป็น verdict ·
+    `bar_indices` คือดัชนีแท่งที่ **ตารางใน `user` แสดงจริง** ไม่ใช่ช่วงที่เดาเอาจาก `CONTEXT_BARS`
     """
 
     def ask(
-        self, *, system: str, user: str, schema: dict[str, object]
+        self,
+        *,
+        system: str,
+        user: str,
+        schema: dict[str, object],
+        factor: str,
+        side: str,
+        bar_indices: Sequence[int],
     ) -> dict[str, object]: ...
 
 
@@ -178,6 +190,16 @@ def prompt_hash(side: str, model_id: str) -> str:
     return digest.hexdigest()[:32]
 
 
+def context_start(bars: Sequence[Bar], feat: Features) -> int:
+    """ดัชนีแรกของตารางแท่งที่ `render_context()` แสดง — แท่งที่ LLM อ้างได้คือ `start..len(bars)-1`
+
+    แยกออกมาเพราะสองที่ต้องเห็นช่วงเดียวกัน: ตารางใน prompt กับชุดดัชนีที่ส่งให้ adapter
+    (`LlmClient.ask(bar_indices=...)`) · คำนวณสองที่คือการเปิดช่องให้ตัวเลือกที่ปลายทางเสนอ
+    ต่างจากแท่งที่ LLM เห็นจริงโดยไม่มีอะไรฟ้อง
+    """
+    return min(max(0, len(bars) - CONTEXT_BARS), _earliest_cited(feat, len(bars)))
+
+
 def render_context(bars: Sequence[Bar], feat: Features) -> str:
     """ตัวเลขที่ LLM เห็น — OHLCV ท้ายชุดพร้อม feature ที่คำนวณมาให้แล้ว (ADR 4)
 
@@ -196,7 +218,7 @@ def render_context(bars: Sequence[Bar], feat: Features) -> str:
     ปัดทศนิยมคงที่และไม่ใส่เวลานาฬิกาใดๆ — ข้อความนี้ต้องเหมือนเดิมเป๊ะเมื่อป้อน
     แท่งชุดเดิม ไม่งั้น cache ที่คีย์ด้วย `bar_close_ts` จะตรงแต่เนื้อที่ส่งไปไม่ตรง
     """
-    start = min(max(0, len(bars) - CONTEXT_BARS), _earliest_cited(feat, len(bars)))
+    start = context_start(bars, feat)
     rows = "\n".join(
         f"| {i} | {bars[i].open:.8g} | {bars[i].high:.8g} | "
         f"{bars[i].low:.8g} | {bars[i].close:.8g} | {bars[i].volume:.8g} |"
@@ -247,6 +269,7 @@ def judge_side(
 
     fingerprint = prompt_hash(side, model_id)
     context = render_context(bars, feat)
+    bar_indices = range(context_start(bars, feat), len(bars))
     verdicts: list[ConfluenceVerdict] = []
     from_cache: list[bool] = []
 
@@ -268,7 +291,12 @@ def judge_side(
 
         try:
             verdict = _ask_one(
-                client, factor=factor, side=side, context=context, bar_count=len(bars)
+                client,
+                factor=factor,
+                side=side,
+                context=context,
+                bar_count=len(bars),
+                bar_indices=bar_indices,
             )
         except _JudgeFailed as failure:
             # ล้มทั้งฝั่ง ดูหัวไฟล์ · ตัวที่ตอบไปแล้วยังอยู่ใน cache ไม่เสียเปล่า
@@ -296,7 +324,13 @@ class _JudgeFailed(Exception):
 
 
 def _ask_one(
-    client: LlmClient, *, factor: str, side: str, context: str, bar_count: int
+    client: LlmClient,
+    *,
+    factor: str,
+    side: str,
+    context: str,
+    bar_count: int,
+    bar_indices: Sequence[int],
 ) -> ConfluenceVerdict:
     """ถาม LLM หนึ่งครั้งแล้วแปลงเป็นคำตัดสินที่ตรวจแล้ว
 
@@ -308,7 +342,12 @@ def _ask_one(
     """
     try:
         raw = client.ask(
-            system=prompt_text(factor), user=context, schema=VERDICT_JSON_SCHEMA
+            system=prompt_text(factor),
+            user=context,
+            schema=VERDICT_JSON_SCHEMA,
+            factor=factor,
+            side=side,
+            bar_indices=bar_indices,
         )
     except Exception as error:  # noqa: BLE001 — ดูเหตุผลใน docstring
         raise _JudgeFailed("transport") from error

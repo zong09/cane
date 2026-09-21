@@ -93,13 +93,17 @@ class FakeJudge:
 
     def __init__(self, reply=None):
         self.calls: list[tuple[str, str]] = []
+        #: `bar_indices` ของแต่ละครั้งที่ถูกถาม — ให้เทสต์ตรวจว่าตรงกับตารางที่ prompt แสดง
+        self.bar_indices: list[tuple[int, ...]] = []
         self._reply = reply or _good_reply
 
-    def ask(self, *, system: str, user: str, schema: dict):
-        factor = _asked_factor(system)
-        side = SIDE_OF_FACTOR[factor]
-        self.calls.append((factor, side))
-        return self._reply(factor, side)
+    def ask(self, *, system: str, user: str, schema: dict, factor: str, side: str, bar_indices):
+        # ยังอ่าน factor จากหัวข้อของ prompt ตามเดิม แล้วเทียบกับที่ Judge ส่งมา — สองทางต้องตรงกัน
+        asked = _asked_factor(system)
+        assert asked == factor and SIDE_OF_FACTOR[asked] == side
+        self.calls.append((asked, side))
+        self.bar_indices.append(tuple(bar_indices))
+        return self._reply(asked, side)
 
 
 #: prompt ของฝั่ง short **เอ่ยชื่อ factor ฝั่ง long ด้วย** ("ภาพสะท้อนของ
@@ -209,6 +213,37 @@ def test_a_pivot_older_than_the_context_window_still_appears_in_the_table():
 
     for index in cited:
         assert f"| {index} |" in text, f"แท่ง {index} ถูกอ้างถึงแต่ไม่อยู่ในตาราง"
+
+
+@pytest.mark.db
+def test_the_bar_indices_offered_to_the_client_are_exactly_the_rows_of_the_table(db):
+    """ปลายทางที่ตอบเป็นค่ามีชนิด (ADR 30) เสนอแท่งให้เลือกจาก `bar_indices`
+
+    ถ้าชุดนี้ต่างจากแถวในตารางที่ prompt แสดง โมเดลจะเลือกแท่งที่ไม่เคยเห็น หรือมองไม่เห็นแท่ง
+    ที่ควรเลือก — ใช้ชุดที่หน้าต่างต้องยืดย้อนหลังเพราะจุดเหวี่ยงเก่ากว่า `CONTEXT_BARS`
+    """
+    series = _slow_ramp(120)
+    feat = features(series)
+    client = FakeJudge()
+
+    judge_side(
+        db,
+        client,
+        market="usdtm_perp",
+        symbol="BTC/USDT",
+        timeframe="1d",
+        bars=series,
+        feat=feat,
+        side="long",
+        model_id=MODEL,
+    )
+
+    table_rows = tuple(
+        i for i in range(len(series)) if f"\n| {i} | " in render_context(series, feat)
+    )
+    assert client.bar_indices, "Judge ต้องเรียก client อย่างน้อยหนึ่งครั้ง"
+    assert all(indices == table_rows for indices in client.bar_indices)
+    assert len(table_rows) > 40, "หน้าต่างต้องยืดเกิน CONTEXT_BARS ไม่งั้นข้อนี้ไม่พิสูจน์อะไร"
 
 
 def test_an_invented_bar_index_is_refused_rather_than_cached_forever():
