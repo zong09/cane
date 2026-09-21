@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   ai-review:
-    uses: zong09/ai-pr-review/.github/workflows/pr-review.yml@main
+    uses: zong09/agent-pr-review/.github/workflows/pr-review.yml@main
     secrets:
       DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
     with:
