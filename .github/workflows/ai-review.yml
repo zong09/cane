@@ -26,6 +26,11 @@ jobs:
     secrets:
       DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
     with:
+      # diff ของ repo นี้ใหญ่กว่า 40000 (ค่า default) — PR #31 ถูกข้ามไป 10 ไฟล์
+      # รวมถึง execution/broker.py กับ engine/live.py ซึ่งเป็นหัวใจของ PR นั้นพอดี
+      # และมันข้ามแบบเงียบ ๆ สังเกตได้จากบรรทัด "skipped due to token budget" ในรีวิวเท่านั้น
+      # flash รับ input ได้ถึงราว 991k จึงเหลือที่เยอะ แต่ยิ่งใหญ่ยิ่งช้าและกิน credit มากขึ้น
+      custom_model_max_tokens: 128000
       extra_instructions: |
         โปรเจกต์นี้เป็น trading bot ภาษา Python ที่ส่งคำสั่งซื้อขายด้วยเงินจริง
         บน Binance ผ่าน ccxt ใช้ SQLAlchemy Core และมี raw SQL ผ่าน text() จำนวนมาก
