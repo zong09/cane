@@ -962,6 +962,28 @@ def test_renaming_a_pair_replaces_the_row_it_came_from(
     assert names == ["BTC/USDT", "XRP/USDT"]
 
 
+def test_typing_a_name_that_already_exists_replaces_that_row_and_says_so(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    """ชื่อเหรียญเป็นกุญแจของ `config_symbols` — แถวที่สองของชื่อเดิมมีไม่ได้อยู่แล้ว
+
+    ที่ต้องตรึงคือ**คำที่ตอบกลับ**: การทับค่าเดิมทั้งแถวต้องไม่ถูกเรียกว่า "เพิ่ม"
+    """
+    seeded(db, "paper")
+
+    with client:
+        page = client.post(
+            "/api/paper/symbols",
+            data=a_pair(symbol="BTC/USDT", bucket_quote_long="999.0", leverage="1.0")
+            | right_now_code(),
+        ).text
+
+    assert "ทับ BTC/USDT แล้ว" in page
+    symbols = config_repo.settings_of(db, latest(db).id).symbols
+    assert [s.symbol for s in symbols] == ["BTC/USDT", "ETH/USDT"]
+    assert float(symbols[0].bucket_quote_long) == 999.0
+
+
 def test_deleting_a_pair_writes_a_draft_without_it(
     db: Connection, client: TestClient, clean_config: None
 ) -> None:

@@ -469,9 +469,13 @@ def save(
 
     block, problems = _block(form)
     original = form.get("original", "").strip()
-    symbols, index = _upserted(deepcopy(base.model_dump()["symbols"]), block, original=original)
+    was = deepcopy(base.model_dump()["symbols"])
+    symbols, index = _upserted(was, block, original=original)
     name = str(block.get("symbol", "")) or original or "เหรียญใหม่"
-    verb = "แก้" if original else "เพิ่ม"
+    # พิมพ์ชื่อที่มีอยู่แล้วลงฟอร์ม "เพิ่มเหรียญ" = **ทับแถวเดิม** ไม่ใช่ได้แถวที่สอง
+    # (ชื่อเป็นกุญแจของ `config_symbols`) · คำที่ตอบกลับต้องพูดความจริงข้อนั้น ไม่ใช่
+    # บอกว่า "เพิ่มแล้ว" ทั้งที่ค่าเดิมของเหรียญนั้นถูกแทนไปทั้งแถว
+    verb = "แก้" if original else ("ทับ" if len(symbols) == len(was) else "เพิ่ม")
     return _written(
         request, db, target=target, symbols=symbols, base=base, index=index,
         problems=problems, code=form.get("step_up_code", ""), user=user,
