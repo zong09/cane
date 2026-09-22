@@ -68,6 +68,9 @@ DAY_MS = 86_400_000
 #: `OrderResult.status` ที่แปลว่า venue รับคำสั่งแล้ว — `closed` = fill · `open` = ค้างรอ (stop)
 _ACCEPTED = ("open", "closed")
 
+#: ข้อความยาวสุดของ `decision_orders.error` ที่ยกมาจากข้อผิดพลาดของปลายทาง
+_ERROR_LIMIT = 300
+
 #: เหตุผลที่ลง `decision_unmanaged.source` — ชุดปิดในโค้ด ตารางเป็น TEXT ไม่มี CHECK จึงต้องรักษาชุดนี้ที่นี่
 UNMANAGED_SOURCES = ("flip_aborted", "close_partial")
 
@@ -192,7 +195,7 @@ def run_bar(
 
     # ── Slow Trail — ก่อนขั้น 4 และทำแม้ kill switch latch อยู่ ─────────────
     trail_slow = _stop_px(cdc_trailing_stop(bars)[-1].slow)
-    stop = _slow_trail(conn, ctx, sym, position, open_orders, trail_slow, bar_close_ts)
+    stop, stop_failure = _slow_trail(conn, ctx, sym, position, open_orders, trail_slow, bar_close_ts)
 
     # ── 4–7 · แผนของแท่ง ───────────────────────────────────────────────────
     allow_short = settings.allow_short and cfg.allow_short
@@ -328,6 +331,8 @@ def run_bar(
 
     # ── 13 · ขา 1 (ปิด) ก่อนขา 2 (เปิด) เสมอ ────────────────────────────────
     legs = _Legs(skip_reason=skip_reason, stop=stop)
+    if stop_failure is not None:
+        legs.orders.append(stop_failure)
     if refused is not None:
         legs.orders.append(refused)
     send_open = open_side is not None and skip_reason is None
@@ -433,33 +438,64 @@ def _slow_trail(
     open_orders: list[OpenOrder],
     trail_slow: float | None,
     bar_close_ts: int,
-) -> Stop | None:
+) -> tuple[Stop | None, OrderAttempt | None]:
     """เลื่อน stop ของไม้ cold start ทางที่ 2 ตาม Trail2 · stop ที่ควรมีแต่หายไป = บันทึกว่าหาย ไม่วางทับ
 
     "ควรมี" อ่านจากบันทึกล่าสุดที่เข้าไม้จริง: ถ้ามันคือ cold start `trailing` ฝั่งเดียวกับไม้ที่ถืออยู่ ไม้นี้ต้องมี stop
     ที่ exchange (ADR 17) · ไม่มี flag บนดิสก์ (spec/08 §cold start)
+
+    **ปลายทางล้มตอนขยับ stop ไม่ทำให้ทั้งแท่งตกไป** — ขั้นนี้อยู่นอก `_execute` ถ้าปล่อยให้ข้อผิดพลาดทะลุขึ้นไป
+    `loop._run_bar_cycle` จะย้อนทรานแซกชันทั้งแท่งแล้วนับว่าแท่งนั้นทำแล้ว ผลคือ **ขาปิดตามสัญญาณของแท่งนั้นไม่ได้ยิง
+    และไม่มีแถวบันทึกเลย** ซึ่งขัด spec/08 §กฎที่ห้ามผิดลำดับ ที่ว่าขั้น 14 เกิดทุกเส้นทาง · กับ `PaperBroker` แทบเป็นไปไม่ได้
+    กับ ccxt คือวันเน็ตไม่ดีธรรมดา · จึงบันทึกเป็นความพยายามที่ล้มแล้วเดินต่อ ตามนโยบายเดียวกับที่หัวไฟล์เขียนไว้
+    สำหรับ broker ที่ล้มตอนส่งคำสั่ง
+
+    ดัก `RuntimeError` (ซึ่ง `BrokerError` และ `PaperError` เป็นลูก) ไม่ใช่ `Exception` — `ValueError` จาก `maintain_stop`
+    คืออาร์กิวเมนต์ที่ผิดรูป ซึ่งเป็นบั๊กของเราเองและต้องทะลุขึ้นไป
     """
     if position is None:
-        return None
+        return None, None
     existing = next((o for o in open_orders if o.type == "stop_market" and o.reduce_only), None)
     if existing is None:
         entry = decisions_repo.last_entry(
             conn, ctx.profile, sym.cfg.market, sym.cfg.symbol, ctx.timeframe
         )
         expected = entry is not None and entry.cold_start == "trailing" and entry.side == position.side
-        return Stop(action="missing") if expected else None
+        return (Stop(action="missing") if expected else None), None
     if trail_slow is None:
-        return None
-    action = maintain_stop(
-        sym.broker,
-        symbol=sym.cfg.symbol,
-        side=position.side,
-        qty=position.qty,
-        stop_px=trail_slow,
-        bar_close_ts=bar_close_ts,
-        existing=existing,
-    )
-    return Stop(action=action.action, px=action.stop_px, stop_order_id=action.order_id)
+        return None, None
+    try:
+        action = maintain_stop(
+            sym.broker,
+            symbol=sym.cfg.symbol,
+            side=position.side,
+            qty=position.qty,
+            stop_px=trail_slow,
+            bar_close_ts=bar_close_ts,
+            existing=existing,
+        )
+    except RuntimeError as error:
+        log.exception("ขยับ stop ของ %s %s ไม่สำเร็จ", sym.cfg.market, sym.cfg.symbol)
+        # stop ใบเดิม **ยังคุ้มไม้อยู่** ที่ราคาเดิม — `unchanged` จึงเป็นความจริงเรื่องสถานะที่ปลายทาง
+        # ส่วนเหตุผลที่มันไม่ขยับอยู่ในแถวออเดอร์ที่ล้ม ไม่ใช่ในคำว่า `unchanged`
+        return (
+            Stop(action="unchanged", px=existing.stop_px, stop_order_id=existing.venue_order_id),
+            OrderAttempt(
+                leg="stop",
+                order_side=existing.side,
+                order_type="stop_market",
+                reduce_only=existing.reduce_only,
+                qty=existing.qty,
+                client_order_id=existing.client_order_id or client_order_id(
+                    sym.cfg.symbol, bar_close_ts, existing.side, "stop"
+                ),
+                sent=True,
+                accepted=False,
+                stop_px=trail_slow,
+                error=str(error)[:_ERROR_LIMIT],
+            ),
+        )
+    return Stop(action=action.action, px=action.stop_px, stop_order_id=action.order_id), None
 
 
 def _attempt(order: Order, leg: str, result: OrderResult | None, error: str | None = None, *, sent: bool = True) -> OrderAttempt:

@@ -47,7 +47,10 @@ PERP = "usdtm_perp"
 
 #: อ่านย้อนหลังเท่านี้ทุกครั้ง — ยาวพอจะครอบ process ที่ดับข้ามสุดสัปดาห์
 #: สั้นพอที่จะไม่ขอทั้งประวัติทุกแท่ง · ดูหัวไฟล์ว่าทำไมค่านี้ไม่ใช่กลไกความถูกต้อง
-LOOKBACK_MS = 7 * 86_400_000
+#:
+#: **หกวันไม่ใช่เจ็ด** — `allOrders`/`myTrades` ของ Binance รับช่วงที่ **น้อยกว่า** 7 วัน
+#: ช่วงที่เท่ากับ 7 วันพอดีถูกปฏิเสธ ซึ่งจะทำให้ทุกแท่งล้มเหมือนกันหมด
+LOOKBACK_MS = 6 * 86_400_000
 
 #: `leg` → `exit_reason` ของขาที่ปิดไม้ · ชุดค่าเป็นของ `ck_fills_exit_reason`
 _EXIT_REASON = {"close": "signal", "stop": "stop"}
@@ -229,14 +232,29 @@ def _sync_fills(
     qty_held = state[1] if state else 0.0
 
     written = 0
+    #: ลำดับของ fill **ภายในออเดอร์ใบเดียวกัน** — ใช้เฉพาะตอน venue ไม่ให้เลข fill มา
+    #: ดู `_chunk_key()` ว่าทำไมนับจากรายการของรอบนี้ ไม่ใช่จากของที่เขียนไปแล้ว
+    seq_of: dict[str, int] = {}
     for trade in trades:
         venue_fill_id = str(trade.get("id") or "")
-        spec_id = spec_order_id(coid_of.get(str(trade.get("order") or ""), ""), symbol)
-        if spec_id is None:
-            # ของที่คนไปกดเอง หรือออเดอร์ที่เก่ากว่าหน้าต่างของ `fetch_orders` — ไม่ใช่
-            # ของระบบจนกว่าจะพิสูจน์ได้ว่าใช่ (ADR 19 · ดูหัวไฟล์)
+        venue_order = str(trade.get("order") or "")
+        coid = coid_of.get(venue_order)
+        if coid is None:
+            # **ไม่ใช่กรณีเดียวกับของที่คนกดเอง** — ออเดอร์ใบนี้อาจเป็นของเราแต่เก่ากว่า
+            # หน้าต่างของ `fetch_orders` หรือถูกตัดด้วยการแบ่งหน้า · เงียบไม่ได้ เพราะ
+            # ถ้ามันคือขาปิด ledger จะไม่มีวันรู้ว่าไม้ปิดไปแล้ว ทั้งที่บันทึกการตัดสินใจ
+            # บอกว่าปิด (ดูหัวไฟล์ — หน้าต่างเป็นความขี้เกียจได้ก็ต่อเมื่อการพลาดดัง)
+            log.warning(
+                "trade %s ของ %s อ้างออเดอร์ %s ที่ไม่อยู่ในรายการที่อ่านมา — "
+                "อาจเป็นของระบบที่หลุดหน้าต่าง %d วัน ตรวจด้วยมือ",
+                venue_fill_id, symbol, venue_order, LOOKBACK_MS // 86_400_000,
+            )
             continue
-        key = dedupe_key_of(spec_id, venue_fill_id=venue_fill_id or None)
+        spec_id = spec_order_id(coid, symbol)
+        if spec_id is None:
+            # ของที่คนไปกดเองที่หน้าเว็บ — เห็นแต่ไม่นับว่าเป็นของเรา (ADR 19 · ดูหัวไฟล์)
+            continue
+        key, seq_of = _chunk_key(spec_id, venue_fill_id, seq_of)
         qty = float(trade.get("amount") or 0.0)
         if qty <= 0:
             continue
@@ -300,6 +318,27 @@ def _sync_fills(
         )
         written += 1
     return written
+
+
+def _chunk_key(
+    spec_id: str, venue_fill_id: str, seq_of: dict[str, int]
+) -> tuple[str, dict[str, int]]:
+    """กุญแจกันเขียนซ้ำของ fill ก้อนหนึ่ง (`ledger.dedupe_key_of` เป็นเจ้าของนิยาม)
+
+    venue ที่ให้เลข fill มา = ใช้เลขนั้น จบ · **ที่ไม่ให้มา ต้องมี `seq`** เพราะออเดอร์
+    ใบเดียว fill เป็นหลายก้อนคนละราคาได้จริง ถ้าทุกก้อนได้กุญแจ `{coid}#0` เหมือนกัน
+    ก้อนที่สองจะถูกมองว่าเป็นของซ้ำแล้วเงินก้อนนั้นหายไปจาก ledger เงียบๆ
+    (`ledger.py:dedupe_key_of` เขียนเตือนเรื่องนี้ไว้ตรงๆ)
+
+    **นับจากลำดับในรายการของรอบนี้ ไม่ใช่จากจำนวนแถวที่เขียนไปแล้ว** — venue คืนรายการ
+    เดิมเรียงเหมือนเดิมทุกครั้ง ก้อนเดิมจึงได้ `seq` เดิมเป๊ะเมื่ออ่านซ้ำ ซึ่งคือสิ่งที่
+    ทำให้การอ่านซ้ำไม่กลายเป็นการเขียนซ้ำ · การนับจากแถวที่มีอยู่จะทำตรงข้าม: อ่านซ้ำ
+    รอบสองจะได้ `seq` ถัดไปแล้วเขียนก้อนเดิมอีกรอบ
+    """
+    if venue_fill_id:
+        return dedupe_key_of(spec_id, venue_fill_id=venue_fill_id), seq_of
+    seq = seq_of.get(spec_id, 0)
+    return dedupe_key_of(spec_id, seq), {**seq_of, spec_id: seq + 1}
 
 
 def _advance(
