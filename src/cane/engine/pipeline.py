@@ -317,7 +317,7 @@ def run_bar(
                 day_pnl_pct=day_pnl_pct,
                 max_daily_loss_pct=settings.risk.max_daily_loss_pct,
                 entry_px=size.ref_px,
-                liquidation_px=_liquidation(ctx, cfg, open_side, size),
+                liquidation_px=_liquidation(sym, open_side, size),
                 min_liq_buffer_pct=settings.risk.min_liq_buffer_pct,
             )
             risk_checks = verdict.checks
@@ -410,11 +410,16 @@ def _size(
     )
 
 
-def _liquidation(ctx: RunContext, cfg: SymbolConfig, side: str, size: SizeDecision) -> float | None:
-    """ราคา liquidation ของไม้ที่ **ยังไม่เปิด** · spot ไม่มี · ไม่รู้ค่า maintenance margin = `None` (ด่านปฏิเสธเอง)"""
-    if cfg.market == "spot":
+def _liquidation(sym: SymbolRuntime, side: str, size: SizeDecision) -> float | None:
+    """ราคา liquidation ของไม้ที่ **ยังไม่เปิด** · spot ไม่มี · ไม่รู้ค่า maintenance margin = `None` (ด่านปฏิเสธเอง)
+
+    อัตรามาจาก **ปลายทาง** ไม่ใช่จาก config — `cross_checks()` ห้าม `maintenance_margin_pct` ใน profile ที่
+    `broker.kind = "ccxt"` ด้วยเหตุผลว่า "ราคา liquidation มาจาก exchange" · paper ตอบด้วยค่าที่คนกรอกไว้จำลอง
+    ทั้งสองทางจึงเดินโค้ดเส้นเดียวกัน (ADR 9)
+    """
+    if sym.cfg.market == "spot":
         return None
-    mmr = ctx.settings.broker.maintenance_margin_pct
+    mmr = sym.broker.maintenance_margin(sym.cfg.symbol, size.notional)
     if mmr is None:
         return None
     return liq_price(side, size.ref_px, size.leverage, mmr)

@@ -105,6 +105,7 @@ Broker
   balance()                  -> Balance
   set_leverage(symbol, x)    -> None
   set_margin_mode(symbol, mode, position_mode) -> None
+  maintenance_margin(symbol, notional) -> pct | None
 ```
 
 **ทำไม interface ต้องมี order type:** cold start ทางที่ 2 บังคับให้ตั้ง stop ที่เส้น Slow Trail ทันทีที่เปิดไม้ ([03](03-trading-rules.md)) ถ้า Broker ทำได้แค่ market order ระบบก็มีทางเดียวคือประเมิน stop ฝั่ง engine ตอนแท่งรายวันปิด — ซึ่งบน perp ที่มี leverage คือการป้องกันที่ตรวจวันละครั้ง ราคากระโดดข้ามคืนเดียวก็ถึง liquidation ได้ก่อน engine ตื่น จึงเลือกวาง stop ไว้ที่ exchange จริง
@@ -112,6 +113,8 @@ Broker
 **ทำไมต้องมี `replace`:** เส้น Slow Trail ขยับทุกแท่ง stop ที่วางไว้จึงต้องขยับตาม ถ้าไม่มี `replace` ต้อง cancel แล้ว place ใหม่ ซึ่งเปิดหน้าต่างเวลาที่ไม้ไม่มี stop คุ้มอยู่
 
 **ทำไมต้องมี `open_orders`:** reconciliation ต้องเห็น stop order ที่ค้างอยู่ ไม่ใช่ดูแค่ position — ไม้ที่มี stop กับไม้ที่ stop หลุดไปแล้วมี position เหมือนกันทุกประการ
+
+**ทำไมต้องมี `maintenance_margin`:** ขั้น 12 ตรวจ `min_liq_buffer_pct` กับไม้ที่ **ยังไม่เปิด** จึงถามราคา liquidation จาก `positions()` ไม่ได้ ต้องคำนวณเอง และสูตรต้องการอัตรานี้ · บน live มันเป็นค่าของ venue ไม่ใช่ของ config (validator ปฏิเสธ `maintenance_margin_pct` ใน profile ที่ `broker.kind = "ccxt"`) ดู [ADR 33](../adr/0033-maintenance-margin-comes-from-the-venue.md)
 
 Adapter สองตัว:
 - `PaperBroker` — จำลอง fill และ P&L **และต้องจำลอง stop fill ด้วย** ไม่ใช่แค่ market fill ไม่งั้นเส้นทาง cold start ทางที่ 2 จะทดสอบใน paper ไม่ได้เลย ซึ่งขัดกับหลักที่ว่า paper กับ live ต่างกันที่ค่าไม่ใช่ที่ตรรกะ
@@ -136,6 +139,8 @@ leg  ∈ { open, close, stop }
 ต่างกันอยู่แล้วและเหตุผลของ `leg` จะเป็นเท็จ · ตรงกับ `decision_orders.order_side`
 
 ถ้า process ตายกลางคันแล้วกลับมาใหม่ในแท่งเดิม มันจะพยายามส่งออเดอร์เดิม — id ที่ซ้ำทำให้ exchange ปฏิเสธหรือให้ผลเดิม แทนที่จะเปิดสถานะซ้อน
+
+**รูปข้างบนคือสิ่งที่ลงตาราง ส่วนสิ่งที่ส่งให้ venue เป็นรูปย่อ** — Binance จำกัด `newClientOrderId` ไว้ที่ 36 อักษร และกุญแจเต็มของขาปิดยาว 38 · adapter จึงส่ง `cane-{bar_close_ts วินาที}-{side}-{leg}` แล้วแปลงกลับตอนอ่าน (ชื่อเหรียญตัดออกได้เพราะ venue แยกออเดอร์ตามเหรียญอยู่แล้ว) ดู [ADR 32](../adr/0032-venue-client-order-id-is-a-shorter-form.md)
 
 **`leg` เป็นส่วนที่ขาดไม่ได้** ด้วยสองเหตุผล: flip ยิงสองขาในแท่งเดียวและฝั่งเดียวกัน ถ้าไม่มี `leg` ขาปิดกับขาเปิดจะได้ id ชนกันเอง · และ stop order เกิดในแท่งเดียวกับขาเปิด ถ้าไม่มี `leg = stop` การกันสั่งซ้ำจะไม่นิยามสำหรับ stop เลย
 
