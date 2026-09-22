@@ -217,5 +217,5 @@ def run(
             stopping=stopping,
             sleep=sleep,
             now=now,
-            blocked_reason=blocked_reason or problem,
+            blocked_reason=blocked_reason if blocked_reason is not None else problem,
         )
