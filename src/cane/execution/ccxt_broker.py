@@ -508,9 +508,15 @@ class CcxtBroker:
     def set_margin_mode(self, symbol: str, mode: str, position_mode: str) -> None:
         """`isolated` + `one_way` เท่านั้น — ทั้งคู่เป็นข้อบังคับของระบบ ไม่ใช่ตัวเลือก
 
-        venue ที่ตั้งค่าเดิมอยู่แล้วจะตอบกลับเป็น error ("No need to change margin type")
-        ซึ่ง**ไม่ใช่ความล้มเหลว** · การยกมันขึ้นไปจะทำให้แท่งที่สองของทุกวันล้มทั้งที่
-        ค่าที่ปลายทางถูกต้องแล้ว จึงกลืนเฉพาะกรณีนี้แล้ว log ไว้
+        venue ที่ตั้งค่าเดิมอยู่แล้วตอบกลับเป็น error ("No need to change margin type",
+        code `-4046`) ซึ่ง**ไม่ใช่ความล้มเหลว** · ถ้ายกขึ้นไป แท่งที่สองของทุกวันจะล้ม
+        ทั้งที่ค่าที่ปลายทางถูกต้องแล้ว
+
+        **กลืนเฉพาะ `MarginModeAlreadySet` ไม่ใช่ error ทุกชนิดของ ccxt** — binance ตั้ง
+        `options.setMarginMode.throwMarginModeAlreadySet = True` ไว้เอง กรณีนี้จึงมาถึงเรา
+        เป็นคลาสของตัวเองแยกจากอย่างอื่นอยู่แล้ว · การดักกว้างกว่านี้จะกลืน auth ที่หมดอายุ
+        สิทธิ์ที่ไม่พอ และเน็ตที่ล่ม ไปพร้อมกัน แล้วระบบจะเปิดไม้ต่อด้วย margin mode ที่
+        อาจเป็น cross ทั้งที่สูตร liquidation ทั้งไฟล์คิดบน isolated (`paper.py` §สูตร liquidation)
         """
         if self.market == SPOT:
             raise BrokerError("spot ไม่มี margin mode")
@@ -521,8 +527,10 @@ class CcxtBroker:
         usym = unified_symbol(store_symbol(symbol), self.market)
         try:
             self.client.set_margin_mode(mode, usym)
+        except ccxt.MarginModeAlreadySet:
+            log.info("margin mode ของ %s เป็น %s อยู่แล้ว ไม่ต้องเปลี่ยน", symbol, mode)
         except TRADING_ERRORS as error:
-            log.info("ตั้ง margin mode ที่ %s ไม่เปลี่ยนอะไร: %s", symbol, error)
+            raise BrokerError(f"ตั้ง margin mode {mode} ที่ {symbol} ไม่สำเร็จ: {error}") from error
 
     def maintenance_margin(self, symbol: str, notional: float) -> float | None:
         """อัตรา maintenance margin ของ **ชั้นที่ notional นี้ตกอยู่** เป็นเปอร์เซ็นต์

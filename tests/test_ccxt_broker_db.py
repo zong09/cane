@@ -112,6 +112,8 @@ class FakeVenue:
         self.quote = quote
         #: venue บางแห่งไม่ให้เลข fill มา — กุญแจกันซ้ำต้องพึ่ง `seq` แทน
         self.trade_ids = trade_ids
+        #: error ที่ `set_margin_mode` จะโยน — เทสต์ตั้งเอง
+        self.margin_mode_error: Exception | None = None
         self.orders: dict[str, dict] = {}
         self.trades: list[dict] = []
         self.side: str | None = None
@@ -119,6 +121,8 @@ class FakeVenue:
         self.entry = 0.0
         self.leverage = 1.0
         self.calls: list[str] = []
+        #: อาร์กิวเมนต์ที่ broker ส่งเข้า `create_order` — เทสต์ตรวจรูปที่ ccxt คาดหวัง
+        self.sent: list[dict] = []
         self._next = 0
 
     # -- สิ่งที่ผู้เรียกทำได้
@@ -127,6 +131,7 @@ class FakeVenue:
         params = params or {}
         coid = params.get("clientOrderId", "")
         self.calls.append(f"create:{coid}")
+        self.sent.append({"type": type, "price": price, **params})
         if any(o["clientOrderId"] == coid for o in self.orders.values()):
             raise ccxt.InvalidOrder(f"duplicate clientOrderId {coid}")
         if len(coid) > VENUE_ID_LIMIT:
@@ -194,6 +199,8 @@ class FakeVenue:
         self.leverage = leverage
 
     def set_margin_mode(self, marginMode, symbol=None):  # noqa: N803
+        if self.margin_mode_error is not None:
+            raise self.margin_mode_error
         return None
 
     def fetch_market_leverage_tiers(self, symbol):
@@ -643,3 +650,61 @@ def test_a_venue_that_fails_while_moving_a_stop_does_not_take_the_whole_bar_down
     # ส่วนเหตุผลที่มันไม่ขยับอยู่ในแถวออเดอร์ที่ล้ม ไม่ใช่ในคำว่า `unchanged`
     assert failed is not None and failed.leg == "stop" and failed.accepted is False
     assert failed.stop_px == 39_000.0 and "venue ไม่ตอบ" in failed.error
+
+
+# ── รูปที่ ccxt คาดหวัง และ error ที่ห้ามกลืน ────────────────────────────────
+
+
+@pytest.mark.db
+def test_a_stop_is_sent_the_way_ccxt_translates_not_with_our_own_type_name(clean):
+    """`type = "market"` + `triggerPrice` คือรูป unified · **ไม่ใช่** `type = "stop_market"`
+
+    `ccxt/binance.py` ตัดสินชนิดที่จะส่งจริงเอง: `triggerPrice` ตกไปเป็น `stopLossPrice`
+    → `isStopLoss` เป็นจริง → กับ `type = "market"` บนตลาด contract มันตั้ง
+    `uppercaseType = "STOP_MARKET"` ให้ · ส่วน `isMarketOrder` คำนวณจาก
+    `initialUppercaseType == "MARKET"` เป๊ะๆ ดังนั้นการส่ง `"stop_market"` เข้าไปเองจะทำให้
+    ทั้ง `isMarketOrder` และ `isLimitOrder` เป็นเท็จ แล้วหลุดสาขาที่แปลชนิดตามตลาด
+
+    เทสต์นี้ปักรูปไว้เพราะมันดู "ผิด" ตอนอ่านผ่านๆ — คนที่มา "แก้" ให้ส่งชื่อชนิดของเรา
+    ตรงๆ จะทำให้ stop บน spot กลายเป็นชนิดที่ Binance ไม่รู้จัก
+    """
+    venue = FakeVenue()
+    feed = ReplayBars()
+    feed.at(100)
+    broker = broker_of(clean, venue, feed)
+    broker.place(Order(
+        symbol=SYMBOL, side="buy", type="market", qty=0.5,
+        client_order_id=client_order_id(SYMBOL, T0, "buy", "open"),
+    ))
+    broker.place(Order(
+        symbol=SYMBOL, side="sell", type="stop_market", qty=0.5, stop_px=38_000.0,
+        reduce_only=True, client_order_id=client_order_id(SYMBOL, T0, "sell", "stop"),
+    ))
+
+    stop_call = venue.sent[-1]
+    assert stop_call["type"] == "market" and stop_call["price"] is None
+    assert stop_call["triggerPrice"] == 38_000.0
+    assert stop_call["reduceOnly"] is True
+    # ขาเปิดต้องไม่มี triggerPrice ติดไปด้วย
+    assert "triggerPrice" not in venue.sent[0]
+
+
+@pytest.mark.db
+def test_a_margin_mode_that_is_already_set_is_fine_but_a_refusal_is_not(clean):
+    """กลืน `MarginModeAlreadySet` อย่างเดียว — ที่เหลือคือสิทธิ์/เน็ต/พารามิเตอร์ผิด
+
+    binance ตั้ง `throwMarginModeAlreadySet = True` ไว้เอง กรณี "ตั้งไว้แล้ว" จึงมาเป็น
+    คลาสของตัวเอง · ถ้าดักกว้างกว่านี้ ระบบจะเปิดไม้ต่อด้วย margin mode ที่อาจเป็น cross
+    ทั้งที่สูตร liquidation ทั้งระบบคิดบน isolated
+    """
+    venue = FakeVenue()
+    feed = ReplayBars()
+    feed.at(100)
+    broker = broker_of(clean, venue, feed)
+
+    venue.margin_mode_error = ccxt.MarginModeAlreadySet("No need to change margin type.")
+    broker.set_margin_mode(SYMBOL, "isolated", "one_way")  # ไม่ยกอะไร
+
+    venue.margin_mode_error = ccxt.AuthenticationError("API-key ไม่มีสิทธิ์ futures")
+    with pytest.raises(BrokerError, match="margin mode"):
+        broker.set_margin_mode(SYMBOL, "isolated", "one_way")
