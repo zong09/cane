@@ -35,6 +35,21 @@ jobs:
       #    ตั้งตัวล่างอย่างเดียวไม่มีผล เพราะ get_max_tokens() ทำ min(บน, ล่าง)
       custom_model_max_tokens: 64000
       max_model_tokens: 64000
+
+      # วัดจริง 2026-09-22 · diff 167KB (~44k tokens) · 3 รอบต่อ model
+      #   qwen3.8-flash  median 569s · SECURITY_STATUS 2/3  <- Gate ตายเงียบ 1 ใน 3
+      #   qwen3.8-max    median 739s · SECURITY_STATUS 3/3
+      # เลือก max เพราะความน่าเชื่อถือของ Gate ไม่ใช่เพราะเร็ว (flash เร็วกว่า 3 นาที)
+      # flash ทำตามรูปแบบได้ 5/5 ตอน diff เล็ก แต่เสื่อมลงเมื่อ prompt ใหญ่
+      # ราคาต่างกัน ~13 เท่า คิดเป็น ~$0.11 ต่อรีวิว เทียบกับ ~$0.007
+      # ⚠️ n=3 เท่านั้น ตัวเลข compliance ยังหยาบ แต่ทิศทางชัดพอจะตัดสินใจ
+      model: dashscope/qwen3.8-max
+
+      # ตั้งจากค่าที่วัดได้ (max ช้าสุด 741.6s) ไม่ได้ใช้สูตร ×2.5 ของสคริปต์
+      # เพราะสูตรนั้นออกแบบมาเผื่อกรณีแกว่งมาก ซึ่งที่ขนาดนี้แกว่งแค่ 1.07 เท่า
+      ai_timeout: 1200
+      review_timeout_minutes: 30
+      job_timeout_minutes: 50
       # zong09 เป็นเจ้าของ repo จึงได้ OWNER อัตโนมัติ
       # ส่วน pchayphiphitthaphan เป็นบัญชีอีกใบของคนเดียวกัน ที่ไม่ได้เป็น collaborator
       # จึงได้ author_association = CONTRIBUTOR แล้วถูกตัวกรองตัดทิ้ง
