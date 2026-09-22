@@ -94,6 +94,7 @@ def _wait_beating(
     stopping: StopFlag,
     sleep: Callable[[float], None],
     now: Callable[[], int],
+    blocked_reason: str | None = None,
 ) -> None:
     """รอจนถึง `until_ms` โดยเต้นทุก `HEARTBEAT_PERIOD_S` · ออกก่อนได้ถ้าถูกสั่งหยุด
 
@@ -102,6 +103,10 @@ def _wait_beating(
     ในกรณีนั้นจะมีผลก็ต่อเมื่อการรอจบลงเอง ซึ่งในใบ 12 คือรอจนแท่งถัดไปปิด
 
     อ่านในทรานแซกชันเดียวกับการเต้น จึงไม่มี query เพิ่มและไม่มีช่องให้สองค่าคาบเกี่ยวกัน
+
+    `blocked_reason` คือเหตุผลของรอบที่เพิ่งผ่านมา (จาก config หรือจากไปป์ไลน์ล้ม) —
+    ต้องส่งต่อมาที่นี่ ไม่งั้นการเต้นระหว่างรอจะเขียนทับด้วย `None` เสมอ ซึ่งทำให้
+    เหตุผลหายไปครึ่งหนึ่งของการเต้นทั้งที่ยังไม่มีแท่งไหนสำเร็จ
     """
     while not stopping and now() < until_ms:
         remaining_s = (until_ms - now()) / 1000
@@ -111,7 +116,7 @@ def _wait_beating(
         with db.begin() as conn:
             if not enginestate.read(conn, profile).should_run:
                 return
-            enginestate.beat(conn, profile)
+            enginestate.beat(conn, profile, blocked_reason=blocked_reason)
 
 
 def _read_config(conn: Connection, profile: str) -> tuple[Settings | None, str | None]:
@@ -212,4 +217,5 @@ def run(
             stopping=stopping,
             sleep=sleep,
             now=now,
+            blocked_reason=blocked_reason or problem,
         )
