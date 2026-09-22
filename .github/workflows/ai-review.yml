@@ -30,7 +30,11 @@ jobs:
       # รวมถึง execution/broker.py กับ engine/live.py ซึ่งเป็นหัวใจของ PR นั้นพอดี
       # และมันข้ามแบบเงียบ ๆ สังเกตได้จากบรรทัด "skipped due to token budget" ในรีวิวเท่านั้น
       # flash รับ input ได้ถึงราว 991k จึงเหลือที่เยอะ แต่ยิ่งใหญ่ยิ่งช้าและกิน credit มากขึ้น
-      custom_model_max_tokens: 128000
+      # diff ของ PR นี้วัดได้ 43,599 tokens จึงตั้ง 64000 ให้พอและเผื่อ
+      # ⚠️ ต้องตั้งคู่กันเสมอ — max_model_tokens (default 32000) ครอบทับตัวล่าง
+      #    ตั้งตัวล่างอย่างเดียวไม่มีผล เพราะ get_max_tokens() ทำ min(บน, ล่าง)
+      custom_model_max_tokens: 64000
+      max_model_tokens: 64000
       # zong09 เป็นเจ้าของ repo จึงได้ OWNER อัตโนมัติ
       # ส่วน pchayphiphitthaphan เป็นบัญชีอีกใบของคนเดียวกัน ที่ไม่ได้เป็น collaborator
       # จึงได้ author_association = CONTRIBUTOR แล้วถูกตัวกรองตัดทิ้ง
