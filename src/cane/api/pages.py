@@ -19,6 +19,7 @@ from cane.api import context
 from cane.api import log as log_routes
 from cane.api import overview as overview_routes
 from cane.api import risk as risk_routes
+from cane.api import symbols as symbols_routes
 from cane.api.deps import current_mode, current_user, get_db, get_sup
 from cane.api.templating import templates
 from cane.db.repo import permissions as perms
@@ -47,6 +48,7 @@ BODIES = {
     "log": "pages/log.html",
     "overview": "pages/overview.html",
     "risk": "pages/risk.html",
+    "symbols": "pages/symbols.html",
 }
 
 
@@ -83,5 +85,7 @@ def page(
             ctx |= log_routes.page_context(conn, profile=mode)
         elif slug == "risk":
             ctx |= risk_routes.page_context(conn, profile=mode, user=user)
+        elif slug == "symbols":
+            ctx |= symbols_routes.page_context(conn, profile=mode, user=user)
     ctx |= {"page_label": label, "page_ticket": ticket}
     return templates.TemplateResponse(request, BODIES.get(slug, "pages/placeholder.html"), ctx)
