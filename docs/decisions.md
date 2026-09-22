@@ -39,6 +39,8 @@
 | 29 | [replay รันบน scratch DB แยก มี cursor ต่อ profile ไว้กันรันซ้ำ](adr/0029-replay-runs-in-a-scratch-database.md) | accepted |
 | 30 | [Judge คุยกับ typesafe.ai ได้ผ่าน adapter ที่สอง](adr/0030-typesafe-adapter-for-the-judge.md) | accepted · แก้ข้อสมมติ "ปลายทางมีรูปเดียว" ของใบ 31 |
 | 31 | [`dry_run` กั้นเฉพาะ broker ที่ส่งคำสั่งจริงได้ — paper จำลองเสมอ](adr/0031-dry-run-gates-only-a-real-broker.md) | accepted · ปรับถ้อยคำ spec/06 §dry_run |
+| 32 | [`clientOrderId` ที่ส่งให้ venue เป็นรูปย่อของกุญแจตามสเปก](adr/0032-venue-client-order-id-is-a-shorter-form.md) | accepted · เพิ่มเติม spec/06 §กันสั่งซ้ำ (reconciliation) |
+| 33 | [อัตรา maintenance margin ของ live มาจากปลายทาง ไม่ใช่จาก config](adr/0033-maintenance-margin-comes-from-the-venue.md) | accepted · เพิ่มเมธอดใน spec/06 §Broker interface |
 
 ---
 

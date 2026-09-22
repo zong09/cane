@@ -239,6 +239,14 @@ class PaperBroker:
         if position_mode != "one_way":
             raise PaperError("hedge ไม่ใช่ตัวเลือกที่ปิดไว้ แต่เป็นค่าที่ระบบไม่รองรับ (spec/07)")
 
+    def maintenance_margin(self, symbol: str, notional: float) -> float | None:
+        """ค่าที่คนกรอกไว้จำลอง · ไม่ขึ้นกับขนาดไม้ ต่างจาก venue จริงที่คิดเป็นชั้น
+
+        `notional` รับไว้ให้ลายเซ็นตรงกับ `Broker` เท่านั้น — การจำลองชั้นของ venue ด้วย
+        ตัวเลขที่ไม่มีใครกรอกคือการแต่งค่าขึ้นมา ซึ่งแย่กว่าการมีอัตราเดียวที่คนตั้งเอง
+        """
+        return None if self.market == SPOT else self.maintenance_margin_pct
+
     # ── การเดินเวลา ──────────────────────────────────────────────────────────
 
     def _settle(self, symbol: str) -> None:

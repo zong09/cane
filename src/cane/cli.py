@@ -26,7 +26,7 @@ from cane.data.csv_import import read_tradingview_csv
 from cane.db.engine import make_engine
 from cane.db.repo import config as config_repo
 from cane.db.repo.bars import insert_bars
-from cane.engine import loop, replay
+from cane.engine import live, loop, replay
 
 #: config ไม่ผ่าน — แยกจาก 1 (ล้มเพราะอย่างอื่น) เพื่อให้สคริปต์ที่เรียกแยกได้ว่า
 #: "ค่าผิด" กับ "ต่อ DB ไม่ได้" ไม่ใช่เรื่องเดียวกัน
@@ -113,7 +113,7 @@ def _utc_ms(text: str) -> int:
     return int(datetime.strptime(text, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp() * 1000)
 
 
-def _replay_judge(kind: str):
+def _judge_client(kind: str):
     """(client, model_id) ของตัวตัดสินที่เลือก — ตัวจริงขาดค่าใน `.env` แล้วล้มดังตรงนี้ ไม่ใช่กลางรัน"""
     if kind == "none":
         judge = replay.NoJudge()
@@ -136,7 +136,7 @@ def _replay_run(args: argparse.Namespace) -> int:
     """
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s · %(message)s")
     try:
-        judge, model_id = _replay_judge(args.judge)
+        judge, model_id = _judge_client(args.judge)
         db = make_engine(role="engine")
     except (RuntimeError, ValueError) as exc:
         print(exc, file=sys.stderr)
@@ -185,7 +185,17 @@ def _engine_run(args: argparse.Namespace) -> int:
 
     db = make_engine(role="engine")
     try:
-        return loop.run(args.profile, db=db, stopping=stopping)
+        return loop.run(
+            args.profile,
+            db=db,
+            stopping=stopping,
+            # ตัวตัดสินถูกสร้างที่แท่งแรก ไม่ใช่ตรงนี้ — ค่าที่ขาดใน `.env` ต้องกลายเป็น
+            # `blocked_reason` ที่คอนโซลอ่านได้ ไม่ใช่ process ที่ตายแล้วขึ้น `crashed`
+            # ซึ่งชี้ไปผิดที่ (spec/10 §4. รอบชีวิตของ engine)
+            on_bar=live.LiveRunner(
+                profile=args.profile, judge_factory=lambda: _judge_client(args.judge)
+            ),
+        )
     finally:
         db.dispose()
 
@@ -346,6 +356,12 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     engine_run.add_argument("--profile", required=True, choices=["live", "paper"])
+    engine_run.add_argument(
+        "--judge",
+        default="openai",
+        choices=["none", "typesafe", "openai"],
+        help="ตัวตัดสิน confluence · none = ทุกไม้ตกไป fallback ที่ base_pct (ADR 6)",
+    )
     engine_run.set_defaults(run=_engine_run)
 
     # คำสั่งชั้นเดียวตัวแรกของไฟล์นี้ (ที่เหลือเป็น group→command) · `serve console`

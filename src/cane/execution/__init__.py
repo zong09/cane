@@ -13,6 +13,7 @@ from cane.execution.broker import (
     check_market_supports,
     client_order_id,
 )
+from cane.execution.ccxt_broker import BrokerError, CcxtBroker, make_trading_client
 from cane.execution.paper import PaperBroker, PaperError
 
 __all__ = [
@@ -23,6 +24,8 @@ __all__ = [
     "ORDER_TYPES",
     "Balance",
     "Broker",
+    "BrokerError",
+    "CcxtBroker",
     "OpenOrder",
     "Order",
     "OrderResult",
@@ -31,4 +34,5 @@ __all__ = [
     "Position",
     "check_market_supports",
     "client_order_id",
+    "make_trading_client",
 ]
