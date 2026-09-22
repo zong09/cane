@@ -337,3 +337,23 @@ def test_a_wrong_code_on_the_invite_page_does_not_burn_the_link(db, app):
         assert done.status_code == 200
         assert users_repo.by_id(db, user_id).status == "active"
         assert client.get(f"/enrol/{token}").status_code == 404
+
+
+def test_an_admin_gets_403_from_the_symbols_endpoint(db, app, secret):
+    """`edit_symbols` เป็นของ OWNER คนเดียว — ADMIN คุม engine ได้แต่แก้เหรียญไม่ได้
+
+    spec/09 §3. ตารางสิทธิ์ — 13 สิทธิ์ × 5 role ให้แถวนี้กับ OWNER แถวเดียว
+
+    ทางที่ผิดของ endpoint ใหม่คือ "ผ่านเพราะยังไม่ได้ผูกสิทธิ์" · แถวของมันต้องมีอยู่
+    จริงในตาราง ไม่ใช่มีแต่ใน URL (ใบ 26)
+    """
+    make_account(db, secret, email="admin2@example.com", role="ADMIN")
+
+    with TestClient(app) as client:
+        log_in(client, secret, email="admin2@example.com")
+        response = client.post(
+            "/api/paper/symbols",
+            data={"symbol": "SOL/USDT", "step_up_code": code_now(secret)},
+        )
+
+    assert response.status_code == 403
