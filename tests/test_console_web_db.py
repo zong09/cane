@@ -978,6 +978,26 @@ def test_deleting_a_pair_writes_a_draft_without_it(
     assert config_repo.active_version(db, "paper").id == active.id
 
 
+def test_deleting_works_with_the_code_in_the_query_string_like_htmx_sends_it(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    """htmx ส่งพารามิเตอร์ของ `delete` ไปทาง query string ไม่ใช่ body
+
+    ค่าตั้งต้น `methodsThatUseUrlParams` = `["get","delete"]` ของ htmx 2.0.4 ·
+    เทสต์ที่ส่งมาทาง body อย่างเดียวจะเขียวทั้งที่ปุ่มบนหน้าจอจริงได้ "รหัสผิด" ทุกครั้ง
+    """
+    seeded(db, "paper")
+
+    with client:
+        response = client.request(
+            "DELETE", "/api/paper/symbols/ETH/USDT", params=right_now_code()
+        )
+
+    assert response.status_code == 200
+    names = [s.symbol for s in config_repo.settings_of(db, latest(db).id).symbols]
+    assert names == ["BTC/USDT"]
+
+
 def test_the_last_pair_cannot_be_deleted(
     db: Connection, client: TestClient, clean_config: None
 ) -> None:

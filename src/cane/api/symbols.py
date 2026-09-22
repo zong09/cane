@@ -35,7 +35,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, replace
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import Connection, Engine
 
@@ -488,10 +488,16 @@ def remove(
     symbol: str,
     request: Request,
     step_up_code: str = Form(""),
+    from_url: str = Query("", alias="step_up_code"),
     db: Engine = Depends(get_db),
     user: User = Depends(require_cap("edit_symbols")),
 ) -> HTMLResponse:
     """ลบเหรียญ = เวอร์ชันใหม่ที่ไม่มีบล็อกนั้น
+
+    **รหัสรับได้ทั้งสองที่** เพราะ htmx ส่ง `DELETE` ไม่เหมือน `POST` — ค่าตั้งต้นของ
+    `methodsThatUseUrlParams` ใน htmx 2.0.4 คือ `["get","delete"]` รหัสจากหน้าจอจริง
+    จึงมาทาง query string ส่วนคำขอที่ประกอบเองส่งมาทาง body ได้ · ถ้ารับทางเดียว
+    ทางที่ไม่ได้รับจะเงียบกลายเป็น "รหัสผิด" ซึ่งเป็นคำตอบที่ชี้ผิดที่
 
     `{symbol:path}` เพราะชื่อเหรียญมี `/` อยู่กลางคำ (`BTC/USDT`) · ลบตัวสุดท้ายไม่ได้
     และตัวที่ปฏิเสธคือ `Settings.symbols` ที่ประกาศ `min_length=1` ไม่ใช่ด่านที่นี่ —
@@ -514,7 +520,7 @@ def remove(
 
     return _written(
         request, db, target=target, symbols=symbols, base=base, index=-1,
-        problems=[], code=step_up_code, user=user, values=None, original="",
+        problems=[], code=step_up_code or from_url, user=user, values=None, original="",
         note=f"ลบ {symbol} จากหน้าคู่เหรียญ",
         action="config.symbols_removed", audit_target=f"{target} {symbol}",
         done=f"ลบ {symbol} แล้ว", oob=True,
