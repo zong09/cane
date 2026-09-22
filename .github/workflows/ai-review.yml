@@ -31,6 +31,11 @@ jobs:
       # และมันข้ามแบบเงียบ ๆ สังเกตได้จากบรรทัด "skipped due to token budget" ในรีวิวเท่านั้น
       # flash รับ input ได้ถึงราว 991k จึงเหลือที่เยอะ แต่ยิ่งใหญ่ยิ่งช้าและกิน credit มากขึ้น
       custom_model_max_tokens: 128000
+      # zong09 เป็นเจ้าของ repo จึงได้ OWNER อัตโนมัติ
+      # ส่วน pchayphiphitthaphan เป็นบัญชีอีกใบของคนเดียวกัน ที่ไม่ได้เป็น collaborator
+      # จึงได้ author_association = CONTRIBUTOR แล้วถูกตัวกรองตัดทิ้ง
+      # ถ้าเลิกคอมเมนต์ด้วยบัญชีนี้แล้ว ลบบรรทัดล่างทิ้งได้เลย
+      trusted_comment_authors: "pchayphiphitthaphan"
       extra_instructions: |
         โปรเจกต์นี้เป็น trading bot ภาษา Python ที่ส่งคำสั่งซื้อขายด้วยเงินจริง
         บน Binance ผ่าน ccxt ใช้ SQLAlchemy Core และมี raw SQL ผ่าน text() จำนวนมาก
