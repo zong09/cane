@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block screen %}
+<h1 class="h1">{{ page_label }}</h1>
+<div class="cfg__sub">
+  บล็อก <code>[[symbols]]</code> ของเวอร์ชันที่เปิดใช้ · ตลาดเป็นค่าต่อเหรียญ ไม่ใช่ของทั้งระบบ ·
+  บันทึกแล้วได้เวอร์ชันใหม่ที่ยังไม่เปิดใช้ ของเดิมไม่ถูกทับ
+</div>
+{% include "partials/symbols_body.html" %}
+{% endblock %}

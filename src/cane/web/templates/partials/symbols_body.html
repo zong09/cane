@@ -1,0 +1,153 @@
+{#
+  เนื้อของหน้าคู่เหรียญ · ผูกกับโหมดที่ session กำลังดู
+
+  **top-level element เดียวเท่านั้น** เพราะคำตอบของ modal ลบจะติดธง `hx-swap-oob`
+  แล้ว htmx เอาก้อนนี้ไปวางที่ id ของมัน เหลือความว่างมาแทน modal ซึ่งคือการปิด modal ·
+  มีสองก้อนเมื่อไหร่ modal จะไม่ปิด (เหตุผลเดียวกับ `risk_body.html`)
+
+  ใช้คลาสของหน้าตั้งค่า (`cfg__*`) ทั้งหน้า — สองหน้านี้แก้ของชิ้นเดียวกันคนละส่วน
+  การตั้งชุดคลาสใหม่ให้หน้านี้แปลว่ามีสองที่ที่ต้องแก้ตรงกันทุกครั้งที่ฟอร์มเปลี่ยนหน้าตา
+#}
+<div id="symbols-body"{% if sym_oob %} hx-swap-oob="true"{% endif %} class="cfg"
+     hx-get="/partials/symbols/{{ sym_profile }}" hx-trigger="cane:mode from:body" hx-swap="outerHTML">
+
+  {% if not sym_can_edit %}
+  <div class="cfg__hint cfg__hint--block">ดูได้อย่างเดียว — การเพิ่ม–ลบคู่เหรียญต้องมีสิทธิ์ edit_symbols</div>
+  {% endif %}
+
+  {% if sym_no_version %}
+  <div class="cfg__banner cfg__banner--warn">
+    <div>
+      <div class="cfg__bannertitle">ยังไม่มีเวอร์ชัน config ที่เปิดใช้</div>
+      <div class="cfg__bannernote">ทางเข้าครั้งแรกคือ <code>cane db seed</code> — หน้านี้แก้ของที่มีอยู่แล้วเท่านั้น</div>
+    </div>
+  </div>
+  {% elif sym_problems %}
+  <div class="cfg__banner cfg__banner--bad">
+    <div>
+      <div class="cfg__bannertitle">config ของโหมดนี้โหลดไม่ผ่าน {{ sym_problems }} ข้อ</div>
+      <div class="cfg__bannernote">รายชื่อเหรียญมาจากเวอร์ชันที่เปิดใช้ — แก้ให้ผ่านที่หน้า ตั้งค่า ก่อน</div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if sym_notice %}
+  <div class="cfg__banner cfg__banner--warn">
+    <div><div class="cfg__bannertitle">{{ sym_notice }}</div></div>
+  </div>
+  {% endif %}
+
+  {% if sym_unplaced %}
+  <div class="cfg__banner cfg__banner--bad">
+    <div>
+      <div class="cfg__bannertitle">มีอีก {{ sym_unplaced | length }} ข้อที่ไม่ได้อยู่ในช่องกรอกของฟอร์มนี้</div>
+      {% for p in sym_unplaced %}
+      <div class="cfg__bannernote">{{ p }}</div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="cfg__grid">
+    <div class="cfg__card">
+      <div class="cfg__cardhead">
+        <span class="cfg__cardname">{{ sym_profile }}</span>
+        <span class="cfg__cardnote">{{ sym_rows | length }} คู่ในเวอร์ชันที่เปิดใช้</span>
+      </div>
+
+      <div class="cfg__group">
+        <div class="cfg__eyebrow">คู่เหรียญ</div>
+        {#
+          ตารางเดียวกับที่หน้าตั้งค่าแสดงอยู่แล้ว (`cfgtable`) บวกช่องของปุ่ม — สองหน้า
+          แสดงของชิ้นเดียวกัน ตารางคนละรูปแปลว่าคนต้องเรียนรู้สองครั้ง
+        #}
+        <table class="cfgtable">
+          <tr>
+            <th>symbol</th><th>market</th><th>long</th><th>short</th>
+            <th>leverage</th><th>short?</th><th>เปิด?</th><th></th>
+          </tr>
+          {% for row in sym_rows %}
+          <tr>
+            <td>{{ row.symbol }}</td>
+            <td>{{ row.market }}</td>
+            <td class="cfgtable__num">{{ row.bucket_long }}</td>
+            <td class="cfgtable__num">{{ row.bucket_short }}</td>
+            <td class="cfgtable__num">{{ row.leverage }}</td>
+            <td>{{ "ใช่" if row.allow_short else "ไม่" }}</td>
+            <td>{{ "ใช่" if row.enabled else "พักไว้" }}</td>
+            <td>
+              {% if sym_can_edit %}
+              <button class="btn btn--ghost btn--xs" type="button"
+                      hx-get="/partials/symbols/{{ sym_profile }}?symbol={{ row.symbol | urlencode }}"
+                      hx-target="#symbols-body" hx-swap="outerHTML">แก้</button>
+              <button class="btn btn--ghost btn--xs" type="button"
+                      hx-get="/partials/symbols/{{ sym_profile }}/delete?symbol={{ row.symbol | urlencode }}"
+                      hx-target="#modal-slot" hx-swap="innerHTML">ลบ</button>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="8">ยังไม่มีเหรียญให้แสดง</td></tr>
+          {% endfor %}
+        </table>
+      </div>
+
+      {% if not sym_no_version %}
+      <form hx-post="/api/{{ sym_profile }}/symbols"
+            hx-target="#symbols-body" hx-swap="outerHTML">
+        <div class="cfg__group">
+          <div class="cfg__eyebrow">
+            {% if sym_original %}แก้ {{ sym_original }}{% else %}เพิ่มเหรียญ{% endif %}
+          </div>
+          {#
+            ชื่อเดิมเดินทางไปกับฟอร์ม ไม่ใช่เดาจากช่อง `symbol` ที่คนแก้ได้ —
+            เปลี่ยนชื่อเหรียญตอนแก้ต้องทับแถวเดิม ไม่ใช่เพิ่มแถวที่สอง
+          #}
+          <input type="hidden" name="original" value="{{ sym_original }}">
+          {% for f in sym_form %}
+          <label class="field">
+            <span class="field__name">{{ f.label }}</span>
+            {% if f.kind == "select" %}
+            <select class="field__input" name="{{ f.path }}" {% if not sym_can_edit %}disabled{% endif %}>
+              {% for value, label in f.options %}
+              <option value="{{ value }}"{% if value == f.value %} selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+            {% else %}
+            <input class="field__input" name="{{ f.path }}" value="{{ f.value }}"
+                   {% if f.kind == "number" %}inputmode="decimal"{% endif %}
+                   {% if not sym_can_edit %}disabled{% endif %}>
+            {% endif %}
+            {% if f.hint %}<span class="cfg__hint">{{ f.hint }}</span>{% endif %}
+            {% if f.error %}
+            <span class="cfg__error">{{ f.error.message }}{% if f.error.detail %} — {{ f.error.detail }}{% endif %}</span>
+            {% endif %}
+          </label>
+          {% endfor %}
+
+          {#
+            รหัสอยู่ในฟอร์มเดียวกับค่า ไม่ใช่ modal ชั้นสอง — spec/09 บอกว่ารหัสต้อง
+            แนบไปกับคำขอที่ลงมือจริง · ค่าที่กรอกผิดถูกปฏิเสธก่อนถึงรหัส คนจึงไม่เสีย
+            รหัสไปหนึ่งรอบกับฟอร์มที่ยังไม่ถูก
+          #}
+          <label class="field">
+            <span class="field__name">รหัส 6 หลักจากแอป Authenticator</span>
+            <input class="field__input" name="step_up_code" inputmode="numeric" maxlength="6"
+                   placeholder="000000" {% if not sym_can_edit %}disabled{% endif %}>
+          </label>
+          <button class="btn btn--primary btn--block" type="submit"
+                  {% if not sym_can_edit %}disabled{% endif %}>บันทึกเป็นเวอร์ชันใหม่</button>
+          <div class="cfg__hint">
+            บันทึกแล้วยังไม่มีผล — เวอร์ชันใหม่เป็นร่าง ต้องไปกด "ใช้เวอร์ชันนี้" ที่หน้า ตั้งค่า
+          </div>
+          {% if sym_original %}
+          <button class="btn btn--ghost btn--block" type="button"
+                  hx-get="/partials/symbols/{{ sym_profile }}"
+                  hx-target="#symbols-body" hx-swap="outerHTML">ยกเลิกการแก้</button>
+          {% endif %}
+        </div>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>

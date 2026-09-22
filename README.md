@@ -69,8 +69,8 @@ account stays unusable until you do — there is no path into the console that s
 | Per-bar-close runner that fills the decision record in — one pipeline, shared by live and replay | ✅ |
 | Console shell — layout, sidebar, profile/engine cards, mode switch, `cane serve` | ✅ |
 | `auth/` — two-step login, TOTP, backup codes, account lockout, sessions, RBAC, audit log | ✅ |
-| Console screens — overview, risk, log, config | ✅ |
-| Console screens — symbols, report, users | ⬜ |
+| Console screens — overview, risk, log, config, symbols | ✅ |
+| Console screens — report, users | ⬜ |
 | Notifications — LINE and Telegram, the event emitter and the per-mode switches | ⬜ |
 
 The Action Zone acceptance gate is closed: `tests/fixtures/action_zone/` holds the TradingView
