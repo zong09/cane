@@ -105,10 +105,13 @@ class FakeVenue:
 
     precisionMode = TICK_SIZE
 
-    def __init__(self, market: str = PERP, *, px: float = 40_000.0, quote: float = 100_000.0):
+    def __init__(self, market: str = PERP, *, px: float = 40_000.0, quote: float = 100_000.0,
+                 trade_ids: bool = True):
         self.market = market
         self.px = px
         self.quote = quote
+        #: venue บางแห่งไม่ให้เลข fill มา — กุญแจกันซ้ำต้องพึ่ง `seq` แทน
+        self.trade_ids = trade_ids
         self.orders: dict[str, dict] = {}
         self.trades: list[dict] = []
         self.side: str | None = None
@@ -210,12 +213,13 @@ class FakeVenue:
 
     # -- ข้างใน
 
-    def _fill(self, row: dict, px: float) -> None:
-        qty = row["amount"]
+    def _fill(self, row: dict, px: float, *, qty: float | None = None) -> None:
+        qty = row["amount"] if qty is None else qty
         row.update(status="closed", filled=qty, average=px)
         self._next += 1
         self.trades.append({
-            "id": f"t{self._next}", "order": row["id"], "symbol": row["symbol"],
+            "id": f"t{self._next}" if self.trade_ids else None,
+            "order": row["id"], "symbol": row["symbol"],
             "side": row["side"], "price": px, "amount": qty,
             "timestamp": T0 + 60_000, "fee": {"cost": px * qty * 0.0004, "currency": "USDT"},
         })
@@ -226,6 +230,15 @@ class FakeVenue:
         self.side = "long" if held > 0 else "short" if held < 0 else None
         if self.qty == 0:
             self.entry = 0.0
+
+    def split_last_fill(self, px: float) -> None:
+        """ออเดอร์ใบล่าสุด fill เป็นก้อนที่สองคนละราคา — เกิดจริงบนออเดอร์ขนาดใหญ่"""
+        last = self.trades[-1]
+        half = last["amount"] / 2
+        last["amount"] = half
+        self._next += 1
+        self.trades.append({**last, "id": f"t{self._next}" if self.trade_ids else None,
+                            "price": px, "amount": half})
 
     def trigger_stop(self, px: float) -> None:
         """stop ทำงานที่ venue ตอนที่ process ของเราไม่อยู่"""
@@ -542,3 +555,91 @@ def test_a_decimal_places_venue_reports_a_digit_count_not_a_step():
 def test_a_symbol_the_venue_does_not_list_fails_closed():
     with pytest.raises(UnknownLot):
         CcxtLotSource({PERP: FakeVenue()}).lot(PERP, "DOGE/USDT")
+
+
+# ── สิ่งที่ venue ดื้อกว่าที่คิด ──────────────────────────────────────────────
+
+
+@pytest.mark.db
+def test_two_chunks_of_one_order_both_reach_the_ledger_when_the_venue_gives_no_fill_id(clean):
+    """ออเดอร์ใบเดียว fill หลายก้อนคนละราคาเกิดจริง — ทุกก้อนคือเงินคนละก้อน
+
+    `ledger.dedupe_key_of` เขียนเตือนไว้ตรงๆ ว่า `seq` ไม่ใช่ของประดับ · ถ้าทุกก้อนได้
+    กุญแจ `{coid}#0` เหมือนกัน ก้อนที่สองจะถูกมองว่าซ้ำแล้วหายไปเงียบๆ
+    """
+    venue = FakeVenue(trade_ids=False)
+    feed = ReplayBars()
+    feed.at(100)
+    broker = broker_of(clean, venue, feed)
+    broker.place(Order(
+        symbol=SYMBOL, side="buy", type="market", qty=0.5,
+        client_order_id=client_order_id(SYMBOL, T0, "buy", "open"),
+    ))
+    venue.split_last_fill(40_100.0)
+
+    feed.at(101)
+    broker.open_orders(SYMBOL)
+
+    rows = sorted(fills_rows(clean), key=lambda r: float(r.px))
+    assert [float(r.px) for r in rows] == [40_000.0, 40_100.0]
+    assert {r.dedupe_key for r in rows} == {
+        f"{client_order_id(SYMBOL, T0, 'buy', 'open')}#0",
+        f"{client_order_id(SYMBOL, T0, 'buy', 'open')}#1",
+    }
+    # อ่านหน้าต่างเดิมซ้ำต้องไม่เพิ่มแถว — `seq` นับจากลำดับในรายการ ไม่ใช่จากแถวที่มีอยู่
+    feed.at(102)
+    broker.open_orders(SYMBOL)
+    assert len(fills_rows(clean)) == 2
+
+
+@pytest.mark.db
+def test_a_trade_whose_order_fell_outside_the_window_is_loud_not_silent(clean, caplog):
+    """"ไม่รู้จัก" กับ "ไม่ใช่ของเรา" เป็นคนละเรื่อง — อันแรกอาจเป็นขาปิดที่ ledger จะไม่มีวันรู้"""
+    venue = FakeVenue()
+    feed = ReplayBars()
+    feed.at(100)
+    venue.trades.append({
+        "id": "t99", "order": "9999", "symbol": f"{SYMBOL}:USDT", "side": "sell",
+        "price": 40_000.0, "amount": 0.5, "timestamp": T0, "fee": None,
+    })
+
+    with caplog.at_level("WARNING"):
+        broker_of(clean, venue, feed).open_orders(SYMBOL)
+
+    assert fills_rows(clean) == []
+    assert any("9999" in message for message in caplog.messages)
+
+
+def test_a_venue_that_fails_while_moving_a_stop_does_not_take_the_whole_bar_down():
+    """ขั้นนี้อยู่นอก `_execute` — ข้อผิดพลาดที่ทะลุขึ้นไปทำให้ทั้งแท่งไม่มีแถวบันทึกเลย
+
+    ผลที่ตามมาไม่ใช่แค่ "ไม่มีบันทึก": `loop._run_bar_cycle` นับว่าแท่งนั้นทำแล้ว ขาปิด
+    ตามสัญญาณของแท่งนั้นจึงไม่ได้ยิงและไม่ถูกลองใหม่ · กับ ccxt นี่คือวันเน็ตไม่ดีธรรมดา
+    """
+    from cane.engine.pipeline import _slow_trail
+    from cane.execution.broker import OpenOrder, Position
+
+    class Refusing:
+        market = PERP
+
+        def replace(self, order_id, stop_px):
+            raise BrokerError("venue ไม่ตอบ")
+
+    existing = OpenOrder(
+        venue_order_id="7", client_order_id=client_order_id(SYMBOL, T0, "sell", "stop"),
+        symbol=SYMBOL, side="sell", type="stop_market", qty=0.5, stop_px=38_000.0,
+        reduce_only=True,
+    )
+    position = Position(
+        symbol=SYMBOL, side="long", qty=0.5, entry_px=40_000.0, mark_px=40_000.0,
+        unrealized_pnl=0, leverage=2.0, liquidation_px=20_000.0,
+    )
+    sym = SymbolRuntime(cfg=PERP_CFG, bars=ReplayBars(), broker=Refusing())
+
+    stop, failed = _slow_trail(None, None, sym, position, [existing], 39_000.0, T0)
+
+    # stop ใบเดิมยังคุ้มไม้อยู่ที่ราคาเดิม — นั่นคือความจริงเรื่องสถานะที่ปลายทาง
+    assert stop.action == "unchanged" and stop.px == 38_000.0
+    # ส่วนเหตุผลที่มันไม่ขยับอยู่ในแถวออเดอร์ที่ล้ม ไม่ใช่ในคำว่า `unchanged`
+    assert failed is not None and failed.leg == "stop" and failed.accepted is False
+    assert failed.stop_px == 39_000.0 and "venue ไม่ตอบ" in failed.error
