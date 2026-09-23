@@ -12,9 +12,10 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
+from cane.data.ohlcv import Bar
 from cane.db.repo import ledger as repo
 from cane.db.repo.ledger import Fill, FundingCharge, dedupe_key_of, trade_id_of
-from cane.execution import client_order_id
+from cane.execution import Order, PaperBroker, client_order_id
 
 pytestmark = pytest.mark.db
 
@@ -268,3 +269,50 @@ def test_the_view_cannot_be_written_through(db):
         with db.begin_nested():
             db.execute(text('SET LOCAL ROLE "cane_console"'))
             db.execute(text("DELETE FROM closed_trades"))
+
+
+def test_a_paper_round_trip_comes_out_with_its_costs_complete(db):
+    """ธง `cost_complete` มีค่าก็ต่อเมื่อไม้ที่ต้นทุนครบจริงได้ `true`
+
+    เทสต์ข้างบนสร้าง fill ด้วยมือ · ข้อนี้ให้ `PaperBroker` เขียนเองทั้งไม้ เพื่อยืนยันว่ากริด
+    funding ของ VIEW (`entry_ts < cycle <= exit_ts`) ตรงกับที่ broker หักจริง — ถ้าไม่ตรง
+    ไม้ paper ทุกไม้จะถูกติดธงว่าต้นทุนไม่ครบ แล้วธงจะไม่มีความหมายอีกเลย
+    """
+    class Bars:
+        def __init__(self):
+            self.rows: list[Bar] = []
+
+        def bars(self, symbol, timeframe):
+            return list(self.rows)
+
+        def flat(self, close_ts, px):
+            self.rows.append(Bar(open_ts=close_ts - DAY_MS, close_ts=close_ts,
+                                 open=px, high=px, low=px, close=px, volume=1.0))
+
+    def every_cycle(symbol, after_ts, through_ts):
+        first = (after_ts // EIGHT_H + 1) * EIGHT_H
+        return [(ts, 0.0001) for ts in range(first, through_ts + 1, EIGHT_H)]
+
+    bars = Bars()
+    bars.flat(T0, 100.0)
+    broker = PaperBroker(
+        conn=db, market=PERP, profile="paper", bars=bars, timeframe="1d",
+        seed_quote=10_000.0, taker_fee_pct=0.05, maintenance_margin_pct=0.4,
+        funding_source=every_cycle,
+    )
+    broker.set_leverage(SYMBOL, 2.0)
+    broker.place(Order(symbol=SYMBOL, side="buy", type="market", qty=2.0,
+                       client_order_id=client_order_id(SYMBOL, T0, "buy", "open"),
+                       reduce_only=False))
+    bars.flat(T0 + DAY_MS, 105.0)
+    bars.flat(T0 + 2 * DAY_MS, 110.0)
+    broker.place(Order(symbol=SYMBOL, side="sell", type="market", qty=2.0,
+                       client_order_id=client_order_id(SYMBOL, T0 + 2 * DAY_MS, "sell", "close"),
+                       reduce_only=True))
+
+    trade = _only(db, "paper")
+
+    # สองวันเต็ม = 6 รอบ
+    assert trade.funding_cycles_expected == 6
+    assert trade.funding_cycles_recorded == 6
+    assert trade.cost_complete is True
