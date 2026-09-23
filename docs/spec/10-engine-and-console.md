@@ -195,7 +195,7 @@ start  →  [ วนรอบ: รอแท่งปิด → อ่าน conf
 | `POST /api/{profile}/config/allow_short` | เหมือนกันทุกอย่าง ต่างที่ฟิลด์และสิทธิ์ | เวอร์ชันใหม่ที่เนื้อเหมือนกันและตัวชี้อยู่ที่เดิม |
 | `POST /api/{profile}/symbols` · `DELETE /api/{profile}/symbols/{symbol}` | เวอร์ชันใหม่ที่บล็อก `[[symbols]]` ต่างไป | เวอร์ชันใหม่ที่เนื้อเหมือนกัน |
 | `POST /api/{profile}/positions/{symbol}/close` | ปิดไม้ฉุกเฉิน — **ไม่แตะ engine และไม่แตะ kill switch** | **ไม่ idempotent** — ปิดไม้ที่ปิดแล้วคืน 409 ไม่ใช่ 200 |
-| `POST /api/{profile}/coldstart/{symbol}` | เลือกเส้นทาง cold start ของรอบนี้ ([03](03-trading-rules.md)) — **ยังไม่สร้าง** (ตัดสิน 2026-09-23): เจตนาที่หมดอายุเมื่อรอบเดินต้องมีที่เก็บและ ADR ของตัวเองก่อน · วันนี้เส้นทางมาจาก `cold_start` ของ config และแท็บ Cold start ของหน้าเหรียญแสดงผลแบบอ่านอย่างเดียว | เลือกซ้ำค่าเดิม = no-op · เลือกค่าใหม่ = ทับเจตนาเดิมได้จนกว่ารอบจะเดิน |
+| `POST /api/{profile}/coldstart/{symbol}` | เลือกเส้นทาง cold start ของรอบนี้ ([03](03-trading-rules.md)) — **ยังไม่สร้าง** (ตัดสิน 2026-09-23): เจตนาที่หมดอายุเมื่อรอบเดินต้องมีที่เก็บ ดูข้อเสนอที่ [ADR 35](../adr/0035-cold-start-route-as-a-per-run-intent.md) · วันนี้เส้นทางมาจาก `cold_start` ของ config และแท็บ Cold start ของหน้าเหรียญแสดงผลแบบอ่านอย่างเดียว | เลือกซ้ำค่าเดิม = no-op · เลือกค่าใหม่ = ทับเจตนาเดิมได้จนกว่ารอบจะเดิน |
 | `POST /api/users` · `/users/{id}/role` · `/suspend` · `/unlock` · `/permissions` · `POST /api/users/{id}/reset-2fa` · `DELETE /api/sessions/{id}` | จัดการผู้ใช้ ([09](09-users-and-auth.md)) | ตามความหมายของแต่ละตัว — ดู [09](09-users-and-auth.md) |
 
 **สองแถวสวิตช์เลื่อนตัวชี้ให้เอง ต่างจากทุกแถวที่เหลือ** — `POST .../config` สร้างร่าง
