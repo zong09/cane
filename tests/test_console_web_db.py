@@ -11,6 +11,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
@@ -26,10 +28,19 @@ from cane.config import load_profile
 from cane.db.repo import config as config_repo
 from cane.db.repo import decisions as decisions_repo
 from cane.db.repo import killswitch as killswitch_repo
+from cane.db.repo import ledger
+from cane.db.repo.ledger import Fill, dedupe_key_of, trade_id_of
 from cane.db.repo import permissions as perms
 from cane.db.repo import sessions as sessions_repo
 from cane.db.repo import users as users_repo
-from cane.db.schema import AUTH_TABLES, CONFIG_TABLES, engine_state, user_audit_log
+from cane.db.schema import (
+    AUTH_TABLES,
+    CONFIG_TABLES,
+    engine_state,
+    fills,
+    funding_charges,
+    user_audit_log,
+)
 from cane.db.schema import decisions as decisions_table
 from cane.db.types import now_ms
 from cane.engine.state import PROFILES, STOPPED
@@ -1088,3 +1099,95 @@ def test_a_saved_pair_leaves_an_audit_row_marked_step_up_verified(
     ).one()
     assert row.step_up_verified is True
     assert "SOL/USDT" in row.target
+
+
+# ── รายงาน · ใบ 25 ────────────────────────────────────────────────────────────
+
+_REPORT_T0 = 1_787_961_600_000
+
+
+def _spot_trade(db: Connection, version_id: int, n: int, exit_px: float) -> None:
+    """ไม้ long ETH spot หนึ่งไม้: แถวตัดสินที่แท่งเปิด + fill ขาเปิดและขาปิด
+
+    spot ไม่มี funding จึงไม่ต้องสร้างรอบ funding ให้ต้นทุนครบ
+    """
+    bar = _REPORT_T0 + n * 2 * _DAY_MS
+    decisions_repo.insert_decision(db, decisions_repo.DecisionRecord(
+        profile="paper", market="spot", symbol="ETH/USDT", timeframe="1d",
+        bar_close_ts=bar, decided_ts=bar + 500, config_version_id=version_id,
+        close_px=100.0, zone="GREEN", state="BULLISH", long_signal=True, short_signal=False,
+        dry_run=True, side="long", skip_reason="dry_run", size_pct_final=25.0,
+        orders=(_accepted_open(client_order_id=f"rp-{n}", sent=False, accepted=False),),
+    ))
+    trade = trade_id_of("spot", "ETH/USDT", "long", bar)
+    common = dict(profile="paper", market="spot", symbol="ETH/USDT", trade_id=trade,
+                  order_type="market", reduce_only=False, qty=1.0,
+                  fee_quote=Decimal("0"), fee_ccy="USDT")
+    ledger.record_fill(db, Fill(**common, leg="open", fill_ts=bar, px=100.0, ref_px=100.0,
+                                client_order_id=f"o{n}", position_qty_after=1.0,
+                                bar_close_ts=bar, dedupe_key=dedupe_key_of(f"o{n}")))
+    ledger.record_fill(db, Fill(**common, leg="close", fill_ts=bar + _DAY_MS, px=exit_px,
+                                ref_px=exit_px, client_order_id=f"c{n}",
+                                position_qty_after=0.0, bar_close_ts=bar + _DAY_MS,
+                                dedupe_key=dedupe_key_of(f"c{n}"), exit_reason="signal"))
+
+
+@pytest.fixture
+def two_trades(db: Connection, clean_config: None):
+    db.execute(funding_charges.delete())
+    db.execute(fills.delete())
+    db.execute(decisions_table.delete())
+    head = seeded(db, "paper")
+    _spot_trade(db, head.id, 0, 112.0)
+    _spot_trade(db, head.id, 1, 96.4)
+    return head
+
+
+def test_the_report_divides_by_the_capital_of_the_version_that_decided(
+    client: TestClient, two_trades
+) -> None:
+    """ทุนของ paper = 100 + 60 (BTC) + 80 (ETH) = 240 · net +12 − 3.6 = +8.4 → +3.5%"""
+    with client:
+        page = client.get("/report").text
+
+    assert "+3.5%" in page
+    assert "+8.40 USDT" in page
+    assert "ทุน 240.00 USDT" in page
+    assert "ชนะ 1 · 50.0%" in page
+    # ไม้ที่สองขาดทุนหลังไม้แรก → ย่อจากยอดสูงสุด 3.6 / 240 = -1.5%
+    assert "-1.5%" in page
+    assert "<polyline" in page
+    assert page.count('class="rptr"') == 2
+    assert "เข้าไม้จากแท่งสัญญาณจริง" in page and "2 / 2" in page
+
+
+def test_a_custom_range_counts_only_trades_that_exited_inside_it(
+    client: TestClient, two_trades
+) -> None:
+    # ไม้แรกออกแท่ง T0+1d · ไม้ที่สองออกแท่ง T0+3d
+    first_exit = datetime.fromtimestamp((_REPORT_T0 + _DAY_MS) / 1000, tz=UTC).date()
+    with client:
+        page = client.get(
+            f"/partials/report?range=custom&from={first_exit}&to={first_exit}"
+        ).text
+
+    assert page.count('class="rptr"') == 1
+    assert "+5.0%" in page  # +12 / 240
+
+
+def test_the_csv_carries_one_row_per_closed_trade_with_its_cost_flag(
+    client: TestClient, two_trades
+) -> None:
+    with client:
+        response = client.get("/api/paper/report/export")
+
+    assert response.status_code == 200
+    assert "cane-report-closed-trades.csv" in response.headers["content-disposition"]
+    lines = response.text.strip().splitlines()
+    assert lines[0] == (
+        "entry_bar,exit_bar,symbol,side,size_pct,entry_fill,exit_fill,"
+        "gross_pct,net_pct,exit_reason,cost_complete"
+    )
+    assert len(lines) == 3
+    assert lines[1].split(",")[2:5] == ["ETH/USDT", "long", "25"]
+    assert lines[1].endswith(",signal,true")

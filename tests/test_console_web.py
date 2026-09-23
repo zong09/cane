@@ -22,7 +22,9 @@ from cane.config.validate import ConfigError, Problem
 from cane.db.repo import config as config_repo
 from cane.db.repo import decisions as decisions_repo
 from cane.db.repo import killswitch as killswitch_repo
+from cane.db.repo import ledger as ledger_repo
 from cane.db.repo import permissions as perms
+from cane.db.repo import report as report_repo
 from cane.db.repo import users as users_repo
 from cane.db.repo.sessions import Session
 from cane.db.repo.users import User
@@ -185,7 +187,15 @@ def no_db_reads(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         decisions_repo,
         "journal_counts",
-        lambda conn, profile: dict.fromkeys(decisions_repo.CHIPS, 0),
+        lambda conn, profile, **kw: dict.fromkeys(decisions_repo.CHIPS, 0),
+    )
+    # หน้ารายงาน (ใบ 25) อ่าน VIEW `closed_trades` กับตัวอ่านของ `repo/report` · ของจริงอยู่ที่ชุด db
+    monkeypatch.setattr(ledger_repo, "closed_trades", lambda conn, profile: [])
+    monkeypatch.setattr(report_repo, "origins", lambda conn, profile: {})
+    monkeypatch.setattr(report_repo, "capital_of", lambda conn, versions: {})
+    monkeypatch.setattr(report_repo, "open_trades", lambda conn, profile: [])
+    monkeypatch.setattr(
+        report_repo, "flips", lambda conn, profile, **kw: report_repo.FlipCount(0, 0)
     )
     monkeypatch.setattr(users_repo, "everyone", lambda conn: [])
     monkeypatch.setattr(perms, "allowed", lambda conn, *, role, cap: role != "VIEWER")
@@ -336,9 +346,9 @@ def test_the_rail_renders_both_groups_and_every_menu_item() -> None:
     assert "OWNER" in page and "นพ" in page  # ตัวย่อของ "นภัส พ."
 
 
-#: `config` (21) `overview` (22) `risk` (23) `log` (24) `symbols` (26) มีเนื้อของ
-#: ตัวเองแล้ว ที่เหลือยังเป็นโครง
-@pytest.mark.parametrize("slug", ["report", "users"])
+#: `config` (21) `overview` (22) `risk` (23) `log` (24) `report` (25) `symbols` (26)
+#: มีเนื้อของตัวเองแล้ว ที่เหลือยังเป็นโครง
+@pytest.mark.parametrize("slug", ["users"])
 def test_every_menu_item_opens_even_though_its_body_belongs_to_a_later_ticket(
     slug: str
 ) -> None:
@@ -1709,6 +1719,37 @@ def test_the_journal_asks_for_read_decisions_at_both_doors(
         client.get("/partials/log/rows?before_ts=1&before_id=1")
 
     assert asked == ["read_decisions", "read_decisions", "read_decisions"]
+
+
+def test_the_report_page_has_a_body_of_its_own_now() -> None:
+    client, _ = build()
+    with client:
+        page = client.get("/report").text
+
+    assert "ใบ 19 ทำแค่โครง" not in page
+    assert "ตั้งแต่เริ่มรัน" in page and "กำหนดช่วงเอง" in page
+    assert "บอททำตามกฎหรือไม่" in page
+    assert "ยังไม่มีไม้ที่ปิดแล้วในช่วงนี้" in page
+    # ปุ่มส่งออกชี้ไปที่ endpoint ของโปรไฟล์ที่ดูอยู่
+    assert 'href="/api/paper/report/export?range=all' in page
+
+
+def test_the_report_export_of_a_profile_that_does_not_exist_is_not_found() -> None:
+    """spec/10 §6. สัญญาของ API — โปรไฟล์ที่ไม่มีอยู่ไม่ใช่คำขอที่ผิดรูป"""
+    client, _ = build()
+    with client:
+        response = client.get("/api/staging/report/export")
+
+    assert response.status_code == 404
+
+
+def test_exporting_the_report_needs_export_records() -> None:
+    """spec/09 ผูก CSV ของรายงานไว้กับ `export_records` เหมือนการส่งออกบันทึก"""
+    client, _ = build(role="VIEWER")
+    with client:
+        response = client.get("/api/paper/report/export")
+
+    assert response.status_code == 403
 
 
 def test_every_chip_of_the_journal_is_on_the_page_even_with_nothing_to_count() -> None:

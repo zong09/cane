@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block screen %}
+<h1 class="h1">รายงานผล</h1>
+<div class="rp__sub">
+  คิดจากไม้ที่ปิดแล้วเท่านั้น ทั้งฝั่ง long และ short · หัก fee, slippage และ funding จริงจาก fill ·
+  % ต่อไม้คิดบน notional ไม่ใช่มาร์จิ้น · % รวมคิดบนทุนของเวอร์ชันที่ตัดสินไม้นั้น ·
+  ไม้ที่ยังถืออยู่แยกไว้ด้านล่าง
+</div>
+{% include "partials/report_body.html" %}
+{% endblock %}
