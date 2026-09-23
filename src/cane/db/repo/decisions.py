@@ -993,17 +993,31 @@ def journal(
     return [_journal_row(row) for row in conn.execute(stmt).all()]
 
 
-def journal_counts(conn: Connection, profile: str) -> dict[str, int]:
+def journal_counts(
+    conn: Connection,
+    profile: str,
+    *,
+    since_ts: int | None = None,
+    until_ts: int | None = None,
+) -> dict[str, int]:
     """จำนวนแถวของทุกชิปในคำขอเดียว — `count(*) FILTER (WHERE ...)` แปดตัว
 
     นับจากฐาน ไม่ใช่จากแถวที่โหลดมาแล้ว · หน้าจอแสดงทีละหน้า การนับจากหน่วยความจำ
     จึงตรงเฉพาะตอนที่บันทึกมีไม่ถึงหนึ่งหน้า แล้วเริ่มโกหกเงียบๆ ตั้งแต่หน้าที่สอง
+
+    `since_ts` / `until_ts` เป็นขอบของ `bar_close_ts` รวมทั้งสองข้าง — หน้ารายงานใช้
+    นับเฉพาะช่วงที่เลือก · หน้าบันทึกไม่ส่งมา จึงนับทั้งโปรไฟล์ตามเดิม
     """
-    row = conn.execute(
+    stmt = (
         select(*[func.count().filter(_CHIP_WHERE[chip]).label(chip) for chip in CHIPS])
         .select_from(_JOURNAL_FROM)
         .where(decisions.c.profile == profile)
-    ).one()
+    )
+    if since_ts is not None:
+        stmt = stmt.where(decisions.c.bar_close_ts >= since_ts)
+    if until_ts is not None:
+        stmt = stmt.where(decisions.c.bar_close_ts <= until_ts)
+    row = conn.execute(stmt).one()
     return {chip: getattr(row, chip) for chip in CHIPS}
 
 
