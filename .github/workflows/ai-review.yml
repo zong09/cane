@@ -31,10 +31,12 @@ jobs:
       # และมันข้ามแบบเงียบ ๆ สังเกตได้จากบรรทัด "skipped due to token budget" ในรีวิวเท่านั้น
       # flash รับ input ได้ถึงราว 991k จึงเหลือที่เยอะ แต่ยิ่งใหญ่ยิ่งช้าและกิน credit มากขึ้น
       # diff ของ PR นี้วัดได้ 43,599 tokens จึงตั้ง 64000 ให้พอและเผื่อ
+      # 2026-09-23 · PR #33 (ใบ 25) วัดได้ 81,744 tokens → 64000 ถูก prune ทิ้งบางไฟล์เงียบ ๆ
+      # ("total tokens over limit: 64000, pruning diff") · ขยับเป็น 96000 ให้ครอบและเผื่อ ~17%
       # ⚠️ ต้องตั้งคู่กันเสมอ — max_model_tokens (default 32000) ครอบทับตัวล่าง
       #    ตั้งตัวล่างอย่างเดียวไม่มีผล เพราะ get_max_tokens() ทำ min(บน, ล่าง)
-      custom_model_max_tokens: 64000
-      max_model_tokens: 64000
+      custom_model_max_tokens: 96000
+      max_model_tokens: 96000
 
       # วัดจริง 2026-09-22 · diff 167KB (~44k tokens) · 3 รอบต่อ model
       #   qwen3.8-flash  median 569s · SECURITY_STATUS 2/3  <- Gate ตายเงียบ 1 ใน 3
@@ -56,11 +58,14 @@ jobs:
       # แทน error จริงจาก provider  (1200×2 = 40 นาที > 30 → retry ตายฟรี)
       #
       # 700 มาจาก flash ที่วัดได้ช้าสุด 595.8s ที่ diff 44k tokens + margin
-      # 700×2 = 23.3 นาที ยังอยู่ใน 35 นาที จึง retry ได้จริง 1 ครั้ง
-      ai_timeout: 700
-      review_timeout_minutes: 35
+      # 2026-09-23 · ขยับตาม token budget ใหม่ (96000) — **ประมาณเชิงเส้น ยังไม่ได้วัด**:
+      #   595.8s × 82k/44k ≈ 1110s → ตั้ง 1200
+      #   1200×2 = 40 นาที < 45 นาที จึง retry ได้จริง 1 ครั้ง (ข้อบังคับข้างบน)
+      # ถ้ารอบจริงช้ากว่านี้ ให้วัดแล้วแก้ตัวเลขนี้ อย่าเดาเพิ่ม
+      ai_timeout: 1200
+      review_timeout_minutes: 45
       # ต้อง >= review_timeout_minutes + 15 (เวลาของ step Improve)
-      job_timeout_minutes: 55
+      job_timeout_minutes: 60
       # zong09 เป็นเจ้าของ repo จึงได้ OWNER อัตโนมัติ
       # ส่วน pchayphiphitthaphan เป็นบัญชีอีกใบของคนเดียวกัน ที่ไม่ได้เป็น collaborator
       # จึงได้ author_association = CONTRIBUTOR แล้วถูกตัวกรองตัดทิ้ง
