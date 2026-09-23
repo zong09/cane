@@ -58,14 +58,14 @@ jobs:
       # แทน error จริงจาก provider  (1200×2 = 40 นาที > 30 → retry ตายฟรี)
       #
       # 700 มาจาก flash ที่วัดได้ช้าสุด 595.8s ที่ diff 44k tokens + margin
-      # 2026-09-23 · ขยับตาม token budget ใหม่ (96000) — **ประมาณเชิงเส้น ยังไม่ได้วัด**:
-      #   595.8s × 82k/44k ≈ 1110s → ตั้ง 1200
-      #   1200×2 = 40 นาที < 45 นาที จึง retry ได้จริง 1 ครั้ง (ข้อบังคับข้างบน)
-      # ถ้ารอบจริงช้ากว่านี้ ให้วัดแล้วแก้ตัวเลขนี้ อย่าเดาเพิ่ม
-      ai_timeout: 1200
-      review_timeout_minutes: 45
+      # 700×2 = 23.3 นาที ยังอยู่ใน 35 นาที จึง retry ได้จริง 1 ครั้ง
+      # 2026-09-23 · เคยขยับเป็น 1200 / 45 สำหรับ PR #33 (83k tokens) แล้ว **ไม่ช่วย** —
+      # run 35840803388 ส่ง diff ครบแต่ request ค้างเงียบ 45 นาทีโดยไม่มี error สักบรรทัด
+      # การให้เวลามากขึ้นแค่ทำให้ล้มช้าลงตอน provider ค้าง · PR ใหญ่ให้แยก PR ไม่ใช่เพิ่มเวลา
+      ai_timeout: 700
+      review_timeout_minutes: 35
       # ต้อง >= review_timeout_minutes + 15 (เวลาของ step Improve)
-      job_timeout_minutes: 60
+      job_timeout_minutes: 55
       # zong09 เป็นเจ้าของ repo จึงได้ OWNER อัตโนมัติ
       # ส่วน pchayphiphitthaphan เป็นบัญชีอีกใบของคนเดียวกัน ที่ไม่ได้เป็น collaborator
       # จึงได้ author_association = CONTRIBUTOR แล้วถูกตัวกรองตัดทิ้ง
