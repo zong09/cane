@@ -41,6 +41,8 @@
 | 31 | [`dry_run` กั้นเฉพาะ broker ที่ส่งคำสั่งจริงได้ — paper จำลองเสมอ](adr/0031-dry-run-gates-only-a-real-broker.md) | accepted · ปรับถ้อยคำ spec/06 §dry_run |
 | 32 | [`clientOrderId` ที่ส่งให้ venue เป็นรูปย่อของกุญแจตามสเปก](adr/0032-venue-client-order-id-is-a-shorter-form.md) | accepted · เพิ่มเติม spec/06 §กันสั่งซ้ำ (reconciliation) |
 | 33 | [อัตรา maintenance margin ของ live มาจากปลายทาง ไม่ใช่จาก config](adr/0033-maintenance-margin-comes-from-the-venue.md) | accepted · เพิ่มเมธอดใน spec/06 §Broker interface |
+| 34 | [% รวมของหน้ารายงานหารด้วยทุนของเวอร์ชันที่ตัดสินไม้นั้น](adr/0034-report-percent-is-over-the-deciding-capital.md) | accepted · นิยามตัวเลขของหน้ารายงาน |
+| 35 | [เลือกเส้นทาง cold start ต่อเหรียญเป็นเจตนาของรอบถัดไป](adr/0035-cold-start-route-as-a-per-run-intent.md) | **proposed** · ยังไม่มีโค้ด |
 
 ---
 
