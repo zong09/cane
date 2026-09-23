@@ -1352,6 +1352,26 @@ def test_a_bar_with_no_signal_says_it_did_nothing(
     assert "ปฏิเสธทั้งสองฝั่ง — ไม่ใช่แท่งสัญญาณ" in page
 
 
+def test_the_header_shows_the_size_the_opening_decision_chose_with_its_margin(
+    db: Connection, client: TestClient, paper_head
+) -> None:
+    """handoff §9.2 `LONG 25%` · % มาจากแถวที่เปิดไม้ ไม่ใช่ margin หาร bucket ของวันนี้"""
+    _bar_of(db, paper_head.id, **_long_entry())
+    trade = trade_id_of("usdtm_perp", "BTC/USDT", "long", _REPORT_T0)
+    ledger.record_fill(db, Fill(
+        profile="paper", market="usdtm_perp", symbol="BTC/USDT", trade_id=trade, leg="open",
+        fill_ts=_REPORT_T0, px=100.0, qty=0.5, client_order_id="hd", order_type="market",
+        reduce_only=False, position_qty_after=0.5, bar_close_ts=_REPORT_T0,
+        dedupe_key=dedupe_key_of("hd"), ref_px=100.0, fee_quote=Decimal("0"), fee_ccy="USDT",
+        leverage=1.0,
+    ))
+
+    with client:
+        page = client.get("/symbols/BTC/USDT?tab=decision").text
+
+    assert "LONG 50% · margin 50.00" in page
+
+
 def test_a_pair_that_is_not_in_the_profile_is_not_found(
     client: TestClient, paper_head
 ) -> None:
@@ -1365,7 +1385,8 @@ def test_the_rail_links_each_pair_to_its_own_page(client: TestClient, paper_head
     with client:
         page = client.get("/overview").text
 
-    assert 'href="/symbols/BTC/USDT"' in page and 'href="/symbols/ETH/USDT"' in page
+    assert 'href="/symbols/BTC/USDT?market=usdtm_perp"' in page
+    assert 'href="/symbols/ETH/USDT?market=spot"' in page
 
 
 def _golden_bars():
@@ -1434,5 +1455,5 @@ def test_the_chart_marks_where_trades_opened(
         page = client.get("/symbols/BTC/USDT").text
 
     assert 'class="ch__mark ch__mark--open-long"' in page
-    # ไม้ที่ยังถือทำให้ header ไม่ใช่ FLAT
-    assert "LONG 0.01" in page
+    # ไม้ที่ยังถือทำให้ header ไม่ใช่ FLAT · ไม่มีแถวที่เปิด = ขึ้นปริมาณแทน % · margin = 0.01 × close
+    assert f"LONG 0.01 · margin {0.01 * bar.close:.2f}" in page

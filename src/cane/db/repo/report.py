@@ -99,11 +99,18 @@ def capital_of(conn: Connection, version_ids: set[int]) -> dict[int, Decimal]:
 
 @dataclass(frozen=True, slots=True)
 class OpenTrade:
+    trade_id: str
+    market: str
     symbol: str
     side: str
     qty: float
-    #: `None` เมื่อขาเปิดไม่ได้บอก leverage (ไม่ควรเกิดบน perp) — ไม่เดาเป็น 1
+    #: spot ถูกบังคับ leverage = 1 (ADR 26) จึงเท่ากับ notional · `None` เฉพาะ perp ที่ขาเปิด
+    #: ไม่ได้บอก leverage (ไม่ควรเกิด) — ไม่เดาเป็น 1 บน perp
     margin: Decimal | None
+
+    @property
+    def open_bar_close_ts(self) -> int:
+        return int(self.trade_id.split(":")[3])
 
 
 def open_trades(conn: Connection, profile: str) -> list[OpenTrade]:
@@ -133,19 +140,22 @@ def open_trades(conn: Connection, profile: str) -> list[OpenTrade]:
         .where(last.c.position_qty_after > 0)
         .order_by(last.c.symbol)
     )
-    return [
-        OpenTrade(
+    out = []
+    for row in conn.execute(stmt):
+        market = row.trade_id.split(":")[0]
+        leverage = row.leverage or (1 if market == "spot" else None)
+        out.append(OpenTrade(
+            trade_id=row.trade_id,
+            market=market,
             symbol=row.symbol,
             side=row.trade_id.split(":")[2],
             qty=price_from_db(row.position_qty_after),
             margin=(
-                None
-                if not row.leverage
-                else row.position_qty_after * row.entry_px / row.leverage
+                None if leverage is None
+                else row.position_qty_after * row.entry_px / leverage
             ),
-        )
-        for row in conn.execute(stmt)
-    ]
+        ))
+    return out
 
 
 @dataclass(frozen=True, slots=True)

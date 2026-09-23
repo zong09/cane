@@ -49,6 +49,8 @@ class Point:
 
 @dataclass(frozen=True, slots=True)
 class SymbolRow:
+    #: เหรียญชื่อเดียวกันบนสองตลาดเป็นคนละแถว (ADR 26)
+    market: str
     symbol: str
     trades: int
     wins: int
@@ -149,9 +151,9 @@ def summarize(
         if capital:
             equity.append(Point(ts=trade.exit_ts, net_pct=pts(cum_net), gross_pct=pts(cum_gross)))
 
-    rows: dict[str, list[ClosedTrade]] = {}
+    rows: dict[tuple[str, str], list[ClosedTrade]] = {}
     for trade in trades:
-        rows.setdefault(trade.symbol, []).append(trade)
+        rows.setdefault((trade.symbol, trade.market), []).append(trade)
 
     return Summary(
         trades=tuple(sorted(trades, key=lambda t: (t.exit_ts, t.trade_id), reverse=True)),
@@ -177,6 +179,7 @@ def summarize(
         equity=tuple(equity),
         per_symbol=tuple(
             SymbolRow(
+                market=market,
                 symbol=symbol,
                 trades=len(members),
                 wins=sum(t.net_quote > 0 for t in members),
@@ -187,6 +190,6 @@ def summarize(
                 fee_quote=_sum(t.fee_quote for t in members),
                 slippage_quote=_sum(t.slippage_quote for t in members),
             )
-            for symbol, members in sorted(rows.items())
+            for (symbol, market), members in sorted(rows.items())
         ),
     )

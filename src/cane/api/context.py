@@ -66,6 +66,8 @@ class SymbolRow:
 
     pair: str
     zone: str
+    #: ลิงก์ไปหน้าเหรียญต้องพกไปด้วย — ชื่อเดียวกันบนสองตลาดเป็นคนละคู่ (ADR 26)
+    market: str = ""
 
 
 def profile_chip(profile: str, settings: Settings | None) -> Chip:
@@ -127,6 +129,7 @@ def _rail(conn: Connection, settings: Settings | None, *, mode: str) -> list[Sym
     return [
         SymbolRow(
             pair=sym.symbol,
+            market=sym.market,
             zone=(
                 found.zone
                 if (found := latest.get((sym.market, store_symbol(sym.symbol))))

@@ -1758,6 +1758,14 @@ def test_exporting_the_report_needs_export_records(monkeypatch: pytest.MonkeyPat
     assert "rp__export--off" in page.text
 
 
+def test_a_viewer_without_read_decisions_cannot_open_a_symbol_page() -> None:
+    client, _ = build(role="VIEWER")
+    with client:
+        response = client.get("/symbols/BTC/USDT")
+
+    assert response.status_code == 403
+
+
 def test_every_chip_of_the_journal_is_on_the_page_even_with_nothing_to_count() -> None:
     client, _ = build()
     with client:
