@@ -49,12 +49,12 @@ def upgrade() -> None:
         sa.Column("market", sa.Text(), nullable=False),
         sa.Column("symbol", sa.Text(), nullable=False),
         sa.Column("route", sa.Text(), nullable=False),
-        sa.Column("chosen_by", sa.Integer(), nullable=False),
+        # ชื่อคน ไม่ใช่ FK ไป `users.id` — แบบเดียวกับ `kill_switch.latched_by` · FK จะทำให้ลบ/ระงับ
+        # ผู้ใช้ที่มีเจตนาค้างอยู่ไม่ได้ ซึ่งไม่มีใครตัดสินว่าควรเป็นอย่างนั้น · id ของคนเลือกอยู่ที่
+        # `user_audit_log` ซึ่งลบไม่ได้
+        sa.Column("chosen_by", sa.Text(), nullable=False),
         sa.Column("chosen_ts", sa.BigInteger(), nullable=False),
         sa.PrimaryKeyConstraint("profile", "market", "symbol", name="pk_cold_start_intent"),
-        sa.ForeignKeyConstraint(
-            ["chosen_by"], ["users.id"], name="fk_cold_start_intent_chosen_by"
-        ),
         sa.CheckConstraint(f"market IN ({MARKETS})", name="ck_cold_start_intent_market"),
         sa.CheckConstraint(f"route IN ({ROUTES})", name="ck_cold_start_intent_route"),
         # ศูนย์หรือติดลบแปลว่ามีใครส่งวินาทีหรือ `None` ที่ถูกแปลงเป็นเลขมา (เหตุผลเดียวกับ 0009)

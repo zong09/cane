@@ -17,7 +17,7 @@
 | กลุ่ม | ตัวอย่าง |
 | --- | --- |
 | **หยุด / ลดความเสี่ยง** | latch kill switch · ปิดไม้ฉุกเฉิน · เปิด `dry_run` · ปิด `allow_short` |
-| **เลือกเส้นทางที่สเปกเปิดทางไว้** | เลือก cold start (`wait_1h` / `trailing` / `skip`) |
+| **เลือกเส้นทางที่สเปกเปิดทางไว้** | เลือก cold start ต่อเหรียญของ run ถัดไป (`trailing` / `skip` — `wait_1h` ยังไม่มีใน engine จึงเลือกไม่ได้ · [decisions #35](../decisions.md)) |
 | **แก้ค่าตั้งต้นแล้วโหลดใหม่** | risk limit, bucket, `leverage`, คู่เหรียญ — บันทึกเป็น config เวอร์ชันใหม่แล้ว activate ([decisions #18](../decisions.md)) |
 
 การปลด kill switch เป็นการ*เพิ่ม*ความเสี่ยง จึงมีด่านของตัวเอง: พิมพ์ชื่อ profile ยืนยัน

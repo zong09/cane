@@ -6,11 +6,8 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
-from cane.auth import secrets as auth_secrets
 from cane.db.repo import coldstart_intent as repo
-from cane.db.repo import users as users_repo
 from cane.db.schema import cold_start_intent
-from cane.db.types import now_ms
 
 pytestmark = pytest.mark.db
 
@@ -20,16 +17,14 @@ BTC = "BTC/USDT"
 
 @pytest.fixture
 def user_id(db):
+    """ชื่อคนเลือก · ชื่อฟิกซ์เจอร์คงไว้ให้เทสต์ข้างล่างอ่านเหมือนเดิม"""
     db.execute(cold_start_intent.delete())
-    return users_repo.create(
-        db, email="trader-intent@example.com", name="เทรดเดอร์", role="TRADER",
-        created_ts=now_ms(), password_hash=auth_secrets.hash_password("รหัสผ่านที่ยาวพอ"),
-    )
+    return "เทรดเดอร์"
 
 
 def _choose(db, user_id, route, now=1_000):
     return repo.choose(db, profile="live", market=PERP, symbol=BTC, route=route,
-                       user_id=user_id, now=now)
+                       by=user_id, now=now)
 
 
 def test_a_choice_reads_back_with_who_chose_it(db, user_id):
@@ -37,7 +32,7 @@ def test_a_choice_reads_back_with_who_chose_it(db, user_id):
 
     intent = repo.read(db, profile="live", market=PERP, symbol=BTC)
 
-    assert (intent.route, intent.chosen_by_name, intent.chosen_ts) == ("trailing", "เทรดเดอร์", 1_000)
+    assert (intent.route, intent.chosen_by, intent.chosen_ts) == ("trailing", "เทรดเดอร์", 1_000)
 
 
 def test_choosing_the_same_route_again_changes_nothing(db, user_id):
