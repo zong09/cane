@@ -48,11 +48,19 @@ jobs:
       # ถ้ารีวิวมีปัญหา ให้ไปแก้ที่ตัวแปรอื่น เช่น ai_timeout, token budget หรือขนาด PR
       model: dashscope/qwen3.8-flash
 
-      # ตั้งจากค่าที่วัดได้ (max ช้าสุด 741.6s) ไม่ได้ใช้สูตร ×2.5 ของสคริปต์
-      # เพราะสูตรนั้นออกแบบมาเผื่อกรณีแกว่งมาก ซึ่งที่ขนาดนี้แกว่งแค่ 1.07 เท่า
-      ai_timeout: 1200
-      review_timeout_minutes: 30
-      job_timeout_minutes: 50
+      # ข้อบังคับที่ลืมไปตอนตั้ง 1200: pr-agent ซ้อน retry สองชั้น
+      # (tenacity MODEL_RETRIES=2 × OpenAI SDK 3 ครั้ง) ถ้า request แรกค้าง
+      # มันจะกิน ai_timeout เต็ม ๆ ก่อนจะ retry ดังนั้นต้องให้
+      #     ai_timeout × 2 < review_timeout_minutes × 60
+      # ไม่งั้น retry ไม่มีทางทำงานจบ และเราจะเห็นแต่ "step timed out"
+      # แทน error จริงจาก provider  (1200×2 = 40 นาที > 30 → retry ตายฟรี)
+      #
+      # 700 มาจาก flash ที่วัดได้ช้าสุด 595.8s ที่ diff 44k tokens + margin
+      # 700×2 = 23.3 นาที ยังอยู่ใน 35 นาที จึง retry ได้จริง 1 ครั้ง
+      ai_timeout: 700
+      review_timeout_minutes: 35
+      # ต้อง >= review_timeout_minutes + 15 (เวลาของ step Improve)
+      job_timeout_minutes: 55
       # zong09 เป็นเจ้าของ repo จึงได้ OWNER อัตโนมัติ
       # ส่วน pchayphiphitthaphan เป็นบัญชีอีกใบของคนเดียวกัน ที่ไม่ได้เป็น collaborator
       # จึงได้ author_association = CONTRIBUTOR แล้วถูกตัวกรองตัดทิ้ง
