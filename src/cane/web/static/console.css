@@ -942,3 +942,29 @@ a.btn--block { padding: 12px; }
 .ch__verdictbtn--short { background: var(--live); border-color: var(--live-text); color: #fff; }
 .ch__verdictbtn--short-off { background: #fff; border-color: var(--warn-text); color: var(--warn-text); }
 .ch__note { margin-top: 14px; font-family: var(--sans); font-size: 12px; line-height: 1.7; }
+
+/* แท็บ Cold start */
+.cs { margin-top: 20px; display: flex; flex-direction: column; gap: 14px; }
+.cs__pre { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 18px; background: var(--paper-tint); border: 1px solid var(--paper-border); }
+.cs__tick { background: var(--paper); border-color: var(--paper-text); }
+.cs__pretext { font: 600 13px var(--sans); color: var(--paper-text); }
+.cs__prenote { flex-basis: 100%; font: 400 12px/1.6 var(--sans); color: #4b7d64; }
+.cs__side { display: flex; align-items: center; gap: 12px; padding: 12px 18px; background: var(--surface); border: 1px solid var(--border); font: 400 12.5px/1.6 var(--sans); color: var(--text-2); }
+.cs__side .sd__hold { flex: none; }
+.cs__grid { display: grid; grid-template-columns: 400px minmax(0, 1fr); gap: 20px; align-items: start; }
+.cs__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.cs__metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.cs__metric { padding: 12px 14px; background: var(--surface-raised); border: 1px solid var(--divider-soft); }
+.cs__metric--sl { background: var(--live-tint); border-color: var(--live-border); }
+.cs__metric--sl .cs__num { color: var(--live-text); }
+.cs__metric--tp { background: var(--paper-tint); border-color: var(--paper-border); }
+.cs__metric--tp .cs__num { color: var(--paper-text); }
+.cs__metric--rr { background: var(--selected); }
+.cs__num { font: 600 19px var(--mono); margin-top: 8px; }
+.cs__rr { margin-top: 14px; padding: 12px 15px; font: 400 12.5px/1.6 var(--sans); }
+.cs__rr--pass { background: var(--paper-tint); border: 1px solid var(--paper-border); color: var(--paper-text); }
+.cs__rr--fail { background: var(--live-tint); border: 1px solid var(--live-border); color: var(--live-text); }
+.cs__cols { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 16px; }
+.cs__cols .sd__label { display: block; margin-bottom: 6px; }
+.cs__not { padding: 22px 24px; }
+.cs__kvs { padding: 14px 0; border-bottom: 0; }

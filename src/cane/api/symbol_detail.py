@@ -30,7 +30,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import Connection, Engine
 
 from cane.api import context
-from cane.api import symbol_chart
+from cane.api import symbol_chart, symbol_coldstart
 from cane.api.deps import current_mode, current_user, get_db, get_sup, require_cap
 from cane.api.log import SKIP_TEXT
 from cane.api.templating import templates
@@ -474,9 +474,12 @@ def page_context(
     )
     tab = tab if tab in dict(TABS) else "chart"
     header = _header(conn, settings, sym, record, held)
-    ctx: dict[str, object] = {}
+    # จุดเขียวที่แท็บ Cold start ต้องรู้ผลทุกแท็บ ไม่ใช่เฉพาะตอนเปิดแท็บนั้น
+    ctx: dict[str, object] = symbol_coldstart.coldstart_context(
+        conn, settings=settings, sym=sym, held_side=header.side
+    )
     if tab == "chart":
-        ctx = symbol_chart.chart_context(
+        ctx |= symbol_chart.chart_context(
             conn, profile=profile, settings=settings, sym=sym, record=record,
             held_side=header.side, held_label=header.side_label,
         )

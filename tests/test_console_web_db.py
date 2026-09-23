@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -1457,3 +1458,63 @@ def test_the_chart_marks_where_trades_opened(
     assert 'class="ch__mark ch__mark--open-long"' in page
     # ไม้ที่ยังถือทำให้ header ไม่ใช่ FLAT · ไม่มีแถวที่เปิด = ขึ้นปริมาณแทน % · margin = 0.01 × close
     assert f"LONG 0.01 · margin {0.01 * bar.close:.2f}" in page
+
+
+def _history(db: Connection, last_index: int):
+    db.execute(bars_table.delete())
+    history = _golden_bars()[: last_index + 1]
+    insert_bars(db, "usdtm_perp", "BTC/USDT", "1d", history)
+    return history
+
+
+def test_cold_start_shows_the_side_it_would_catch_and_the_trailing_numbers(
+    db: Connection, client: TestClient, paper_head
+) -> None:
+    """แท่งหลัง Buy ตัวแรก: state bullish แต่ไม่ใช่แท่งสัญญาณ และไม่มีไม้ = ตกรถฝั่ง long"""
+    _history(db, _BUY_1 + 1)
+
+    with client:
+        page = client.get("/symbols/BTC/USDT?tab=coldstart").text
+
+    assert "ตกรถฝั่ง long — state เป็น bullish มา" in page
+    assert "SL · SLOW TRAIL" in page and "R : R" in page
+    assert "ถ้ากด start engine ตอนนี้:" in page
+    assert "engine ยังไม่สร้างเส้นทาง <code>wait_1h</code>" in page
+    # ไม่มีปุ่มเข้าไม้ — แท็บนี้อ่านอย่างเดียวจนกว่าจะมี ADR
+    assert "เข้าไม้พร้อมตั้ง SL" not in page and "ข้ามรอบนี้" not in page
+    # จุดเขียวที่แท็บ Cold start
+    assert re.search(r'Cold start\s*<span class="sd__dot sd__dot--long">', page)
+
+
+def test_the_signal_bar_itself_is_not_a_cold_start(
+    db: Connection, client: TestClient, paper_head
+) -> None:
+    _history(db, _BUY_1)
+
+    with client:
+        page = client.get("/symbols/BTC/USDT?tab=coldstart").text
+
+    assert "ไม่เข้าเงื่อนไข cold start" in page
+    assert "แท่งล่าสุดเป็นจุดสัญญาณ" in page
+    assert not re.search(r'Cold start\s*<span class="sd__dot', page)
+
+
+def test_a_pair_already_held_is_not_a_cold_start(
+    db: Connection, client: TestClient, paper_head
+) -> None:
+    history = _history(db, _BUY_1 + 1)
+    bar = history[_BUY_1]
+    ledger.record_fill(db, Fill(
+        profile="paper", market="usdtm_perp", symbol="BTC/USDT",
+        trade_id=trade_id_of("usdtm_perp", "BTC/USDT", "long", bar.close_ts), leg="open",
+        fill_ts=bar.close_ts, px=bar.close, qty=0.01, client_order_id="cs",
+        order_type="market", reduce_only=False, position_qty_after=0.01,
+        bar_close_ts=bar.close_ts, dedupe_key=dedupe_key_of("cs"), ref_px=bar.close,
+        fee_quote=Decimal("0"), fee_ccy="USDT", leverage=1.0,
+    ))
+
+    with client:
+        page = client.get("/symbols/BTC/USDT?tab=coldstart").text
+
+    assert "ไม่เข้าเงื่อนไข cold start" in page
+    assert "มีสถานะเปิดของคู่นี้อยู่แล้ว" in page

@@ -1,0 +1,68 @@
+{# แท็บ Cold start · handoff §9.2c · อ่านอย่างเดียว — ดู docstring ของ api/symbol_coldstart.py #}
+{% if not cs_ready %}
+<div class="sd__card sd__card--narrow">
+  <div class="sd__note">{% if cs_missing %}ยังมีแท่งที่ปิดแล้วไม่ครบ — ขาดอีก {{ cs_missing }} แท่งก่อนจะพิจารณาได้{% else %}ข้อมูลของคู่นี้คำนวณ feature ไม่ได้ (ราคาไม่ขยับเลยในชุดข้อมูล){% endif %}</div>
+</div>
+{% elif not cs_eligible %}
+<div class="sd__card sd__card--narrow cs__not">
+  <div class="sd__blocktitle">ไม่เข้าเงื่อนไข cold start</div>
+  <div class="sd__herosub">เส้นทางนี้ทำงานเฉพาะรอบแรกหลังบอทเปิด เมื่อ state เดินไปข้างหนึ่งอยู่แล้ว (bullish = ตกรถฝั่ง long, bearish = ตกรถฝั่ง short) แต่แท่งล่าสุดไม่ใช่จุดสัญญาณ และต้องไม่มีสถานะเปิดของคู่นี้ที่ exchange ทั้งสองฝั่ง</div>
+  <div class="sd__block cs__kvs">
+    <div class="sd__kv"><span>state</span><span>{{ cs_state }} มา {{ cs_run }} แท่ง</span></div>
+    <div class="sd__kv"><span>สถานะที่ถือ · จาก ledger</span><span>{{ cs_position }}</span></div>
+    <div class="sd__kv"><span>config · cold_start</span><span>{{ cs_route }}</span></div>
+  </div>
+  <div class="rp__notice">{{ cs_reason }}</div>
+</div>
+{% else %}
+{% set t = cs_trailing %}
+<div class="cs">
+  <div class="cs__pre">
+    <span class="sd__label">เงื่อนไขบังคับ</span>
+    <span class="sd__tick cs__tick"></span>
+    <span class="cs__pretext">ไม่มีสถานะเปิดของ {{ cs_pair }} ใน ledger ทั้งฝั่ง long และ short</span>
+    <span class="cs__prenote">ถ้ามีอยู่แล้ว จะกลับโหมดปกติคือเฝ้ารอสัญญาณฝั่งตรงข้าม ไม่เข้าไม้ซ้ำและไม่เปิดสวนสถานะเดิม · engine อ่านซ้ำจาก exchange ตอนเดินจริง</span>
+  </div>
+  <div class="cs__side">
+    <span class="sd__hold sd__hold--{{ cs_side }}">ฝั่ง {{ cs_side | upper }}</span>
+    <span>{{ cs_pair }} ตกรถฝั่ง {{ cs_side }} — state เป็น {{ cs_state }} มา {{ cs_run }} แท่ง · เส้นทางนี้ทำงานสมมาตรทั้งสองฝั่ง ถ้า state เป็น {{ "bearish" if cs_side == "long" else "bullish" }} จะเป็นการตกรถฝั่ง {{ "short" if cs_side == "long" else "long" }} และใช้ตรรกะเดียวกันโดยตั้ง SL {{ "เหนือ" if cs_side == "long" else "ใต้" }}ราคาเข้าแทน</span>
+  </div>
+  <div class="rp__notice">
+    <strong>ถ้ากด start engine ตอนนี้:</strong> {{ cs_outcome }} · เส้นทางมาจาก config (<code>cold_start = {{ cs_route_key }}</code>) แก้ได้ที่หน้าตั้งค่า
+  </div>
+
+  <div class="cs__grid">
+    <div class="sd__card">
+      <div class="sd__blocktitle">ทางที่ 1 · ลง timeframe เล็ก</div>
+      <div class="sd__note">ไปดูกราฟ 1 ชั่วโมง รอสัญญาณของ timeframe นั้นแล้วเข้าด้วยความเสี่ยงที่จำกัดกว่า</div>
+      <div class="rp__notice rp__notice--warn">engine ยังไม่สร้างเส้นทาง <code>wait_1h</code> — config ที่เลือกทางนี้จะถูกบันทึกว่าตั้งใจให้รอ และไม่เข้าไม้ · ยังไม่มีแท่ง 1h ในตารางให้แสดง</div>
+    </div>
+
+    <div class="sd__card">
+      <div class="cs__head"><span class="sd__blocktitle">ทางที่ 2 · CDC ATR Trailing Stop</span><span class="sd__chip">V2.1 · 2013</span></div>
+      <div class="cs__metrics">
+        <div class="cs__metric"><div class="sd__label">ENTRY</div><div class="cs__num">{{ t.entry }}</div></div>
+        <div class="cs__metric cs__metric--sl"><div class="sd__label">SL · SLOW TRAIL</div><div class="cs__num">{{ t.stop }}</div></div>
+        <div class="cs__metric cs__metric--tp"><div class="sd__label">TP · จุดเหวี่ยงล่าสุด</div><div class="cs__num">{{ t.target }}</div></div>
+        <div class="cs__metric cs__metric--rr"><div class="sd__label">R : R</div><div class="cs__num">{{ t.rr }}</div></div>
+      </div>
+      <div class="cs__rr cs__rr--{{ 'pass' if t.passed else 'fail' }}">
+        <strong>{{ "ผ่านเกณฑ์ RR ≥ 2:1" if t.passed else "ไม่ผ่านเกณฑ์ RR ≥ 2:1" }}</strong> · {{ t.risk_note }}
+      </div>
+      <div class="cs__cols">
+        <div>
+          <div class="sd__label">พารามิเตอร์ · จาก .pine</div>
+          {% for k, v in cs_params %}<div class="sd__kv"><span>{{ k }}</span><span>{{ v }}</span></div>{% endfor %}
+        </div>
+        <div>
+          <div class="sd__label">ATRCD · แท่งล่าสุด</div>
+          <div class="sd__kv"><span>Hst</span><span>{{ t.hst }}</span></div>
+          <div class="sd__kv"><span>Sig</span><span>{{ t.sig }}</span></div>
+          <div class="sd__kv"><span>สี</span><span>{{ t.color }}</span></div>
+        </div>
+      </div>
+      <div class="sd__foot"><span class="sd__chip">ตามสเปก</span> {{ t.size_note }}</div>
+    </div>
+  </div>
+</div>
+{% endif %}
