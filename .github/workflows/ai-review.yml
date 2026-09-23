@@ -69,6 +69,13 @@ jobs:
       #    จะไม่ตรงความจริงอีกต่อไป ถ้าวันไหนอยากให้รีวิวเทสต์ด้วย ให้ลบบรรทัดนี้
       # ต้องเป็น JSON list ที่มีเครื่องหมายคำพูด — แบบไม่มีคำพูด ([tests/**,...])
       # yaml.safe_load ใน _fix_key_value จะ parse ไม่ผ่าน เพราะ * คือ alias indicator
+      # ปิด improve — เป็นการยิง LLM รอบที่สองทับ diff ทั้งก้อน
+      # วัดจาก PR #33 (run 35827116650): review 1,589s + improve 913s
+      # improve กินเวลา 36% ของทั้งรอบ โดยไม่มีสิทธิ์บล็อก merge อยู่แล้ว
+      # (Gate อ่านเฉพาะคอมเมนต์ของ review) ปิดแล้วเสียแค่ code suggestion
+      # ที่กดรับเป็น commit ได้ ส่วนตัวรีวิวกับ Gate ทำงานเหมือนเดิมทุกอย่าง
+      run_improve: false
+
       ignore_glob: '["tests/**","**/*.css"]'
 
       ai_timeout: 700
