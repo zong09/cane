@@ -19,5 +19,3 @@ __pycache__/
 
 # ตั้งค่าเฉพาะเครื่องของบรรณาธิการ
 .vscode/
-
-docs/design_handoff

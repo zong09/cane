@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:#eaf3f9;font-family:'IBM Plex Sans Thai',system-ui,sans-serif;color:#0f2430;-webkit-font-smoothing:antialiased}
+a{color:#1a8ed8;text-decoration:none}a:hover{color:#0f6ba8}
+</style></helmet>
+
+<section style="padding:56px 48px 72px;max-width:1420px">
+  <div style="display:flex;align-items:baseline;gap:14px;margin-bottom:6px">
+    <span style="font:500 11px/1 'IBM Plex Mono',monospace;letter-spacing:.1em;color:#7b95a4">1b · CROOK</span>
+    <h1 style="margin:0;font:600 26px/1.2 'IBM Plex Sans Thai',sans-serif;letter-spacing:-.01em">cane logo kit</h1>
+  </div>
+  <p style="margin:0 0 34px;font:400 13.5px/1.6 'IBM Plex Sans Thai',sans-serif;color:#5b7787;max-width:760px">มาร์กเส้นเดียว: ตัว c ที่ปลายล่างสะบัดขึ้นเป็นหัวไม้เท้าและเส้นเทรนด์ขาขึ้น ไฟล์เวกเตอร์อยู่ที่ <code style="font:400 12.5px 'IBM Plex Mono',monospace;background:#e4f4ff;color:#0f6ba8;padding:2px 6px;border-radius:5px">cane-mark.svg</code> และ <code style="font:400 12.5px 'IBM Plex Mono',monospace;background:#e4f4ff;color:#0f6ba8;padding:2px 6px;border-radius:5px">cane-mark-mono.svg</code></p>
+
+  <!-- PRIMARY -->
+  <div style="background:#fff;border:1px solid #dce9f1;border-radius:18px;padding:64px 56px;display:flex;align-items:center;gap:56px;box-shadow:0 1px 2px rgba(15,36,48,.05)">
+    <div style="display:flex;align-items:center;gap:22px">
+      <svg viewBox="0 0 48 48" width="104" height="104" aria-label="cane"><path d="M28.8 19.6 A11.5 11.5 0 1 0 28.8 34.4 L41.7 19.1" fill="none" stroke="#30AFFF" stroke-width="5.5" stroke-linecap="round"></path></svg>
+      <div>
+        <div style="font:500 48px/1 'IBM Plex Sans Thai',sans-serif;letter-spacing:.04em">cane</div>
+        <div style="font:400 11px/1 'IBM Plex Mono',monospace;letter-spacing:.16em;color:#7b95a4;margin-top:12px">CDC ACTION ZONE</div>
+      </div>
+    </div>
+    <div style="flex:1"></div>
+    <div style="font:400 12px/1.8 'IBM Plex Mono',monospace;color:#7b95a4">
+      <div>mark #30AFFF</div>
+      <div>text #0f2430</div>
+      <div>stroke 5.5 / 48 grid</div>
+      <div>cap round</div>
+    </div>
+  </div>
+
+  <!-- VARIANTS -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:16px">
+    <div style="background:#0f2430;border-radius:16px;padding:38px 26px;display:grid;place-items:center;min-height:150px">
+      <div style="display:flex;align-items:center;gap:13px;color:#fff">
+        <svg viewBox="0 0 48 48" width="44" height="44"><path d="M28.8 19.6 A11.5 11.5 0 1 0 28.8 34.4 L41.7 19.1" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round"></path></svg>
+        <span style="font:500 24px/1 'IBM Plex Sans Thai',sans-serif;letter-spacing:.04em">cane</span>
+      </div>
+    </div>
+    <div style="background:#30AFFF;border-radius:16px;padding:38px 26px;display:grid;place-items:center;min-height:150px">
+      <div style="display:flex;align-items:center;gap:13px;color:#fff">
+        <svg viewBox="0 0 48 48" width="44" height="44"><path d="M28.8 19.6 A11.5 11.5 0 1 0 28.8 34.4 L41.7 19.1" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round"></path></svg>
+        <span style="font:500 24px/1 'IBM Plex Sans Thai',sans-serif;letter-spacing:.04em">cane</span>
+      </div>
+    </div>
+    <div style="background:#fff;border:1px solid #dce9f1;border-radius:16px;padding:38px 26px;display:grid;place-items:center;min-height:150px">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:12px;color:#0f2430">
+        <svg viewBox="0 0 48 48" width="46" height="46"><path d="M28.8 19.6 A11.5 11.5 0 1 0 28.8 34.4 L41.7 19.1" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round"></path></svg>
+        <span style="font:500 20px/1 'IBM Plex Sans Thai',sans-serif;letter-spacing:.05em">cane</span>
+      </div>
+    </div>
+    <div style="background:#f7fbfe;border:1px solid #dce9f1;border-radius:16px;padding:30px 26px;display:flex;align-items:center;justify-content:center;gap:18px;min-height:150px">
+      <div style="width:64px;height:64px;border-radius:16px;background:#1f3a49;display:grid;place-items:center;color:#30AFFF;box-shadow:0 2px 8px rgba(31,58,73,.28)">
+        <svg viewBox="0 0 48 48" width="42" height="42"><path d="M28.8 19.6 A11.5 11.5 0 1 0 28.8 34.4 L41.7 19.1" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round"></path></svg>
+      </div>
+      <div style="width:44px;height:44px;border-radius:12px;background:#30AFFF;display:grid;place-items:center;color:#fff">
+        <svg viewBox="0 0 48 48" width="30" height="30"><path d="M28.8 19.6 A11.5 11.5 0 1 0 28.8 34.4 L41.7 19.1" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"></path></svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- SIZES + CLEARSPACE -->
+  <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:16px;margin-top:16px">
+    <div style="background:#fff;border:1px solid #dce9f1;border-radius:16px;padding:26px 28px">
+      <div style="font:500 10.5px/1 'IBM Plex Mono',monospace;letter-spacing:.1em;color:#7b95a4">SIZE TEST · เส้นหนาขึ้นเมื่อย่อลง</div>
+      <div style="display:flex;align-items:flex-end;gap:30px;margin-top:24px;color:#0f2430">
+        <div style="text-align:center"><svg viewBox="0 0 48 48" width="48" height="48"><path d="M28.8 19.6 A11.5 11.5 0 1 0 28.8 34.4 L41.7 19.1" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round"></path></svg><div style="font:400 10px 'IBM Plex Mono',monospace;color:#a1b6c2;margin-top:8px">48 / 5.5</div></div>
+        <div style="text-align:center"><svg viewBox="0 0 48 48" width="32" height="32"><path d="M28.8 19.6 A11.5 11.5 0 1 0 28.8 34.4 L41.7 19.1" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round"></path></svg><div style="font:400 10px 'IBM Plex Mono',monospace;color:#a1b6c2;margin-top:8px">32 / 5.5</div></div>
+        <div style="text-align:center"><svg viewBox="0 0 48 48" width="24" height="24"><path d="M28.8 19.6 A11.5 11.5 0 1 0 28.8 34.4 L41.7 19.1" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"></path></svg><div style="font:400 10px 'IBM Plex Mono',monospace;color:#a1b6c2;margin-top:8px">24 / 6</div></div>
+        <div style="text-align:center"><svg viewBox="0 0 48 48" width="20" height="20"><path d="M28.8 19.6 A11.5 11.5 0 1 0 28.8 34.4 L41.7 19.1" fill="none" stroke="currentColor" stroke-width="6.5" stroke-linecap="round"></path></svg><div style="font:400 10px 'IBM Plex Mono',monospace;color:#a1b6c2;margin-top:8px">20 / 6.5</div></div>
+        <div style="text-align:center"><svg viewBox="0 0 48 48" width="16" height="16"><path d="M28.8 19.6 A11.5 11.5 0 1 0 28.8 34.4 L41.7 19.1" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"></path></svg><div style="font:400 10px 'IBM Plex Mono',monospace;color:#a1b6c2;margin-top:8px">16 / 7</div></div>
+      </div>
+      <div style="font:400 12px/1.6 'IBM Plex Sans Thai',sans-serif;color:#7b95a4;margin-top:22px;padding-top:16px;border-top:1px solid #eef6fa">ขนาดเล็กสุดที่ใช้ได้ 16px สำหรับ favicon แนะนำวางบนพื้นบลูแล้วใช้มาร์กขาว</div>
+    </div>
+
+    <div style="background:#fff;border:1px solid #dce9f1;border-radius:16px;padding:26px 28px">
+      <div style="font:500 10.5px/1 'IBM Plex Mono',monospace;letter-spacing:.1em;color:#7b95a4">CLEARSPACE = ¼ ของความสูงมาร์ก</div>
+      <div style="margin-top:22px;display:flex;justify-content:center">
+        <div style="border:1px dashed #c6dbe7;border-radius:10px;padding:20px;background:#f7fbfe">
+          <div style="display:flex;align-items:center;gap:18px;background:#fff;border:1px solid #eef6fa;border-radius:6px;padding:10px 14px">
+            <svg viewBox="0 0 48 48" width="56" height="56"><path d="M28.8 19.6 A11.5 11.5 0 1 0 28.8 34.4 L41.7 19.1" fill="none" stroke="#30AFFF" stroke-width="5.5" stroke-linecap="round"></path></svg>
+            <span style="font:500 26px/1 'IBM Plex Sans Thai',sans-serif;letter-spacing:.04em">cane</span>
+          </div>
+        </div>
+      </div>
+      <div style="font:400 12px/1.6 'IBM Plex Sans Thai',sans-serif;color:#7b95a4;margin-top:20px;padding-top:16px;border-top:1px solid #eef6fa">ช่องไฟระหว่างมาร์กกับ wordmark = ⅓ ของความสูงมาร์ก wordmark ใช้ IBM Plex Sans Thai 500 letter-spacing .04em</div>
+    </div>
+  </div>
+
+  <!-- IN CONTEXT -->
+  <div style="margin-top:16px;background:#fff;border:1px solid #dce9f1;border-radius:16px;padding:26px 28px">
+    <div style="font:500 10.5px/1 'IBM Plex Mono',monospace;letter-spacing:.1em;color:#7b95a4">IN CONTEXT · หัว rail ของคอนโซล</div>
+    <div style="display:flex;gap:20px;margin-top:20px;flex-wrap:wrap">
+      <div style="width:236px;border:1px solid #dce9f1;border-radius:12px;background:#fff;padding:20px 18px">
+        <div style="display:flex;align-items:center;gap:11px">
+          <svg viewBox="0 0 48 48" width="32" height="32"><path d="M28.8 19.6 A11.5 11.5 0 1 0 28.8 34.4 L41.7 19.1" fill="none" stroke="#30AFFF" stroke-width="5.5" stroke-linecap="round"></path></svg>
+          <div>
+            <div style="font:500 15px/1.1 'IBM Plex Sans Thai',sans-serif;letter-spacing:.03em">cane</div>
+            <div style="font:400 10px/1.3 'IBM Plex Mono',monospace;color:#7b95a4;margin-top:2px">CDC Action Zone</div>
+          </div>
+        </div>
+      </div>
+      <div style="width:236px;border:1px solid #dce9f1;border-radius:12px;background:#fff;padding:20px 18px">
+        <div style="display:flex;align-items:center;gap:11px">
+          <span style="width:30px;height:30px;border-radius:9px;background:#30AFFF;display:grid;place-items:center;color:#fff;flex:none">
+            <svg viewBox="0 0 48 48" width="21" height="21"><path d="M28.8 19.6 A11.5 11.5 0 1 0 28.8 34.4 L41.7 19.1" fill="none" stroke="currentColor" stroke-width="6.5" stroke-linecap="round"></path></svg>
+          </span>
+          <div>
+            <div style="font:500 15px/1.1 'IBM Plex Sans Thai',sans-serif;letter-spacing:.03em">cane</div>
+            <div style="font:400 10px/1.3 'IBM Plex Mono',monospace;color:#7b95a4;margin-top:2px">CDC Action Zone</div>
+          </div>
+        </div>
+      </div>
+      <div style="flex:1;min-width:240px;display:flex;align-items:center;gap:14px;padding:0 4px;font:400 12.5px/1.65 'IBM Plex Sans Thai',sans-serif;color:#5b7787">ซ้าย: มาร์กเปล่าบนพื้นขาว ขวา: มาร์กขาวในกล่องบลู 30px แบบเดียวกับที่ rail ใช้อยู่ตอนนี้ — บอกได้ว่าจะให้เปลี่ยนในคอนโซลเป็นแบบไหน</div>
+    </div>
+  </div>
+</section>
+
+</x-dc>
+</body>
+</html>
