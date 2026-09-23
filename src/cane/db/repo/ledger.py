@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import Connection, and_, select
+from sqlalchemy import Connection, and_, column, select, table
 
 from cane.db.schema import fills as fills_t
 from cane.db.schema import funding_charges as funding_t
@@ -300,6 +300,93 @@ def funding_charges_of_trade(
             amount_quote=row.amount_quote,
             mark_px=None if row.mark_px is None else price_from_db(row.mark_px),
             unavailable_reason=row.unavailable_reason,
+        )
+        for row in conn.execute(stmt)
+    ]
+
+
+#: VIEW ของ migration 0012 · ไม่อยู่ใน `schema.metadata` โดยเจตนา — autogenerate
+#: จะเห็นมันเป็นตารางที่หายไปแล้วเสนอให้ `CREATE TABLE` ทับ
+closed_trades_v = table(
+    "closed_trades",
+    # `profile` ต้องพกชนิด ENUM ไปด้วย ไม่งั้น bind เป็น VARCHAR แล้ว `profile_t = varchar` ไม่มี operator
+    column("profile", fills_t.c.profile.type),
+    *(
+        column(name)
+        for name in (
+            "market", "symbol", "trade_id", "side",
+            "open_bar_close_ts", "close_bar_close_ts", "entry_ts", "exit_ts",
+            "qty", "entry_px", "exit_px", "entry_notional", "leverage",
+            "exit_reason", "exit_detail",
+            "pnl_px_quote", "slippage_quote", "slippage_missing_fills",
+            "fee_quote", "fee_missing_fills", "funding_quote",
+            "funding_cycles_expected", "funding_cycles_recorded",
+            "funding_cycles_unavailable", "funding_cycles_missing",
+            "gross_quote", "net_quote", "gross_pct", "net_pct", "cost_complete",
+        )
+    ),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ClosedTrade:
+    """หนึ่งแถวของ VIEW `closed_trades` — นิยามของทุกช่องอยู่ที่ docstring ของ migration 0012
+
+    ยอดเงินเป็น `Decimal` ตามข้อตกลงของ ledger · ราคา ปริมาณ และ % เป็น `float`
+    """
+
+    profile: str
+    market: str
+    symbol: str
+    trade_id: str
+    side: str
+    open_bar_close_ts: int
+    close_bar_close_ts: int
+    entry_ts: int
+    exit_ts: int
+    qty: float
+    entry_px: float
+    exit_px: float
+    entry_notional: Decimal
+    leverage: float | None
+    exit_reason: str
+    exit_detail: str | None
+    pnl_px_quote: Decimal
+    slippage_quote: Decimal
+    slippage_missing_fills: int
+    fee_quote: Decimal
+    fee_missing_fills: int
+    funding_quote: Decimal
+    funding_cycles_expected: int
+    funding_cycles_recorded: int
+    funding_cycles_unavailable: int
+    funding_cycles_missing: int
+    gross_quote: Decimal
+    net_quote: Decimal
+    gross_pct: float
+    net_pct: float
+    cost_complete: bool
+
+
+def closed_trades(conn: Connection, profile: str) -> list[ClosedTrade]:
+    """ไม้ที่ปิดแล้วทั้งโปรไฟล์ เรียงใหม่ → เก่าตามเวลาที่ออก"""
+    v = closed_trades_v.c
+    stmt = (
+        select(closed_trades_v)
+        .where(v.profile == profile)
+        .order_by(v.exit_ts.desc(), v.trade_id)
+    )
+    return [
+        ClosedTrade(
+            **{
+                **row._asdict(),
+                "qty": price_from_db(row.qty),
+                "entry_px": price_from_db(row.entry_px),
+                "exit_px": price_from_db(row.exit_px),
+                "leverage": None if row.leverage is None else pct_from_db(row.leverage),
+                "gross_pct": float(row.gross_pct),
+                "net_pct": float(row.net_pct),
+            }
         )
         for row in conn.execute(stmt)
     ]
