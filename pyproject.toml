@@ -1,6 +1,6 @@
 [project]
 name = "cane"
-version = "0.1.1"
+version = "0.1.2"
 description = "บอทเทรด CDC Action Zone บน USDT-M perp"
 requires-python = ">=3.11"
 dependencies = [
