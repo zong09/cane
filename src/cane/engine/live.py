@@ -114,6 +114,7 @@ class LiveRunner:
             judge=judge,
             model_id=model_id,
             lots=self._lot_source(),
+            use_intents=True,
         )
 
         sources: dict[str, LiveBarSource] = {}
