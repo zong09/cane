@@ -171,6 +171,8 @@ start  →  [ วนรอบ: รอแท่งปิด → อ่าน conf
 | `GET /api/{profile}/config` | เวอร์ชันที่ active + ผล validate ต่อฟิลด์ |
 | `GET /api/config/diff?from=&to=` | ผลต่างระหว่างสองเวอร์ชันของ config **ทีละฟิลด์** |
 | `GET /api/{profile}/records/export` | บันทึกทั้งหมดเป็นไฟล์ — ผ่าน redaction ตัวเดียวกับ log |
+| `GET /api/{profile}/report?range=&from=&to=` | ไม้ที่ปิดแล้วในช่วง (นับตามแท่งที่ออก) + ตัวเลขรวม · % รวมหารด้วยทุนของเวอร์ชันที่ตัดสินไม้นั้น |
+| `GET /api/{profile}/report/export?range=&from=&to=` | ไม้ที่ปิดแล้วในช่วงเดียวกันเป็น CSV พร้อมธง `cost_complete` ต่อแถว |
 | `GET /api/engine/status` | **ทั้งสอง profile ในคำขอเดียว** — `should_run` · heartbeat · สถานะที่คำนวณแล้ว · `blocked_reason` |
 
 `/api/engine/status` คืนทั้งสอง profile เสมอ ไม่ใช่ต่อ profile เพราะการ์ด PROFILE

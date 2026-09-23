@@ -1,0 +1,200 @@
+{#
+  เนื้อของหน้ารายงาน · ตัวเลือกช่วง + KPI + equity curve + การ์ดกฎ + สองตาราง
+
+  ฟัง `cane:mode` แบบเดียวกับหน้าบันทึก และยิงกลับพร้อมช่วงที่เลือกไว้ ·
+  ปุ่มช่วงกับฟอร์มวันที่ swap ทั้งก้อน เพราะตัวเลขทุกตัวในหน้าขึ้นกับช่วง
+#}
+{% set q = "range=" ~ rp_range.mode ~ "&from=" ~ (rp_range.raw_from | urlencode) ~ "&to=" ~ (rp_range.raw_to | urlencode) %}
+<div id="report-body" class="rp"
+     hx-get="/partials/report?{{ q }}" hx-trigger="cane:mode from:body" hx-swap="outerHTML">
+
+  <div class="rp__bar">
+    <div class="rp__seg">
+      <button class="rp__segbtn{% if rp_range.mode == 'all' %} rp__segbtn--on{% endif %}"
+              hx-get="/partials/report?range=all" hx-target="#report-body" hx-swap="outerHTML">ตั้งแต่เริ่มรัน</button>
+      <button class="rp__segbtn{% if rp_range.mode == 'custom' %} rp__segbtn--on{% endif %}"
+              hx-get="/partials/report?range=custom" hx-target="#report-body" hx-swap="outerHTML">กำหนดช่วงเอง</button>
+    </div>
+    <a class="rp__export" href="/api/{{ rp_profile }}/report/export?{{ q }}">ส่งออก CSV</a>
+  </div>
+
+  <div class="rp__range">
+    {% if rp_range.mode == "custom" %}
+    <form class="rp__dates" hx-get="/partials/report" hx-trigger="change" hx-target="#report-body" hx-swap="outerHTML">
+      <input type="hidden" name="range" value="custom">
+      <label class="rp__date"><span>จาก</span><input name="from" value="{{ rp_range.raw_from }}" placeholder="YYYY-MM-DD"></label>
+      <label class="rp__date"><span>ถึง</span><input name="to" value="{{ rp_range.raw_to }}" placeholder="YYYY-MM-DD"></label>
+      <span class="rp__rangenote">วัน UTC รวมทั้งวัน · นับไม้ตามแท่งที่ออก</span>
+    </form>
+    {% else %}
+    <span class="rp__span">{{ rp_span }}</span>
+    <span class="rp__rangenote">{{ rp_days }} วัน · นับไม้ตามแท่งที่ออก</span>
+    {% endif %}
+    <div class="rp__grow"></div>
+    <span class="rp__foot">
+      {% if rp_capital %}ทุน {{ rp_capital }} USDT · bucket long + short ของเวอร์ชันที่ตัดสินไม้
+      {% elif rp_segments | length > 1 %}ทุนเปลี่ยนในช่วงนี้ {{ rp_segments | length }} ก้อน
+      {% else %}ยังไม่รู้ทุน{% endif %} · โปรไฟล์ {{ rp_profile }}
+    </span>
+  </div>
+
+  {% if rp_segments | length > 1 %}
+  <div class="rp__notice">
+    ไม้ในช่วงนี้มาจากเวอร์ชันที่ทุนไม่เท่ากัน จึงไม่มีตัวหารตัวเดียวที่ถูก — % รวม จุดต่อฝั่ง drawdown และ equity curve
+    ไม่แสดง · แยกตามทุน:
+    {% for capital, trades, pct in rp_segments %}
+    <span class="rp__segline">ทุน {{ capital }} · {{ trades }} ไม้ · {{ pct }}</span>{% if not loop.last %} ·{% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if rp_incomplete %}
+  <div class="rp__notice rp__notice--warn">
+    ต้นทุนไม่ครบ {{ rp_incomplete }} ไม้ — ค่าธรรมเนียมหรือ funding บางรอบยังไม่รู้ยอด net ของไม้เหล่านั้นอาจดีกว่าความจริง
+  </div>
+  {% endif %}
+
+  <div class="rp__kpis">
+    <div class="rp__kpi">
+      <div class="rp__kpiname">ผลตอบแทนสุทธิ · ปิดแล้ว</div>
+      <div class="rp__kpirow"><span class="rp__kpival rp__kpival--{{ rp_net_tone }}">{{ rp_net }}</span><span class="rp__kpiunit">{{ rp_net_abs }}</span></div>
+      <div class="rp__kpinote">{{ rp_split }}</div>
+    </div>
+    <div class="rp__kpi">
+      <div class="rp__kpiname">ไม้ที่ปิดแล้ว</div>
+      <div class="rp__kpirow"><span class="rp__kpival">{{ rp_trades }}</span><span class="rp__kpiunit">{{ rp_wins }}</span></div>
+      <div class="rp__kpinote">{{ rp_trade_note }}</div>
+    </div>
+    <div class="rp__kpi">
+      <div class="rp__kpiname">ย่อลึกสุดจากยอดสูงสุด</div>
+      <div class="rp__kpirow"><span class="rp__kpival">{{ rp_dd }}</span></div>
+      <div class="rp__kpinote">{{ rp_dd_note }}</div>
+    </div>
+    <div class="rp__kpi">
+      <div class="rp__kpiname">ค่าธรรมเนียม + slippage</div>
+      <div class="rp__kpirow"><span class="rp__kpival">{{ rp_cost }}</span><span class="rp__kpiunit">USDT</span></div>
+      <div class="rp__kpinote">{{ rp_cost_note }}</div>
+    </div>
+    <div class="rp__kpi">
+      <div class="rp__kpiname">ที่ยังถืออยู่ · ไม่ได้นับ</div>
+      <div class="rp__kpirow"><span class="rp__kpival">{{ rp_held }}</span><span class="rp__kpiunit">{{ rp_held_count }}</span></div>
+      <div class="rp__kpinote">{{ rp_held_note }}</div>
+    </div>
+  </div>
+
+  <div class="rp__grid">
+    <div class="rp__card">
+      <div class="rp__cardhead">
+        <div class="rp__cardname">EQUITY CURVE · % ของทุน</div>
+        <div class="rp__grow"></div>
+        <span class="rp__legend"><span class="rp__swatch rp__swatch--net"></span>สุทธิ</span>
+        <span class="rp__legend"><span class="rp__swatch rp__swatch--gross"></span>ก่อนหักต้นทุน</span>
+      </div>
+      {% set c = rp_chart %}
+      {% if c %}
+      <svg class="rp__chart" viewBox="0 0 1000 268" role="img" aria-label="ผลตอบแทนสะสมสุทธิเทียบก่อนหักต้นทุน {{ rp_span }}">
+        <g stroke="#dde7ee" stroke-width="1">
+          {% for y, _ in c.grid %}{% if y != c.zero_y %}<line x1="40" y1="{{ y }}" x2="975" y2="{{ y }}"></line>{% endif %}{% endfor %}
+        </g>
+        <line x1="40" y1="{{ c.zero_y }}" x2="975" y2="{{ c.zero_y }}" stroke="#c9d8e3" stroke-width="1"></line>
+        <g fill="#6f8896" font-family="'IBM Plex Mono',monospace" font-size="11">
+          {% for y, label in c.grid %}<text x="0" y="{{ y + 4 }}">{{ label }}</text>{% endfor %}
+        </g>
+        <polygon points="{{ c.area }}" fill="#30AFFF" fill-opacity="0.1"></polygon>
+        <polyline points="{{ c.gross }}" fill="none" stroke="#6f8896" stroke-width="1.6" stroke-dasharray="5 4"></polyline>
+        <polyline points="{{ c.net }}" fill="none" stroke="#30AFFF" stroke-width="2.4"></polyline>
+        {% if c.trough %}<circle cx="{{ c.trough[0] }}" cy="{{ c.trough[1] }}" r="4" fill="#e05252"></circle>{% endif %}
+        <circle cx="{{ c.end[0] }}" cy="{{ c.end[1] }}" r="4" fill="#30AFFF"></circle>
+        <g fill="#6f8896" font-family="'IBM Plex Mono',monospace" font-size="11">
+          {% for x, label in c.ticks %}<text x="{{ x }}" y="256"{% if loop.last and loop.length > 1 %} text-anchor="end"{% endif %}>{{ label }}</text>{% endfor %}
+        </g>
+      </svg>
+      {% else %}
+      <div class="rp__nochart">
+        {% if rp_empty %}ยังไม่มีไม้ที่ปิดแล้วในช่วงนี้{% else %}ไม่มีทุนตัวเดียวให้หาร — เลือกช่วงให้อยู่ในทุนก้อนเดียวเพื่อดูเส้น{% endif %}
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="rp__card rp__card--rules">
+      <div class="rp__cardname">บอททำตามกฎหรือไม่</div>
+      <div class="rp__checks">
+        {% for check in rp_rules %}
+        <div class="rp__check"><span>{{ check.label }}</span><span class="rp__checkval rp__checkval--{{ check.tone }}">{{ check.value }}</span></div>
+        {% endfor %}
+        <div class="rp__checkrule"></div>
+        {% for check in rp_gates %}
+        <div class="rp__check"><span>{{ check.label }}</span><span class="rp__checkval rp__checkval--{{ check.tone }}">{{ check.value }}</span></div>
+        {% endfor %}
+      </div>
+      <div class="rp__checknote">
+        {% if rp_empty %}ยังไม่มีไม้ให้ตรวจ
+        {% elif rp_clean %}ไม่มีไม้ไหนเปิดนอกแท่งสัญญาณ และไม่มีสถานะสวนกันในคู่เดียวกัน · ทุกบรรทัดนับจากตาราง decisions และ fills
+        {% else %}มีไม้ที่ผิดกฎในช่วงนี้ — เปิดบันทึกการตัดสินใจของแท่งนั้นเพื่อดูว่าเกิดอะไรขึ้น{% endif %}
+      </div>
+      <a class="rp__tolog" href="/log">เปิดบันทึกการตัดสินใจ</a>
+    </div>
+  </div>
+
+  <div class="rp__table">
+    <div class="rpsym rpsym__head">
+      <div>SYMBOL</div><div>ไม้ที่ปิด</div><div>ชนะ</div><div>L / S</div>
+      <div class="rpsym__th">ผลรวมต่อทุนรวม</div><div>FEE</div><div>SLIPPAGE</div><div class="rpsym__th">ที่ยังถืออยู่</div>
+    </div>
+    {% for r in rp_symbols %}
+    <div class="rpsym">
+      <div class="rpsym__pair">{{ r.pair }}</div>
+      <div>{{ r.trades }}</div>
+      <div>{{ r.wins }}</div>
+      <div>{{ r.ls }}</div>
+      <div class="rpsym__contrib">
+        <div class="rpsym__track"><span class="rpsym__mid"></span><span class="rpsym__fill rpsym__fill--{{ r.bar_side }} rpsym__fill--{{ r.tone }}" style="width: {{ r.bar_width }}%"></span></div>
+        <span class="rpsym__pct rpsym__pct--{{ r.tone }}">{{ r.contrib }}</span>
+      </div>
+      <div>{{ r.fee }}</div>
+      <div>{{ r.slip }}</div>
+      <div class="rpsym__held">{{ r.holding }}</div>
+    </div>
+    {% else %}
+    <div class="rp__empty">ยังไม่มีไม้ที่ปิดแล้วในช่วงนี้</div>
+    {% endfor %}
+    {% if rp_symbols %}
+    <div class="rpsym rpsym__total">
+      <div class="rpsym__pair">รวม</div><div>{{ rp_total.trades }}</div><div>{{ rp_total.wins }}</div><div>{{ rp_total.ls }}</div>
+      <div class="rpsym__contrib"><span class="rpsym__grow"></span><span class="rpsym__pct rpsym__pct--{{ rp_total.tone }}">{{ rp_total.net }}</span></div>
+      <div>{{ rp_total.fee }}</div><div>{{ rp_total.slip }}</div><div class="rpsym__held">{{ rp_total.held }}</div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="rp__table">
+    <div class="rp__tablehead">
+      <div class="rp__cardname rp__cardname--plain">ไม้ที่ปิดแล้ว</div>
+      <div class="rp__tablenote">เรียงจากใหม่ไปเก่า · ราคาเข้า-ออกคือ fill จริง ไม่ใช่ราคาปิดแท่ง · ฝั่ง short กำไรเมื่อราคาออกต่ำกว่าราคาเข้า</div>
+    </div>
+    <div class="rptr rptr__head">
+      <div>เข้า</div><div>ออก</div><div>SYMBOL</div><div>SIZE</div><div>ฝั่ง</div><div>ENTRY</div><div>EXIT</div><div>GROSS</div><div>NET</div><div class="rptr__th">สาเหตุที่ออก</div>
+    </div>
+    {% for t in rp_lines %}
+    <div class="rptr">
+      <div>{{ t.in_bar }}</div>
+      <div>{{ t.out_bar }}</div>
+      <div class="rptr__pair">{{ t.pair }}</div>
+      <div>{{ t.size }}</div>
+      <div class="rptr__side rptr__side--{{ t.side | lower }}">{{ t.side }}</div>
+      <div>{{ t.entry }}</div>
+      <div>{{ t.exit }}</div>
+      <div class="rptr__pct--{{ t.gross_tone }}">{{ t.gross }}</div>
+      <div class="rptr__net rptr__pct--{{ t.net_tone }}">{{ t.net }}{% if not t.complete %} <span class="rptr__incomplete" title="ต้นทุนไม่ครบ">!</span>{% endif %}</div>
+      <div class="rptr__reason">{{ t.reason }}</div>
+    </div>
+    {% else %}
+    <div class="rp__empty">ยังไม่มีไม้ที่ปิดแล้วในช่วงนี้</div>
+    {% endfor %}
+    <div class="rp__tablefoot">
+      <span>fee รวม {{ rp_total.fee }} USDT</span>
+      <span>slippage รวม {{ rp_total.slip }} USDT</span>
+      <span>funding รวม {{ rp_funding }} USDT · เก็บทุก 8 ชม.</span>
+      <span>ยังไม่รวมไม้ที่ถืออยู่ {{ rp_held_total }} ไม้</span>
+    </div>
+  </div>
+</div>
