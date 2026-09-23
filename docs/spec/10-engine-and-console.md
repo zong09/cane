@@ -173,7 +173,7 @@ start  →  [ วนรอบ: รอแท่งปิด → อ่าน conf
 | `GET /api/{profile}/records/export` | บันทึกทั้งหมดเป็นไฟล์ — ผ่าน redaction ตัวเดียวกับ log |
 | `GET /api/{profile}/report?range=&from=&to=` | ไม้ที่ปิดแล้วในช่วง (นับตามแท่งที่ออก) + ตัวเลขรวม · % รวมหารด้วยทุนของเวอร์ชันที่ตัดสินไม้นั้น |
 | `GET /api/{profile}/report/export?range=&from=&to=` | ไม้ที่ปิดแล้วในช่วงเดียวกันเป็น CSV พร้อมธง `cost_complete` ต่อแถว |
-| `GET /api/{profile}/symbols/{symbol}?market=&tab=` | หน้าเหรียญ: แท่งล่าสุดที่ตัดสิน พร้อมลูกครบ · กราฟ 85 แท่ง · พรีวิว cold start ของรอบหน้า |
+| `GET /api/{profile}/symbols/{symbol}?market=&tab=` | หน้าเหรียญ: แท่งล่าสุดที่ตัดสิน พร้อมลูกครบ · กราฟ 85 แท่ง · พรีวิว cold start ของรอบหน้าพร้อมเจตนาที่รออยู่ |
 | `GET /api/engine/status` | **ทั้งสอง profile ในคำขอเดียว** — `should_run` · heartbeat · สถานะที่คำนวณแล้ว · `blocked_reason` |
 
 `/api/engine/status` คืนทั้งสอง profile เสมอ ไม่ใช่ต่อ profile เพราะการ์ด PROFILE
@@ -195,7 +195,7 @@ start  →  [ วนรอบ: รอแท่งปิด → อ่าน conf
 | `POST /api/{profile}/config/allow_short` | เหมือนกันทุกอย่าง ต่างที่ฟิลด์และสิทธิ์ | เวอร์ชันใหม่ที่เนื้อเหมือนกันและตัวชี้อยู่ที่เดิม |
 | `POST /api/{profile}/symbols` · `DELETE /api/{profile}/symbols/{symbol}` | เวอร์ชันใหม่ที่บล็อก `[[symbols]]` ต่างไป | เวอร์ชันใหม่ที่เนื้อเหมือนกัน |
 | `POST /api/{profile}/positions/{symbol}/close` | ปิดไม้ฉุกเฉิน — **ไม่แตะ engine และไม่แตะ kill switch** | **ไม่ idempotent** — ปิดไม้ที่ปิดแล้วคืน 409 ไม่ใช่ 200 |
-| `POST /api/{profile}/coldstart/{symbol}` | เลือกเส้นทาง cold start ของรอบนี้ ([03](03-trading-rules.md)) — **ยังไม่สร้าง** (ตัดสิน 2026-09-23): เจตนาที่หมดอายุเมื่อรอบเดินต้องมีที่เก็บ ดูข้อเสนอที่ [ADR 35](../adr/0035-cold-start-route-as-a-per-run-intent.md) · วันนี้เส้นทางมาจาก `cold_start` ของ config และแท็บ Cold start ของหน้าเหรียญแสดงผลแบบอ่านอย่างเดียว | เลือกซ้ำค่าเดิม = no-op · เลือกค่าใหม่ = ทับเจตนาเดิมได้จนกว่ารอบจะเดิน |
+| `POST /api/{profile}/coldstart/{symbol}` | เลือกเส้นทาง cold start ของ **run ถัดไป** ต่อเหรียญ (`trailing` / `skip`) — เจตนาชนะ `cold_start` ของ config และ engine ใช้แล้วลบที่แท่งแรกของ run ([ADR 35](../adr/0035-cold-start-route-as-a-per-run-intent.md)) · `wait_1h` = **422** ตราบที่ engine ยังไม่มีทางนี้ · โปรไฟล์ที่ engine ไม่ตัดสินใจเอง (broker ไม่ใช่ `ccxt`) = **422** เพราะเจตนาจะไม่มีวันถูกใช้ · ไม่ได้ส่งคำสั่งใดๆ ตอนกด | เลือกซ้ำค่าเดิม = no-op 200 (ไม่ขยับเวลา ไม่เขียน audit) · เลือกค่าใหม่ = ทับเจตนาเดิมได้จนกว่า run จะเริ่ม |
 | `POST /api/users` · `/users/{id}/role` · `/suspend` · `/unlock` · `/permissions` · `POST /api/users/{id}/reset-2fa` · `DELETE /api/sessions/{id}` | จัดการผู้ใช้ ([09](09-users-and-auth.md)) | ตามความหมายของแต่ละตัว — ดู [09](09-users-and-auth.md) |
 
 **สองแถวสวิตช์เลื่อนตัวชี้ให้เอง ต่างจากทุกแถวที่เหลือ** — `POST .../config` สร้างร่าง

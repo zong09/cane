@@ -26,18 +26,27 @@ import logging
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import Connection, Engine
 
 from cane.api import context
 from cane.api import symbol_chart, symbol_coldstart
-from cane.api.deps import current_mode, current_user, get_db, get_sup, require_cap
+from cane.api.deps import (
+    client_ip,
+    current_mode,
+    current_user,
+    get_db,
+    get_sup,
+    require_cap,
+    require_profile,
+)
 from cane.api.log import SKIP_TEXT
 from cane.api.templating import templates
 from cane.config.settings import Settings, SymbolConfig
 from cane.config.validate import ConfigError
 from cane.confluence.schema import FACTORS_BY_SIDE
+from cane.db.repo import audit, coldstart_intent, enginestate
 from cane.db.repo import config as config_repo
 from cane.db.repo import decisions as decisions_repo
 from cane.db.repo import ledger as ledger_repo
@@ -45,7 +54,8 @@ from cane.db.repo import permissions as perms
 from cane.db.repo import report as report_repo
 from cane.db.repo.decisions import DecisionRecord
 from cane.db.repo.users import User
-from cane.db.types import store_symbol
+from cane.db.types import now_ms, store_symbol
+from cane.engine.state import RUNNING, derive_status
 from cane.engine.supervisor import Supervisor
 from cane.sizing.matrix import FACTOR_STEP_PCT, FORMULA_CEILING_PCT
 
@@ -468,8 +478,15 @@ def _settings(conn: Connection, profile: str) -> Settings | None:
         ) from exc
 
 
+def _engine_decides(settings: Settings) -> bool:
+    """engine ของคอนโซลตัดสินใจเฉพาะ broker ที่ส่งคำสั่งได้ (`engine/live.py`) · paper เดินด้วย replay
+    ซึ่งไม่อ่านเจตนา (ADR 35) — โปรไฟล์ที่ engine ไม่ตัดสินใจเลือกเจตนาไม่ได้"""
+    return settings.broker.kind == "ccxt"
+
+
 def page_context(
-    conn: Connection, *, profile: str, symbol: str, market: str | None, tab: str
+    conn: Connection, *, profile: str, symbol: str, market: str | None, tab: str, user: User,
+    notice: str = "",
 ) -> dict[str, object]:
     """ทุกอย่างที่ `partials/symbol_body.html` ต้องใช้ · คีย์ขึ้นต้นด้วย `sd_`
 
@@ -486,16 +503,26 @@ def page_context(
     )
     tab = tab if tab in dict(TABS) else "chart"
     header = _header(conn, settings, sym, record, held)
+    intent = coldstart_intent.read(conn, profile=profile, market=sym.market, symbol=sym.symbol)
     # จุดเขียวที่แท็บ Cold start ต้องรู้ผลทุกแท็บ ไม่ใช่เฉพาะตอนเปิดแท็บนั้น
     ctx: dict[str, object] = symbol_coldstart.coldstart_context(
-        conn, settings=settings, sym=sym, held_side=header.side
+        conn, settings=settings, sym=sym, held_side=header.side,
+        intent_route=None if intent is None else intent.route,
     )
     if tab == "chart":
         ctx |= symbol_chart.chart_context(
             conn, profile=profile, settings=settings, sym=sym, record=record,
             held_side=header.side, held_label=header.side_label,
         )
+    engine = derive_status(enginestate.read(conn, profile), now=now_ms())
     return ctx | {
+        # ADR 35 · เจตนาที่รอ run ถัดไป กับว่ามันจะไม่มีผลกับ run ที่กำลังเดินอยู่
+        "cs_intent": intent,
+        "cs_intent_at": None if intent is None else _utc(intent.chosen_ts),
+        "cs_engine_running": engine == RUNNING,
+        "cs_can_choose": perms.allowed(conn, role=user.role, cap="choose_cold_start_route"),
+        "cs_honoured": _engine_decides(settings),
+        "cs_notice": notice,
         "sd_profile": profile,
         "sd_header": header,
         "sd_tabs": TABS,
@@ -521,7 +548,7 @@ def page(
         if not perms.allowed(conn, role=user.role, cap="read_decisions"):
             raise HTTPException(status_code=403, detail="ต้องมีสิทธิ์ read_decisions")
         ctx = context.build(conn, sup, user=user, mode=mode, active="")
-        ctx |= page_context(conn, profile=mode, symbol=symbol, market=market, tab=tab)
+        ctx |= page_context(conn, profile=mode, symbol=symbol, market=market, tab=tab, user=user)
     return templates.TemplateResponse(request, "pages/symbol.html", ctx)
 
 
@@ -532,7 +559,7 @@ def body(
     market: str | None = Query(None),
     tab: str = Query("chart"),
     db: Engine = Depends(get_db),
-    _: User = Depends(require_cap("read_decisions")),
+    user: User = Depends(require_cap("read_decisions")),
     mode: str = Depends(current_mode),
 ) -> HTMLResponse:
     """เนื้อของหน้าเหรียญ — ตอนสลับแท็บและตอนสลับโหมด
@@ -541,5 +568,56 @@ def body(
     หน้าจึงค้างที่เนื้อเดิมพร้อมแถบบนที่บอกโหมดใหม่ ซึ่งดีกว่าเนื้อว่าง
     """
     with db.connect() as conn:
-        ctx = page_context(conn, profile=mode, symbol=symbol, market=market, tab=tab)
+        ctx = page_context(conn, profile=mode, symbol=symbol, market=market, tab=tab, user=user)
+    return templates.TemplateResponse(request, "partials/symbol_body.html", ctx)
+
+
+@router.post("/api/{profile}/coldstart/{symbol:path}", response_class=HTMLResponse)
+def choose_route(
+    profile: str,
+    symbol: str,
+    request: Request,
+    route: str = Form(...),
+    market: str | None = Form(None),
+    db: Engine = Depends(get_db),
+    user: User = Depends(require_cap("choose_cold_start_route")),
+) -> HTMLResponse:
+    """เลือกเส้นทาง cold start ของ run ถัดไป (ADR 35) · ไม่ต้อง step-up (spec/09 §4. endpoint → สิทธิ์ที่ต้องมี)
+
+    - `wait_1h` = **422** ตราบที่ engine ยังไม่สร้างทางนี้ (ADR 35 §ตัดสินแล้ว) · ค่าอื่นที่ไม่รู้จักก็ 422
+    - เลือกซ้ำค่าเดิม = no-op 200 ไม่ขยับเวลาและไม่เขียน audit · เลือกค่าใหม่ = ทับ พร้อม audit
+    - คืนเนื้อของหน้าเหรียญที่แท็บ Cold start ของ profile ใน path — ปุ่มอยู่บนหน้านั้น
+    """
+    target = require_profile(profile)
+    if route == "wait_1h":
+        raise HTTPException(status_code=422, detail="engine ยังไม่มีเส้นทาง wait_1h — เลือกได้แค่ trailing หรือ skip")
+    if route not in coldstart_intent.ROUTES:
+        raise HTTPException(status_code=422, detail=f"ไม่รู้จักเส้นทาง {route!r}")
+    now = now_ms()
+    with db.begin() as conn:
+        settings = _settings(conn, target)
+        sym = _find_symbol(settings, symbol, market)
+        if settings is None or sym is None:
+            raise HTTPException(status_code=404, detail=f"ไม่มีคู่ {symbol!r} ในโปรไฟล์ {target}")
+        if not _engine_decides(settings):
+            # เจตนาที่ไม่มีวันถูกใช้ จะค้างอยู่จนวันที่โปรไฟล์นี้เปลี่ยนเป็น ccxt แล้วโผล่มาใช้
+            # ใน run ที่ไม่มีใครตั้งใจ — ปฏิเสธตั้งแต่ตอนเลือกดีกว่า
+            raise HTTPException(
+                status_code=422,
+                detail=f"engine ของโปรไฟล์ {target} ไม่ตัดสินใจเอง (broker = {settings.broker.kind}) — เจตนาจะไม่ถูกใช้",
+            )
+        changed = coldstart_intent.choose(
+            conn, profile=target, market=sym.market, symbol=sym.symbol, route=route,
+            user_id=user.id, now=now,
+        )
+        if changed:
+            audit.record(
+                conn, action="coldstart.choose", ts=now, actor_user_id=user.id,
+                target=f"{target} {sym.market} {sym.symbol}", detail={"route": route},
+                ip=client_ip(request),
+            )
+        ctx = page_context(
+            conn, profile=target, symbol=sym.symbol, market=sym.market, tab="coldstart", user=user,
+            notice=(f"เลือก {route} ให้ run ถัดไปแล้ว" if changed else f"{route} ถูกเลือกไว้อยู่แล้ว"),
+        )
     return templates.TemplateResponse(request, "partials/symbol_body.html", ctx)

@@ -1766,6 +1766,18 @@ def test_a_viewer_without_read_decisions_cannot_open_a_symbol_page() -> None:
     assert response.status_code == 403
 
 
+def test_choosing_a_cold_start_route_needs_its_own_permission(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """spec/09 §4. endpoint → สิทธิ์ที่ต้องมี — `choose_cold_start_route` ไม่ใช่ `read_decisions`"""
+    monkeypatch.setattr(perms, "allowed", lambda conn, *, role, cap: cap != "choose_cold_start_route")
+    client, _ = build(role="VIEWER")
+    with client:
+        response = client.post("/api/paper/coldstart/BTC/USDT", data={"route": "skip"})
+
+    assert response.status_code == 403
+
+
 def test_every_chip_of_the_journal_is_on_the_page_even_with_nothing_to_count() -> None:
     client, _ = build()
     with client:
