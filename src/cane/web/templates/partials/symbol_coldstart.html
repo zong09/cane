@@ -1,4 +1,11 @@
-{# แท็บ Cold start · handoff §9.2c · อ่านอย่างเดียว — ดู docstring ของ api/symbol_coldstart.py #}
+{# แท็บ Cold start · handoff §9.2c · ปุ่มเลือกเจตนาของ run ถัดไป (ADR 35) — ดู docstring ของ api/symbol_coldstart.py #}
+{% if cs_notice %}<div class="rp__notice cs__notice">{{ cs_notice }}</div>{% endif %}
+{% if cs_intent %}
+<div class="rp__notice cs__intent">
+  <strong>เจตนาที่รอ run ถัดไป: {{ cs_intent.route }}</strong> · เลือกโดย {{ cs_intent.chosen_by_name }} {{ cs_intent_at }} UTC · ชนะ config
+  {% if cs_engine_running %}<br>engine กำลังเดินอยู่ — มีผลเมื่อ start engine ครั้งถัดไป ไม่ใช่ run นี้{% endif %}
+</div>
+{% endif %}
 {% if not cs_ready %}
 <div class="sd__card sd__card--narrow">
   <div class="sd__note">{% if cs_missing %}ยังมีแท่งที่ปิดแล้วไม่ครบ — ขาดอีก {{ cs_missing }} แท่งก่อนจะพิจารณาได้{% else %}ข้อมูลของคู่นี้คำนวณ feature ไม่ได้ (ราคาไม่ขยับเลยในชุดข้อมูล){% endif %}</div>
@@ -28,7 +35,8 @@
     <span>{{ cs_pair }} ตกรถฝั่ง {{ cs_side }} — state เป็น {{ cs_state }} มา {{ cs_run }} แท่ง · เส้นทางนี้ทำงานสมมาตรทั้งสองฝั่ง ถ้า state เป็น {{ "bearish" if cs_side == "long" else "bullish" }} จะเป็นการตกรถฝั่ง {{ "short" if cs_side == "long" else "long" }} และใช้ตรรกะเดียวกันโดยตั้ง SL {{ "เหนือ" if cs_side == "long" else "ใต้" }}ราคาเข้าแทน</span>
   </div>
   <div class="rp__notice">
-    <strong>ถ้ากด start engine ตอนนี้:</strong> {{ cs_outcome }} · เส้นทางมาจาก config (<code>cold_start = {{ cs_route_key }}</code>) แก้ได้ที่หน้าตั้งค่า
+    <strong>ถ้ากด start engine ตอนนี้:</strong> {{ cs_outcome }} ·
+    {% if cs_intent %}เส้นทางมาจากเจตนาที่เลือกไว้ (config คือ <code>cold_start = {{ cs_route_key }}</code>){% else %}เส้นทางมาจาก config (<code>cold_start = {{ cs_route_key }}</code>) แก้ได้ที่หน้าตั้งค่า หรือเลือกต่อเหรียญด้านล่าง{% endif %}
   </div>
 
   <div class="cs__grid">
@@ -61,6 +69,22 @@
           <div class="sd__kv"><span>สี</span><span>{{ t.color }}</span></div>
         </div>
       </div>
+      {% set post = "/api/" ~ sd_profile ~ "/coldstart/" ~ cs_pair %}
+      {% set vals = '{"market": "' ~ sd_header.market ~ '", "route": "' %}
+      <div class="cs__actions">
+        <button class="cs__go" {% if not cs_can_choose or not t.passed or not cs_honoured %}disabled{% endif %}
+                hx-post="{{ post }}" hx-vals='{{ vals }}trailing"}' hx-target="#symbol-body" hx-swap="outerHTML"
+                {% if not cs_can_choose %}title="ต้องมีสิทธิ์ choose_cold_start_route"{% elif not t.passed %}title="RR ไม่ถึงเกณฑ์ — engine จะไม่เข้าแม้เลือกไว้"{% endif %}>
+          เข้าไม้พร้อมตั้ง SL ที่ {{ t.stop }}
+        </button>
+        <button class="cs__skip" {% if not cs_can_choose or not cs_honoured %}disabled{% endif %}
+                {% if not cs_can_choose %}title="ต้องมีสิทธิ์ choose_cold_start_route"{% endif %}
+                hx-post="{{ post }}" hx-vals='{{ vals }}skip"}' hx-target="#symbol-body" hx-swap="outerHTML">
+          ข้ามรอบนี้
+        </button>
+      </div>
+      {% if not cs_honoured %}<div class="cs__when">engine ของโปรไฟล์ {{ sd_profile }} ไม่ตัดสินใจเอง (paper เดินด้วย replay ซึ่งไม่อ่านเจตนา) — เลือกเส้นทางต่อเหรียญได้เฉพาะโปรไฟล์ที่ engine ส่งคำสั่งจริง</div>{% endif %}
+      <div class="cs__when">เลือกเจตนาของ run ถัดไป ไม่ได้ส่งคำสั่งตอนกด · มีผลเมื่อ start engine ครั้งถัดไป{% if cs_engine_running %} — engine กำลังเดินอยู่ run นี้ผ่านแท่งแรกไปแล้ว{% endif %}</div>
       <div class="sd__foot"><span class="sd__chip">ตามสเปก</span> {{ t.size_note }}</div>
     </div>
   </div>

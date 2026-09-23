@@ -968,3 +968,10 @@ a.btn--block { padding: 12px; }
 .cs__cols .sd__label { display: block; margin-bottom: 6px; }
 .cs__not { padding: 22px 24px; }
 .cs__kvs { padding: 14px 0; border-bottom: 0; }
+.cs__intent { background: var(--selected); border-color: var(--border-strong); }
+.cs__actions { display: flex; gap: 12px; margin-top: 18px; }
+.cs__go { flex: 1; padding: 12px 16px; border: 1px solid var(--paper-text); background: var(--paper); color: #fff; font: 500 13px var(--sans); cursor: pointer; }
+.cs__skip { padding: 12px 18px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-2); font: 500 13px var(--sans); cursor: pointer; }
+.cs__skip:hover { border-color: var(--primary-edge); color: var(--primary-text); }
+.cs__go[disabled], .cs__skip[disabled] { cursor: not-allowed; opacity: .55; }
+.cs__when { font: 400 11.5px/1.6 var(--sans); color: var(--muted); margin-top: 8px; }

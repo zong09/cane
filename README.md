@@ -43,7 +43,7 @@ and the live↔paper mode switch — and it now sits behind two-step authenticat
 then a TOTP code, with a fresh code required again for anything that controls the engine or
 switches to `live`. Every screen except users has its body — overview, symbols, risk, log,
 report, config, and the per-pair page (`/symbols/{pair}`: chart, the latest decision, and a
-read-only cold start preview).
+cold start preview where you can pick the route for the next run — [ADR 35](docs/decisions.md)).
 
 First run, after `alembic upgrade head`:
 
@@ -88,13 +88,13 @@ Requires Python 3.11+ (for stdlib `tomllib`) and [uv](https://docs.astral.sh/uv/
 
 ```bash
 uv sync --extra dev                          # install dependencies + pytest
-uv run --extra dev pytest -q -m "not db"     # 567 passing, no services needed
+uv run --extra dev pytest -q -m "not db"     # 568 passing, no services needed
 ```
 
 `pytest` is an optional dependency — skipping `uv sync --extra dev` and running a bare
 `uv run pytest` will fail.
 
-The full suite (1056 tests) needs PostgreSQL; see [Database](#database) below. Tests that touch
+The full suite (1076 tests) needs PostgreSQL; see [Database](#database) below. Tests that touch
 persistence carry the `db` marker so the rest still runs anywhere.
 
 The test suite never touches the network: the exchange client is injected everywhere, never
@@ -110,7 +110,7 @@ there is no ORM.
 docker compose up -d db                                   # postgres:16-alpine on host port 5436
 cp .env.example .env                                      # CANE_DB_DSN lives here
 uv run --env-file .env alembic upgrade head
-uv run --env-file .env --extra dev pytest -q              # 1056 tests
+uv run --env-file .env --extra dev pytest -q              # 1076 tests
 ```
 
 Host port **5436**, not 5432 — the dev machine already has other Postgres containers on 5432 and

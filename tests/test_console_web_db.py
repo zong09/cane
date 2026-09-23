@@ -29,6 +29,7 @@ from cane.auth import totp
 from cane.auth.matrix import DEFAULT_MATRIX
 from cane.config import load_profile
 from cane.config.validate import ConfigError, Problem
+from cane.db.repo import coldstart_intent, enginestate
 from cane.db.repo import config as config_repo
 from cane.db.repo.bars import insert_bars
 from cane.db.repo import decisions as decisions_repo
@@ -47,6 +48,7 @@ from cane.db.schema import (
     user_audit_log,
 )
 from cane.db.schema import bars as bars_table
+from cane.db.schema import cold_start_intent as cold_start_intent_table
 from cane.db.schema import decisions as decisions_table
 from cane.db.types import now_ms
 from cane.engine.state import PROFILES, STOPPED
@@ -1498,8 +1500,10 @@ def test_cold_start_shows_the_side_it_would_catch_and_the_trailing_numbers(
     assert "SL · SLOW TRAIL" in page and "R : R" in page
     assert "ถ้ากด start engine ตอนนี้:" in page
     assert "engine ยังไม่สร้างเส้นทาง <code>wait_1h</code>" in page
-    # ไม่มีปุ่มเข้าไม้ — แท็บนี้อ่านอย่างเดียวจนกว่าจะมี ADR
-    assert "เข้าไม้พร้อมตั้ง SL" not in page and "ข้ามรอบนี้" not in page
+    # ปุ่มสองปุ่มเลือกเจตนาของ run ถัดไป (ADR 35) · ไม่มีปุ่ม wait_1h เลย
+    assert 'hx-post="/api/paper/coldstart/BTC/USDT"' in page
+    assert "ข้ามรอบนี้" in page and "มีผลเมื่อ start engine ครั้งถัดไป" in page
+    assert "เฝ้า 1h" not in page
     # จุดเขียวที่แท็บ Cold start
     assert re.search(r'Cold start\s*<span class="sd__dot sd__dot--long">', page)
 
@@ -1536,3 +1540,110 @@ def test_a_pair_already_held_is_not_a_cold_start(
 
     assert "ไม่เข้าเงื่อนไข cold start" in page
     assert "มีสถานะเปิดของคู่นี้อยู่แล้ว" in page
+
+
+
+# ── ADR 35 · เลือกเส้นทาง cold start ของ run ถัดไป ─────────────────────────────
+
+
+@pytest.fixture
+def live_head(db: Connection, paper_head):
+    """เจตนาใช้ได้เฉพาะโปรไฟล์ที่ engine ตัดสินใจเอง (broker ccxt) — live.toml ตั้งไว้แบบนั้น"""
+    return seeded(db, "live")
+
+
+def test_a_profile_whose_engine_does_not_decide_cannot_take_an_intent(
+    db: Connection, client: TestClient, paper_head
+) -> None:
+    """paper เดินด้วย replay ซึ่งไม่อ่านเจตนา · เจตนาที่ไม่มีวันถูกใช้ต้องเขียนไม่ลง"""
+    _history(db, _BUY_1 + 1)
+    db.execute(cold_start_intent_table.delete())
+
+    with client:
+        response = client.post("/api/paper/coldstart/BTC/USDT", data={"route": "skip"})
+        page = client.get("/symbols/BTC/USDT?tab=coldstart").text
+
+    assert response.status_code == 422
+    assert coldstart_intent.read(db, profile="paper", market="usdtm_perp", symbol="BTC/USDT") is None
+    assert "engine ของโปรไฟล์ paper ไม่ตัดสินใจเอง" in page
+
+
+def test_choosing_a_route_writes_the_intent_and_an_audit_row(
+    db: Connection, client: TestClient, live_head
+) -> None:
+    _history(db, _BUY_1 + 1)
+    db.execute(cold_start_intent_table.delete())
+
+    with client:
+        response = client.post(
+            "/api/live/coldstart/BTC/USDT", data={"route": "skip", "market": "usdtm_perp"}
+        )
+
+    assert response.status_code == 200
+    assert "เลือก skip ให้ run ถัดไปแล้ว" in response.text
+    assert "เจตนาที่รอ run ถัดไป: skip" in response.text
+    intent = coldstart_intent.read(db, profile="live", market="usdtm_perp", symbol="BTC/USDT")
+    assert intent is not None and intent.route == "skip"
+    audit_row = db.execute(
+        select(user_audit_log).where(user_audit_log.c.action == "coldstart.choose")
+    ).one()
+    assert audit_row.detail == {"route": "skip"}
+    assert audit_row.target == "live usdtm_perp BTC/USDT"
+
+
+def test_choosing_the_same_route_twice_writes_one_audit_row(
+    db: Connection, client: TestClient, live_head
+) -> None:
+    _history(db, _BUY_1 + 1)
+    db.execute(cold_start_intent_table.delete())
+    form = {"route": "trailing", "market": "usdtm_perp"}
+
+    with client:
+        client.post("/api/live/coldstart/BTC/USDT", data=form)
+        again = client.post("/api/live/coldstart/BTC/USDT", data=form)
+
+    assert again.status_code == 200
+    assert "trailing ถูกเลือกไว้อยู่แล้ว" in again.text
+    rows = db.execute(
+        select(user_audit_log).where(user_audit_log.c.action == "coldstart.choose")
+    ).all()
+    assert len(rows) == 1
+
+
+@pytest.mark.parametrize("route", ["wait_1h", "yolo"])
+def test_a_route_the_engine_does_not_have_is_refused(
+    db: Connection, client: TestClient, live_head, route
+) -> None:
+    db.execute(cold_start_intent_table.delete())
+
+    with client:
+        response = client.post("/api/live/coldstart/BTC/USDT", data={"route": route})
+
+    assert response.status_code == 422
+    assert coldstart_intent.read(db, profile="live", market="usdtm_perp", symbol="BTC/USDT") is None
+
+
+def test_choosing_for_a_pair_that_is_not_in_the_profile_is_not_found(
+    client: TestClient, live_head
+) -> None:
+    with client:
+        response = client.post("/api/live/coldstart/DOGE/USDT", data={"route": "skip"})
+
+    assert response.status_code == 404
+
+
+def test_an_intent_chosen_while_the_engine_runs_says_it_waits_for_the_next_start(
+    db: Connection, client: TestClient, live_head
+) -> None:
+    """ADR 35 §ตัดสินแล้ว ข้อ 3 — เลือกตอน engine เดินอยู่ = มีผลรอบถัดไป และหน้าจอต้องบอก"""
+    _history(db, _BUY_1 + 1)
+    db.execute(cold_start_intent_table.delete())
+    enginestate.set_should_run(db, "live", should_run=True)
+    enginestate.beat(db, "live")
+
+    with client:
+        page = client.post(
+            "/api/live/coldstart/BTC/USDT", data={"route": "trailing", "market": "usdtm_perp"}
+        ).text
+
+    assert "engine กำลังเดินอยู่ — มีผลเมื่อ start engine ครั้งถัดไป ไม่ใช่ run นี้" in page

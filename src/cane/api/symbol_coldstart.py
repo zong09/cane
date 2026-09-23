@@ -1,12 +1,12 @@
-"""แท็บ Cold start ของหน้าเหรียญ — อ่านอย่างเดียว (ใบ 25 · handoff §9.2c)
+"""แท็บ Cold start ของหน้าเหรียญ — พรีวิวของ run ถัดไป กับปุ่มเลือกเจตนา (ใบ 25 · ADR 35 · handoff §9.2c)
 
-## ทำไมไม่มีปุ่มเลือกเส้นทาง
+## ปุ่มสองปุ่มเลือกเจตนาของ run ถัดไป ไม่ใช่สั่งเข้าไม้
 
-design กับ spec/10 มี `POST /api/{profile}/coldstart/{symbol}` ให้คนเลือกเส้นทางต่อเหรียญต่อรอบ ·
-**เจ้าของตัดสิน (2026-09-23): ยังไม่สร้าง** — เจตนาที่หมดอายุเมื่อรอบเดินต้องมีที่เก็บ ซึ่ง spec/03
-ห้ามเป็นธงถาวร และการเพิ่มช่องทางให้คนสั่งเข้าไม้นอกแท่งสัญญาณเป็นเรื่องของ engine และ
-ความปลอดภัย (handoff §15 ข้อ 1) ที่ต้องมี ADR ของตัวเอง · วันนี้เส้นทางมาจาก `cold_start`
-ของ config เวอร์ชันที่ active (spec/06 §สิ่งที่คนกดได้ และไม่ได้ — แก้ได้ที่หน้าตั้งค่า)
+`เข้าไม้พร้อมตั้ง SL` กับ `ข้ามรอบนี้` ยิง `POST /api/{profile}/coldstart/{symbol}` (ADR 35) ·
+ผลคือแถวใน `cold_start_intent` ที่ engine อ่านแล้วลบที่แท่งแรกของ run ถัดไป **ไม่มีออเดอร์ออกไป
+ตอนกด** · เจตนาชนะ `cold_start` ของ config · เลือกตอน engine เดินอยู่ = มีผลเมื่อ start ครั้งถัดไป
+และหน้าจอบอกตรงปุ่ม · ประตูของ `late_entry()` ยังครบ — เลือก trailing ไว้แต่ RR ไม่ถึงตอนนั้น
+engine ก็ไม่เข้า
 
 ## พรีวิวใช้ฟังก์ชันตัวเดียวกับ engine
 
@@ -20,7 +20,7 @@ engine อ่านจาก exchange ตอนเดินจริง (spec/08
 | ในไฟล์ design | สถานะ |
 | --- | --- |
 | กราฟ 1h ของทางที่ 1 + ปุ่ม `เฝ้า 1h รอสัญญาณรอบถัดไป` | engine ยังไม่สร้าง `wait_1h` (pipeline บันทึกเป็น `cane_rule`) และไม่มีแท่ง 1h ในตาราง |
-| ปุ่ม `เข้าไม้พร้อมตั้ง SL ที่ …` · `ข้ามรอบนี้` | ดูหัวข้อบน — ไม่มีปุ่มจนกว่าจะมี ADR |
+| ปุ่ม `เฝ้า 1h รอสัญญาณรอบถัดไป` | ไม่มีปุ่มเลย ไม่ใช่ปุ่มที่กดไม่ได้ — endpoint ปฏิเสธ `wait_1h` (ADR 35) |
 | กราฟ trailing stop ของทางที่ 2 | ยังไม่วาด · ตัวเลขทุกตัวของเส้นอยู่ในกล่อง metric |
 | `TP ขั้นต่ำ 3,092.80` กับ `R : R 2.00` (= entry + 2 × risk ซึ่งคือ**เกณฑ์**) | แสดง**เป้าจริง** = จุดเหวี่ยงล่าสุดตามที่เจ้าของตัดสินไว้ใน `rules/late_entry.py` (2026-09-14) และ RR จริงของมัน · เกณฑ์ 2 × risk ย้ายไปอยู่ในแถบผ่าน/ไม่ผ่าน |
 | `ไม่มีสถานะเปิด … ที่ exchange` | อ่านจาก ledger จึงเขียนว่า `ใน ledger` · live ที่ `dry_run = true` ไม่มี fill เลย แถบนี้จึงขึ้นว่าไม่มีสถานะเสมอ ไม่ว่า exchange จะถืออะไร |
@@ -134,9 +134,14 @@ def _trailing(
 
 
 def coldstart_context(
-    conn: Connection, *, settings: Settings, sym: SymbolConfig, held_side: str
+    conn: Connection, *, settings: Settings, sym: SymbolConfig, held_side: str,
+    intent_route: str | None = None,
 ) -> dict[str, object]:
-    """ทุกอย่างของแท็บ Cold start · คีย์ขึ้นต้นด้วย `cs_`"""
+    """ทุกอย่างของแท็บ Cold start · คีย์ขึ้นต้นด้วย `cs_`
+
+    `intent_route` คือเจตนาที่คนเลือกไว้ให้ run ถัดไป (ADR 35) · มี = ชนะ config ในบรรทัด
+    "ถ้ากด start engine ตอนนี้" แบบเดียวกับที่ engine ทำจริง
+    """
     bars = bars_repo.closed_bars(conn, sym.market, sym.symbol, settings.timeframe, as_of=now_ms())
     base = {
         "cs_route": ROUTE_TEXT.get(settings.cold_start, settings.cold_start),
@@ -189,7 +194,8 @@ def coldstart_context(
     if reason is not None:
         return ctx
 
-    actual = late_entry(plan, route=settings.cold_start, state=last.state, position_side=position,
+    route = intent_route if intent_route is not None else settings.cold_start
+    actual = late_entry(plan, route=route, state=last.state, position_side=position,
                         allow_short=allow_short, feat=feat, trail_slow=trail_slow)
     if actual.side is not None and actual.route == "trailing":
         outcome = f"เข้าไม้ {actual.side} ที่ราคาปิด พร้อมตั้ง stop ที่ {actual.stop_px:,.2f}"
@@ -197,6 +203,8 @@ def coldstart_context(
         outcome = "config เลือก wait_1h แต่ engine ยังไม่สร้างทางนี้ — บันทึกว่าตั้งใจให้รอ ไม่เข้าไม้"
     elif actual.skip_reason == "rr_too_low":
         outcome = f"ไม่เข้า — RR ไม่ถึง {MIN_REWARD_TO_RISK:g}:1"
+    elif intent_route is not None:
+        outcome = "ไม่เข้า — เจตนาที่เลือกไว้คือข้ามรอบนี้"
     else:
         outcome = "ไม่เข้า — config ไม่ได้เปิดเส้นทาง cold start ไว้"
     return ctx | {
