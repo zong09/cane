@@ -2,7 +2,7 @@
 {% if cs_notice %}<div class="rp__notice cs__notice">{{ cs_notice }}</div>{% endif %}
 {% if cs_intent %}
 <div class="rp__notice cs__intent">
-  <strong>เจตนาที่รอ run ถัดไป: {{ cs_intent.route }}</strong> · เลือกโดย {{ cs_intent.chosen_by_name }} {{ cs_intent_at }} UTC · ชนะ config
+  <strong>เจตนาที่รอ run ถัดไป: {{ cs_intent.route }}</strong> · เลือกโดย {{ cs_intent.chosen_by }} {{ cs_intent_at }} UTC · ชนะ config
   {% if cs_engine_running %}<br>engine กำลังเดินอยู่ — มีผลเมื่อ start engine ครั้งถัดไป ไม่ใช่ run นี้{% endif %}
 </div>
 {% endif %}

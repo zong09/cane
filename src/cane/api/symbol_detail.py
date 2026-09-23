@@ -608,7 +608,7 @@ def choose_route(
             )
         changed = coldstart_intent.choose(
             conn, profile=target, market=sym.market, symbol=sym.symbol, route=route,
-            user_id=user.id, now=now,
+            by=user.name, now=now,
         )
         if changed:
             audit.record(

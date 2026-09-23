@@ -32,12 +32,10 @@ from golden import GOLDEN_DIR, load  # noqa: E402
 from cane.config import load_profile  # noqa: E402
 from cane.config.settings import Settings, SymbolConfig  # noqa: E402
 from cane.data.ohlcv import Bar  # noqa: E402
-from cane.auth import secrets as auth_secrets  # noqa: E402
 from cane.db.repo import coldstart_intent  # noqa: E402
 from cane.db.repo import config as config_repo  # noqa: E402
 from cane.db.repo import decisions as decisions_repo  # noqa: E402
 from cane.db.repo import killswitch  # noqa: E402
-from cane.db.repo import users as users_repo  # noqa: E402
 from cane.db.repo import ledger as ledger_repo  # noqa: E402
 from cane.db.repo import report as report_repo  # noqa: E402
 from cane.db.schema import cold_start_intent, decisions, verdict_cache  # noqa: E402
@@ -500,15 +498,12 @@ def test_cold_start_is_evaluated_once_per_run_not_on_every_bar(db, settings, ver
 @pytest.fixture
 def chooser(db):
     db.execute(cold_start_intent.delete())
-    return users_repo.create(
-        db, email="chooser@example.com", name="คนเลือก", role="TRADER", created_ts=T0,
-        password_hash=auth_secrets.hash_password("รหัสผ่านที่ยาวพอ"),
-    )
+    return "คนเลือก"
 
 
-def _intend(db, user_id, route):
+def _intend(db, by, route):
     coldstart_intent.choose(db, profile=PROFILE, market=PERP, symbol=SYMBOL, route=route,
-                            user_id=user_id, now=T0)
+                            by=by, now=T0)
 
 
 def _with_intents(ctx):

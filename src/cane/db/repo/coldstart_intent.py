@@ -12,7 +12,6 @@ from sqlalchemy import Connection, and_, select
 from sqlalchemy.dialects.postgresql import insert
 
 from cane.db.schema import cold_start_intent as intent_t
-from cane.db.schema import users
 from cane.db.types import store_symbol
 
 #: ทางที่เลือกได้วันนี้ · `wait_1h` ยังไม่มีใน engine (ADR 35 §ตัดสินแล้ว) — ตรงกับ CHECK ของ 0013
@@ -25,8 +24,8 @@ class Intent:
     market: str
     symbol: str
     route: str
-    chosen_by: int
-    chosen_by_name: str
+    #: ชื่อคนเลือก ณ ตอนเลือก · id อยู่ที่ `user_audit_log`
+    chosen_by: str
     chosen_ts: int
 
 
@@ -39,7 +38,7 @@ def _key(profile: str, market: str, symbol: str):  # noqa: ANN202
 
 
 def choose(
-    conn: Connection, *, profile: str, market: str, symbol: str, route: str, user_id: int,
+    conn: Connection, *, profile: str, market: str, symbol: str, route: str, by: str,
     now: int,
 ) -> bool:
     """เลือกทาง · คืน `True` เมื่อเจตนาเปลี่ยนจริง
@@ -53,11 +52,11 @@ def choose(
         insert(intent_t)
         .values(
             profile=profile, market=market, symbol=store_symbol(symbol), route=route,
-            chosen_by=user_id, chosen_ts=now,
+            chosen_by=by, chosen_ts=now,
         )
         .on_conflict_do_update(
             index_elements=[intent_t.c.profile, intent_t.c.market, intent_t.c.symbol],
-            set_={"route": route, "chosen_by": user_id, "chosen_ts": now},
+            set_={"route": route, "chosen_by": by, "chosen_ts": now},
             where=intent_t.c.route != route,
         )
         # `RETURNING` ไม่ใช่ `rowcount` — แถวที่ `WHERE` ของ `DO UPDATE` ตัดทิ้งไม่ถูกคืน จึงแยก
@@ -69,16 +68,12 @@ def choose(
 
 def read(conn: Connection, *, profile: str, market: str, symbol: str) -> Intent | None:
     """เจตนาที่รออยู่ของเหรียญนี้ พร้อมชื่อคนเลือก · ไม่มี = ใช้ config"""
-    row = conn.execute(
-        select(intent_t, users.c.name)
-        .select_from(intent_t.join(users, users.c.id == intent_t.c.chosen_by))
-        .where(_key(profile, market, symbol))
-    ).one_or_none()
+    row = conn.execute(select(intent_t).where(_key(profile, market, symbol))).one_or_none()
     if row is None:
         return None
     return Intent(
         profile=row.profile, market=row.market, symbol=row.symbol, route=row.route,
-        chosen_by=row.chosen_by, chosen_by_name=row.name, chosen_ts=row.chosen_ts,
+        chosen_by=row.chosen_by, chosen_ts=row.chosen_ts,
     )
 
 
