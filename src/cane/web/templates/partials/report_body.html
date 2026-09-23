@@ -146,7 +146,7 @@
     </div>
     {% for r in rp_symbols %}
     <div class="rpsym">
-      <div class="rpsym__pair">{{ r.pair }}</div>
+      <div class="rpsym__pair"><a href="/symbols/{{ r.pair }}">{{ r.pair }}</a><span class="rktable__sub">{{ r.market }}</span></div>
       <div>{{ r.trades }}</div>
       <div>{{ r.wins }}</div>
       <div>{{ r.ls }}</div>

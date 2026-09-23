@@ -108,13 +108,35 @@ class Header:
     short_signal: bool
 
 
+def _held_label(
+    conn: Connection, settings: Settings, trade: report_repo.OpenTrade | None
+) -> str:
+    """`LONG 25% · margin 25.00` ตาม handoff §9.2 + §15 ข้อ 6 (% ของ bucket ต้องมาพร้อม margin)
+
+    % คือ `size_pct_final` ของแถวที่เปิดไม้นั้น ไม่ใช่ margin หารด้วย bucket ของวันนี้ —
+    bucket ที่แก้หลังเปิดไม้ต้องไม่เปลี่ยนตัวเลขของไม้ที่ถืออยู่ · หาแถวไม่เจอ = ขึ้นปริมาณแทน
+    """
+    if trade is None:
+        return "FLAT"
+    opened = decisions_repo.decision_at(
+        conn, settings.profile, trade.market, trade.symbol, settings.timeframe,
+        trade.open_bar_close_ts,
+    )
+    margin = "" if trade.margin is None else f" · margin {trade.margin:.2f}"
+    if opened is None or opened.size_pct_final is None:
+        return f"{trade.side.upper()} {trade.qty:g}{margin}"
+    return f"{trade.side.upper()} {opened.size_pct_final:g}%{margin}"
+
+
 def _header(
-    settings: Settings, sym: SymbolConfig, record: DecisionRecord | None,
+    conn: Connection, settings: Settings, sym: SymbolConfig, record: DecisionRecord | None,
     held: list[report_repo.OpenTrade],
 ) -> Header:
-    mine = [t for t in held if t.symbol == store_symbol(sym.symbol)]
-    side = mine[0].side if mine else "flat"
-    label = f"{side.upper()} {mine[0].qty:g}" if mine else "FLAT"
+    mine = next(
+        (t for t in held if t.symbol == store_symbol(sym.symbol) and t.market == sym.market), None
+    )
+    side = mine.side if mine else "flat"
+    label = _held_label(conn, settings, mine)
     parts = [settings.timeframe]
     venue = settings.broker.exchange or settings.data.exchange
     parts.append(f"{venue} {MARKET_TEXT.get(sym.market, sym.market)}")
@@ -199,6 +221,7 @@ class Decision:
     why_not: tuple[tuple[str, str], ...]
     record_short: str
     record_full: str
+    spot: bool
 
 
 def _factors(record: DecisionRecord, side: str) -> tuple[Factor, ...]:
@@ -412,7 +435,11 @@ def decision_view(
             if close_leg else UNKNOWN
         ),
         close_result=_result(closed),
-        skipped_leg="เปิด short — allow_short = false",
+        skipped_leg=(
+            "เปิด short — spot ไม่มีฝั่ง short" if record.market == "spot"
+            else "เปิด short — allow_short = false"
+        ),
+        spot=record.market == "spot",
         why_not=why_not,
         record_short=short,
         record_full=full,
@@ -446,7 +473,7 @@ def page_context(
         None if record is None else config_repo.settings_of(conn, record.config_version_id)
     )
     tab = tab if tab in dict(TABS) else "chart"
-    header = _header(settings, sym, record, held)
+    header = _header(conn, settings, sym, record, held)
     ctx: dict[str, object] = {}
     if tab == "chart":
         ctx = symbol_chart.chart_context(

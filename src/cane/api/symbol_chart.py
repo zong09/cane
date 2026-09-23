@@ -33,9 +33,10 @@ from cane.indicators.action_zone import FAST_PERIOD, SLOW_PERIOD, SMOOTH_PERIOD,
 
 UNKNOWN = "—"
 
-#: แท่งที่โหลดมาคำนวณ · `state` ขึ้นกับประวัติย้อนหลังไม่จำกัด โหลดยาวกว่าที่วาดมากๆ ให้ EMA
-#: กับ state นิ่งก่อนถึงช่วงที่แสดง
-LOAD_BARS = 1000
+#: แท่งที่โหลดมาคำนวณ · **ชุดเดียวกับไปป์ไลน์** — ทั้ง live (`data/ohlcv.py` อ่านทั้งตาราง
+#: แล้ว merge กับที่ดึงใหม่) และ replay อ่านประวัติทั้งหมดไม่จำกัด · หน้าต่างที่สั้นกว่าให้ EMA
+#: seed ต่างไปเล็กน้อย แล้วแถบเตือน "โซนไม่ตรงกับที่บันทึก" จะดังทั้งที่ไม่มีอะไรผิด
+LOAD_BARS: int | None = None
 #: แท่งที่วาด · handoff §11 "85 แท่ง"
 SHOW_BARS = 85
 
@@ -155,7 +156,7 @@ class Verdict:
 
 def _verdict(
     long_signal: bool, short_signal: bool, prev: ActionZone | None, held_side: str,
-    short_allowed: bool, held_label: str,
+    short_allowed: bool, held_label: str, *, spot: bool = False,
 ) -> Verdict:
     """กล่องท้ายการ์ด สี่แบบตาม handoff §9.2a · ข้อความหลักเป็นข้อความสุดท้ายของ design"""
     came_from = prev.zone if prev else UNKNOWN
@@ -179,7 +180,9 @@ def _verdict(
         )
     if short_signal:
         return Verdict(
-            "short-off", "มี short signal แต่ฝั่ง short ปิดอยู่ในโปรไฟล์",
+            "short-off",
+            "มี short signal — spot ไม่มีฝั่ง short" if spot
+            else "มี short signal แต่ฝั่ง short ปิดอยู่ในโปรไฟล์",
             (f"ระบบยังปิด {held_label} ตามสัญญาณ แต่จะไม่เปิดไม้ฝั่ง short ต่อ" if held_side == "long"
              else "ไม่มีสถานะ long ให้ปิด และจะไม่เปิดไม้ฝั่ง short"),
             "ดูการตัดสินใจ", "decision",
@@ -275,6 +278,8 @@ def chart_context(
             ("leverage", f"{sym.leverage:g}x"),
             ("funding 8h", funding if perp else "ไม่มีบน spot"),
         ),
-        "ch_verdict": _verdict(*signals, prev, held_side, short_allowed, held_label),
+        "ch_verdict": _verdict(
+            *signals, prev, held_side, short_allowed, held_label, spot=not perp
+        ),
         "ch_mismatch": mismatch,
     }

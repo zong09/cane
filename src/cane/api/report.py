@@ -58,6 +58,8 @@ EXIT_TEXT = {
 }
 _OPPOSITE = {"long": "short", "short": "long"}
 
+MARKET_TEXT = {"usdtm_perp": "USDT-M perp", "spot": "spot"}
+
 #: ขอบของแถบใน diverging bar · เกินนี้ตัดที่ขอบ (handoff §9.5)
 BAR_CLAMP_PCT = 12.0
 
@@ -295,6 +297,7 @@ def _chart(summary: Summary) -> Chart | None:
 @dataclass(frozen=True, slots=True)
 class SymbolLine:
     pair: str
+    market: str
     trades: int
     wins: str
     ls: str
@@ -384,9 +387,9 @@ def page_context(
     flips = report_repo.flips(conn, profile, since_ts=rng.since_ts, until_ts=rng.until_ts)
     rules, gates, clean = _checks(summary, origins, counts, flips)
 
-    held_by_symbol: dict[str, list[report_repo.OpenTrade]] = {}
+    held_by_symbol: dict[tuple[str, str], list[report_repo.OpenTrade]] = {}
     for t in held:
-        held_by_symbol.setdefault(t.symbol, []).append(t)
+        held_by_symbol.setdefault((t.market, t.symbol), []).append(t)
     held_margin = [t.margin for t in held]
 
     first = min((t.entry_ts for t in summary.trades), default=None)
@@ -396,6 +399,7 @@ def page_context(
     symbols = tuple(
         SymbolLine(
             pair=row.symbol,
+            market=MARKET_TEXT.get(row.market, row.market),
             trades=row.trades,
             wins=_win_rate(row.wins, row.trades),
             ls=f"{row.longs} / {row.shorts}",
@@ -408,7 +412,7 @@ def page_context(
             bar_side="right" if row.net_quote >= 0 else "left",
             fee=_quote(row.fee_quote),
             slip=_quote(row.slippage_quote),
-            holding=_held_text(held_by_symbol.get(row.symbol, [])),
+            holding=_held_text(held_by_symbol.get((row.market, row.symbol), [])),
         )
         for row in summary.per_symbol
     )

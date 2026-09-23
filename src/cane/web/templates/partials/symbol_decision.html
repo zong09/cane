@@ -109,7 +109,7 @@
     <div class="sd__kv"><span>ผลของไม้</span><span>{{ d.close_result }}</span></div>
     <div class="sd__kv sd__kv--warn"><span>ขาที่ข้าม</span><span>{{ d.skipped_leg }}</span></div>
   </div>
-  <div class="sd__footbar">ปิดฝั่ง short ไว้ทำให้ระบบกลับไปเป็นลอง-ออนลี่แบบเดิม โดยยังใช้สัญญาณชุดเดียวกัน · เปิดฝั่ง short ได้ที่หน้าความเสี่ยง</div>
+  <div class="sd__footbar">{% if d.spot %}spot เป็นลอง-ออนลี่โดยโครงสร้าง — สัญญาณแดงขายออกจนแบนแล้วหยุด ไม่มีขาเปิดฝั่ง short{% else %}ปิดฝั่ง short ไว้ทำให้ระบบกลับไปเป็นลอง-ออนลี่แบบเดิม โดยยังใช้สัญญาณชุดเดียวกัน · เปิดฝั่ง short ได้ที่หน้าความเสี่ยง{% endif %}</div>
 </div>
 
 {% elif d.case == "rejected" %}
