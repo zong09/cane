@@ -1063,6 +1063,27 @@ replay_cursor = Table(
 )
 
 
+
+#: เส้นทาง cold start ที่คนเลือกไว้ให้ run ถัดไป — **ใช้แล้วหายไป** (ADR 35)
+#:
+#: ตารางสภาพที่เขียนทับได้อีกตัว · ข้อบังคับหลักอยู่ที่ GRANT ของ migration 0013 ไม่ใช่ที่นี่:
+#: engine ได้ `SELECT, DELETE` (อ่านแล้วลบที่แท่งแรกของ run) · คอนโซลได้ `SELECT, INSERT, UPDATE`
+#: ไม่ได้ `DELETE` · `chosen_by` ชี้ `users.id` ซึ่งประกาศไว้ข้างล่าง FK จึงเขียนเป็นข้อความ
+cold_start_intent = Table(
+    "cold_start_intent",
+    metadata,
+    Column("profile", PROFILE_T, primary_key=True),
+    Column("market", Text, primary_key=True),
+    Column("symbol", Text, primary_key=True),
+    Column("route", Text, nullable=False),
+    Column("chosen_by", Integer, nullable=False),
+    Column("chosen_ts", BigInteger, nullable=False),
+    ForeignKeyConstraint(["chosen_by"], ["users.id"], name="fk_cold_start_intent_chosen_by"),
+    CheckConstraint("market IN ('usdtm_perp', 'spot')", name="ck_cold_start_intent_market"),
+    CheckConstraint("route IN ('trailing', 'skip')", name="ck_cold_start_intent_route"),
+    CheckConstraint("chosen_ts > 0", name="ck_cold_start_intent_chosen_is_epoch_ms"),
+)
+
 # ── ผู้ใช้และการยืนยันตัวตน (spec/09) ─────────────────────────────────────────
 #
 # **ครึ่งหนึ่งของข้อบังคับของโดเมนนี้ไม่ได้อยู่ในคำประกาศข้างล่าง** เหมือน
