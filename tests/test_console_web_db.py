@@ -1000,24 +1000,37 @@ def test_deleting_a_pair_writes_a_draft_without_it(
     assert config_repo.active_version(db, "paper").id == active.id
 
 
-def test_deleting_works_with_the_code_in_the_query_string_like_htmx_sends_it(
+def test_a_code_that_arrives_in_the_query_string_is_not_accepted(
     db: Connection, client: TestClient, clean_config: None
 ) -> None:
-    """htmx ส่งพารามิเตอร์ของ `delete` ไปทาง query string ไม่ใช่ body
+    """ความลับใน query string ไปนอนอยู่ใน access log ของทุกชั้นที่คำขอผ่าน
 
-    ค่าตั้งต้น `methodsThatUseUrlParams` = `["get","delete"]` ของ htmx 2.0.4 ·
-    เทสต์ที่ส่งมาทาง body อย่างเดียวจะเขียวทั้งที่ปุ่มบนหน้าจอจริงได้ "รหัสผิด" ทุกครั้ง
+    ค่าตั้งต้นของ htmx ส่งค่าของ `DELETE` ไปทาง URL · ทางแก้อยู่ที่ `base.html`
+    (`methodsThatUseUrlParams` เหลือแค่ `get`) และปลายทาง **ต้องไม่รับทางนั้นด้วย**
+    ไม่งั้นการตั้งค่าที่ต้นทางจะเป็นแค่ข้อตกลงที่ใครก็ข้ามได้
     """
     seeded(db, "paper")
+    before = len(config_repo.versions(db, "paper"))
 
     with client:
         response = client.request(
             "DELETE", "/api/paper/symbols/ETH/USDT", params=right_now_code()
         )
 
-    assert response.status_code == 200
-    names = [s.symbol for s in config_repo.settings_of(db, latest(db).id).symbols]
-    assert names == ["BTC/USDT"]
+    assert "รหัส 6 หลักไม่ถูกต้อง" in response.text
+    assert len(config_repo.versions(db, "paper")) == before
+
+
+def test_the_console_tells_htmx_to_keep_delete_parameters_out_of_the_url(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    """ถ้าบรรทัดนี้หาย ปุ่มลบจะกลับไปส่งรหัสทาง query string เงียบๆ"""
+    seeded(db, "paper")
+
+    with client:
+        page = client.get("/symbols").text
+
+    assert '"methodsThatUseUrlParams":["get"]' in page
 
 
 def test_the_last_pair_cannot_be_deleted(
