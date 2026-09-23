@@ -522,8 +522,10 @@ def csv_rows(conn: Connection, *, profile: str, rng: Range) -> str:
             t.symbol,
             t.side,
             "" if origin is None or origin.size_pct is None else f"{origin.size_pct:g}",
-            f"{t.entry_px:g}",
-            f"{t.exit_px:g}",
+            # `repr` ไม่ใช่ `:g` — `:g` ตัดเหลือหกหลัก (`58465.123` → `58465.1`) ซึ่งเป็นราคาที่ไม่เคย
+            # fill จริง · ไฟล์ที่ส่งออกไปคือหลักฐาน ต้องเท่ากับที่ ledger เก็บ (รีวิว PR #33)
+            repr(t.entry_px),
+            repr(t.exit_px),
             f"{t.gross_pct:.4f}",
             f"{t.net_pct:.4f}",
             t.exit_reason,

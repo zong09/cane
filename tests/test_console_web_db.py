@@ -28,6 +28,7 @@ from cane.auth import secrets as auth_secrets
 from cane.auth import totp
 from cane.auth.matrix import DEFAULT_MATRIX
 from cane.config import load_profile
+from cane.config.validate import ConfigError, Problem
 from cane.db.repo import config as config_repo
 from cane.db.repo.bars import insert_bars
 from cane.db.repo import decisions as decisions_repo
@@ -1198,6 +1199,8 @@ def test_the_csv_carries_one_row_per_closed_trade_with_its_cost_flag(
     )
     assert len(lines) == 3
     assert lines[1].split(",")[2:5] == ["ETH/USDT", "long", "25"]
+    # ราคาเต็มตามที่ fill ไม่ใช่หกหลักของ `:g` (รีวิว PR #33)
+    assert lines[1].split(",")[5:7] == ["100.0", "96.4"]
     assert lines[1].endswith(",signal,true")
 
 
@@ -1371,6 +1374,21 @@ def test_the_header_shows_the_size_the_opening_decision_chose_with_its_margin(
         page = client.get("/symbols/BTC/USDT?tab=decision").text
 
     assert "LONG 50% · margin 50.00" in page
+
+
+def test_a_broken_config_says_so_instead_of_claiming_the_pair_does_not_exist(
+    db: Connection, client: TestClient, paper_head, monkeypatch
+) -> None:
+    """รีวิว PR #33 — config ที่โหลดไม่ผ่านเคยถูกกลืนเป็น 404 "ไม่มีคู่นี้" ซึ่งโกหก"""
+    def broken(conn, profile):
+        raise ConfigError([Problem(loc=("risk",), message="ขาดเพดาน")])
+
+    monkeypatch.setattr(config_repo, "active_settings", broken)
+    with client:
+        response = client.get("/partials/symbol/BTC/USDT")
+
+    assert response.status_code == 409
+    assert "โหลดไม่ผ่าน 1 ข้อ" in response.text
 
 
 def test_a_pair_that_is_not_in_the_profile_is_not_found(

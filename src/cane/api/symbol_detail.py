@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 
@@ -49,6 +50,7 @@ from cane.engine.supervisor import Supervisor
 from cane.sizing.matrix import FACTOR_STEP_PCT, FORMULA_CEILING_PCT
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 
 UNKNOWN = "—"
 
@@ -450,10 +452,20 @@ def decision_view(
 
 
 def _settings(conn: Connection, profile: str) -> Settings | None:
+    """config ที่ active · `None` = ไม่มีเวอร์ชันที่เปิดใช้
+
+    **config ที่โหลดไม่ผ่านไม่ใช่ `None`** — ถ้ากลืนเป็น `None` หน้าจะตอบ 404 "ไม่มีคู่นี้" ซึ่งโกหก
+    ว่าคู่นั้นไม่มีอยู่ ทั้งที่ความจริงคือ config พัง (รีวิว PR #33) · ตอบ 409 พร้อมจำนวนปัญหา
+    และชี้ไปหน้าตั้งค่า แบบเดียวกับที่หน้าความเสี่ยงบอกไว้บนแบนเนอร์ · log ไว้ให้คนดูแลเห็นด้วย
+    """
     try:
         return config_repo.active_settings(conn, profile)
-    except ConfigError:
-        return None
+    except ConfigError as exc:
+        log.warning("config ของ %s โหลดไม่ผ่าน %d ข้อ — หน้าเหรียญเปิดไม่ได้", profile, len(exc.problems))
+        raise HTTPException(
+            status_code=409,
+            detail=f"config ของโปรไฟล์ {profile} โหลดไม่ผ่าน {len(exc.problems)} ข้อ — แก้ได้ที่หน้าตั้งค่า",
+        ) from exc
 
 
 def page_context(
