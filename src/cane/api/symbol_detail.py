@@ -1,4 +1,4 @@
-"""หน้า เหรียญ — header + แท็บ การตัดสินใจ ของแท่งล่าสุด (ใบ 25 · handoff §9.2)
+"""หน้า เหรียญ — header + แท็บ กราฟ และ การตัดสินใจ ของแท่งล่าสุด (ใบ 25 · handoff §9.2)
 
 ## อ่านจาก `decisions` ที่เขียนไว้แล้วเท่านั้น
 
@@ -30,6 +30,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import Connection, Engine
 
 from cane.api import context
+from cane.api import symbol_chart
 from cane.api.deps import current_mode, current_user, get_db, get_sup, require_cap
 from cane.api.log import SKIP_TEXT
 from cane.api.templating import templates
@@ -444,10 +445,17 @@ def page_context(
     decided_by = (
         None if record is None else config_repo.settings_of(conn, record.config_version_id)
     )
-    tab = tab if tab in dict(TABS) else "decision"
-    return {
+    tab = tab if tab in dict(TABS) else "chart"
+    header = _header(settings, sym, record, held)
+    ctx: dict[str, object] = {}
+    if tab == "chart":
+        ctx = symbol_chart.chart_context(
+            conn, profile=profile, settings=settings, sym=sym, record=record,
+            held_side=header.side, held_label=header.side_label,
+        )
+    return ctx | {
         "sd_profile": profile,
-        "sd_header": _header(settings, sym, record, held),
+        "sd_header": header,
         "sd_tabs": TABS,
         "sd_tab": tab,
         "sd_query": f"market={sym.market}",
@@ -460,7 +468,7 @@ def page(
     symbol: str,
     request: Request,
     market: str | None = Query(None),
-    tab: str = Query("decision"),
+    tab: str = Query("chart"),
     db: Engine = Depends(get_db),
     sup: Supervisor = Depends(get_sup),
     user: User = Depends(current_user),
@@ -480,7 +488,7 @@ def body(
     symbol: str,
     request: Request,
     market: str | None = Query(None),
-    tab: str = Query("decision"),
+    tab: str = Query("chart"),
     db: Engine = Depends(get_db),
     _: User = Depends(require_cap("read_decisions")),
     mode: str = Depends(current_mode),

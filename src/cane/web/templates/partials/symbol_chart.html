@@ -1,0 +1,76 @@
+{# แท็บ กราฟและสัญญาณ · handoff §9.2a #}
+{% if not ch_ready %}
+<div class="sd__card sd__card--narrow"><div class="sd__note">ยังไม่มีแท่งที่ปิดแล้วของคู่นี้ในตาราง — engine ยังไม่เคยดึงข้อมูล</div></div>
+{% else %}
+{% set c = ch_chart %}
+<div class="sd__grid sd__grid--chart">
+  <div class="sd__card sd__card--chart">
+    <div class="ch__stats">
+      <div><div class="sd__label">CLOSE</div><div class="ch__close">{{ ch_close }}</div></div>
+      <div><div class="sd__label">FASTMA · EMA 12</div><div class="ch__ma"><span class="ch__swatch ch__swatch--fast"></span>{{ ch_fast }}</div></div>
+      <div><div class="sd__label">SLOWMA · EMA 26</div><div class="ch__ma"><span class="ch__swatch ch__swatch--slow"></span>{{ ch_slow }}</div></div>
+      <div><div class="sd__label">FAST vs SLOW</div><div class="ch__ma">{{ ch_trend }}</div></div>
+    </div>
+    {% if ch_mismatch %}<div class="rp__notice rp__notice--warn">{{ ch_mismatch }}</div>{% endif %}
+    <svg class="ch__svg" viewBox="0 0 1000 300" preserveAspectRatio="none" role="img"
+         aria-label="{{ sd_header.pair }} candlestick {{ c.first }} ถึง {{ c.last }} พร้อม EMA 12 และ EMA 26">
+      {% for k in c.candles %}
+      <line x1="{{ k.x + k.w / 2 }}" x2="{{ k.x + k.w / 2 }}" y1="{{ k.wick_top }}" y2="{{ k.wick_bottom }}"
+            class="ch__wick ch__wick--{{ 'up' if k.up else 'down' }}"></line>
+      <rect x="{{ k.x }}" y="{{ k.body_top }}" width="{{ k.w }}" height="{{ k.body_h }}"
+            class="ch__body ch__body--{{ 'up' if k.up else 'down' }}"></rect>
+      {% endfor %}
+      <polyline points="{{ c.slow }}" class="ch__slow"></polyline>
+      <polyline points="{{ c.fast }}" class="ch__fast"></polyline>
+      {% for m in c.markers %}
+      <g class="ch__mark ch__mark--{{ m.kind }}"><title>{{ m.title }}</title>
+        {% if m.kind == "open-long" %}<path d="M{{ m.x }},{{ m.y - 6 }} l6,10 h-12 z"></path>
+        {% elif m.kind == "open-short" %}<path d="M{{ m.x }},{{ m.y + 6 }} l6,-10 h-12 z"></path>
+        {% else %}<rect x="{{ m.x - 4 }}" y="{{ m.y - 4 }}" width="8" height="8"></rect>{% endif %}
+      </g>
+      {% endfor %}
+    </svg>
+    <div class="ch__axis"><span>{{ c.first }}</span><span>สูงสุด {{ c.hi }} · ต่ำสุด {{ c.lo }}</span><span>{{ c.last }}</span></div>
+    <svg class="ch__ribbon" viewBox="0 0 1000 18" preserveAspectRatio="none" aria-hidden="true">
+      {% for x, w, zone in c.ribbon %}<rect x="{{ x }}" y="0" width="{{ w + 0.3 }}" height="18" style="fill: var(--zone-{{ zone | lower }})"></rect>{% endfor %}
+    </svg>
+    <div class="ch__legend">
+      {% for zone, label in ch_zones %}
+      <span class="ch__legenditem"><span class="ch__chip" style="background: var(--zone-{{ zone | lower }})"></span>{{ zone }}{% if label %} · {{ label }}{% endif %}</span>
+      {% endfor %}
+      <span class="ch__legenditem"><span class="ch__mark-key ch__mark-key--open-long"></span>เปิด long</span>
+      <span class="ch__legenditem"><span class="ch__mark-key ch__mark-key--open-short"></span>เปิด short</span>
+      <span class="ch__legenditem"><span class="ch__mark-key ch__mark-key--close"></span>ปิดไม้</span>
+    </div>
+    {% set v = ch_verdict %}
+    <div class="ch__verdict ch__verdict--{{ v.kind }}">
+      <div class="ch__verdictbody">
+        <div class="ch__verdicttitle">{{ v.title }}</div>
+        <div class="ch__verdicttext">{{ v.body }}</div>
+      </div>
+      {% if v.tab %}
+      <button class="ch__verdictbtn ch__verdictbtn--{{ v.kind }}" hx-get="{{ base_url }}&tab={{ v.tab }}" hx-target="#symbol-body" hx-swap="outerHTML">{{ v.button }}</button>
+      {% else %}
+      <a class="ch__verdictbtn" href="/log">{{ v.button }}</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="sd__col">
+    <div class="sd__card">
+      <div class="sd__blocktitle">สถานะที่คำนวณได้</div>
+      {% for k, v in ch_state %}<div class="sd__kv"><span>{{ k }}</span><span>{{ v }}</span></div>{% endfor %}
+      <div class="sd__kv sd__kv--rule sd__kv--strong"><span>{{ ch_signals[0][0] }}</span><span>{{ ch_signals[0][1] }}</span></div>
+      <div class="sd__kv sd__kv--strong"><span>{{ ch_signals[1][0] }}</span><span>{{ ch_signals[1][1] }}</span></div>
+      <div class="sd__kv sd__kv--rule"><span>สถานะที่ถือ</span><span>{{ ch_held }}</span></div>
+      <div class="sd__kv"><span>ราคา liquidation</span><span>—</span></div>
+    </div>
+    <div class="sd__card">
+      <div class="sd__blocktitle">พารามิเตอร์</div>
+      {% for k, v in ch_params %}<div class="sd__kv"><span>{{ k }}</span><span>{{ v }}</span></div>{% endfor %}
+      {% for k, v in ch_contract %}<div class="sd__kv{% if loop.first %} sd__kv--rule{% endif %}"><span>{{ k }}</span><span>{{ v }}</span></div>{% endfor %}
+      <div class="sd__pre ch__note">โซนเดียวกันใช้ได้ทั้งสองฝั่ง — GREEN คือจุดเปิด long, RED คือจุดเปิด short สีของโซนเปลี่ยนได้จนแท่งปิด ระบบจึงไม่รองรับโหมด fixed timeframe ของ Pine Script</div>
+    </div>
+  </div>
+</div>
+{% endif %}
