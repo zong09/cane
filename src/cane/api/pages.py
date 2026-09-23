@@ -90,6 +90,6 @@ def page(
         elif slug == "symbols":
             ctx |= symbols_routes.page_context(conn, profile=mode, user=user)
         elif slug == "report":
-            ctx |= report_routes.page_context(conn, profile=mode)
+            ctx |= report_routes.page_context(conn, profile=mode, user=user)
     ctx |= {"page_label": label, "page_ticket": ticket}
     return templates.TemplateResponse(request, BODIES.get(slug, "pages/placeholder.html"), ctx)

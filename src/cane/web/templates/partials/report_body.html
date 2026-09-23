@@ -15,7 +15,11 @@
       <button class="rp__segbtn{% if rp_range.mode == 'custom' %} rp__segbtn--on{% endif %}"
               hx-get="/partials/report?range=custom" hx-target="#report-body" hx-swap="outerHTML">กำหนดช่วงเอง</button>
     </div>
+    {% if rp_can_export %}
     <a class="rp__export" href="/api/{{ rp_profile }}/report/export?{{ q }}">ส่งออก CSV</a>
+    {% else %}
+    <span class="rp__export rp__export--off" title="ต้องมีสิทธิ์ export_records">ส่งออก CSV</span>
+    {% endif %}
   </div>
 
   <div class="rp__range">
