@@ -41,6 +41,7 @@ from sqlalchemy import Connection
 from cane.config.settings import Settings, SymbolConfig
 from cane.confluence import LlmClient, judge_side
 from cane.data.ohlcv import MIN_CLOSED_BARS, BarSource
+from cane.db.repo import coldstart_intent
 from cane.db.repo import decisions as decisions_repo
 from cane.db.repo.decisions import (
     DecisionRecord,
@@ -123,6 +124,9 @@ class RunContext:
     model_id: str
     lots: LotSource
     now: Callable[[], int] = now_ms
+    #: อ่านเจตนาเลือกเส้นทาง cold start ของคน (ADR 35) · live เท่านั้น — replay คือประวัติ
+    #: ไม่ใช่ run ถัดไป และ scratch DB ไม่มีเจตนาให้อ่าน
+    use_intents: bool = False
 
     @property
     def dry_run_blocks(self) -> bool:
@@ -183,6 +187,16 @@ def run_bar(
         return None
     bar_close_ts = bars[-1].close_ts
 
+    # ── เส้นทาง cold start ของ run นี้ · เจตนาของคนชนะ config (ADR 35) ──────
+    # อ่านแล้วลบที่แท่งแรกของ run ไม่ว่าแท่งนี้จะเป็นสถานการณ์ตกรถหรือไม่ — run นี้ผ่านโอกาส
+    # cold start ของมันไปแล้ว · อยู่ในทรานแซกชันของผู้เรียกเดียวกับแถว `decisions` ข้างล่าง
+    # ถ้าแท่งนี้ล้มแล้ว rollback เจตนาจะกลับมารอ run ถัดไป ไม่หายไปเปล่าๆ
+    cold_route = settings.cold_start
+    if sym.cold_start_pending and ctx.use_intents:
+        chosen = coldstart_intent.consume(conn, profile=ctx.profile, market=market, symbol=symbol)
+        if chosen is not None:
+            cold_route = chosen
+
     # ── 2 · Action Zone ─────────────────────────────────────────────────────
     zone = action_zones(bars)[-1]
 
@@ -223,14 +237,14 @@ def run_bar(
         feat = features(bars)
         cold = late_entry(
             plan,
-            route=settings.cold_start,
+            route=cold_route,
             state=zone.state,
             position_side=position_side,
             allow_short=allow_short,
             feat=feat,
             trail_slow=trail_slow,
         )
-        fields["cold_start"] = settings.cold_start
+        fields["cold_start"] = cold_route
         if cold.side is not None and cold.route == "trailing":
             open_side, skip_reason, size_rule = cold.side, None, "cold_start"
             cold_stop_px = cold.stop_px

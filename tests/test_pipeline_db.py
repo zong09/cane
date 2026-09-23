@@ -19,6 +19,7 @@ Judge เป็นตัวปลอมเพราะไม่ต้องก�
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 
@@ -31,12 +32,15 @@ from golden import GOLDEN_DIR, load  # noqa: E402
 from cane.config import load_profile  # noqa: E402
 from cane.config.settings import Settings, SymbolConfig  # noqa: E402
 from cane.data.ohlcv import Bar  # noqa: E402
+from cane.auth import secrets as auth_secrets  # noqa: E402
+from cane.db.repo import coldstart_intent  # noqa: E402
 from cane.db.repo import config as config_repo  # noqa: E402
 from cane.db.repo import decisions as decisions_repo  # noqa: E402
 from cane.db.repo import killswitch  # noqa: E402
+from cane.db.repo import users as users_repo  # noqa: E402
 from cane.db.repo import ledger as ledger_repo  # noqa: E402
 from cane.db.repo import report as report_repo  # noqa: E402
-from cane.db.schema import decisions, verdict_cache  # noqa: E402
+from cane.db.schema import cold_start_intent, decisions, verdict_cache  # noqa: E402
 from cane.engine.lots import StaticLotSource  # noqa: E402
 from cane.engine.pipeline import DayPnl, RunContext, SymbolRuntime, run_bar  # noqa: E402
 from cane.execution.broker import OrderResult  # noqa: E402
@@ -488,6 +492,73 @@ def test_cold_start_is_evaluated_once_per_run_not_on_every_bar(db, settings, ver
 
     assert record.cold_start is None and record.side is None
     assert broker.positions() == []
+
+
+# ── ADR 35 · เจตนาของคนชนะ config ──────────────────────────────────────────
+
+
+@pytest.fixture
+def chooser(db):
+    db.execute(cold_start_intent.delete())
+    return users_repo.create(
+        db, email="chooser@example.com", name="คนเลือก", role="TRADER", created_ts=T0,
+        password_hash=auth_secrets.hash_password("รหัสผ่านที่ยาวพอ"),
+    )
+
+
+def _intend(db, user_id, route):
+    coldstart_intent.choose(db, profile=PROFILE, market=PERP, symbol=SYMBOL, route=route,
+                            user_id=user_id, now=T0)
+
+
+def _with_intents(ctx):
+    return replace(ctx, use_intents=True)
+
+
+def test_an_intent_for_trailing_wins_over_a_config_that_says_skip(db, settings, version_id, chooser):
+    ctx, sym, feed, broker = build(db, settings.model_copy(update={"cold_start": "skip"}), version_id)
+    _intend(db, chooser, "trailing")
+
+    record = step(db, _with_intents(ctx), sym, feed, COLD_AT)
+
+    assert (record.cold_start, record.side, record.size_rule) == ("trailing", "long", "cold_start")
+    assert record.stop.action == "placed"
+    # ใช้แล้วหายไป
+    assert coldstart_intent.read(db, profile=PROFILE, market=PERP, symbol=SYMBOL) is None
+
+
+def test_an_intent_to_skip_wins_over_a_config_that_says_trailing(db, settings, version_id, chooser):
+    ctx, sym, feed, broker = build(db, cold_settings(settings), version_id)
+    _intend(db, chooser, "skip")
+
+    record = step(db, _with_intents(ctx), sym, feed, COLD_AT)
+
+    assert record.cold_start == "skip" and record.side is None
+    assert broker.positions() == []
+
+
+def test_the_first_bar_of_the_run_uses_up_the_intent_even_when_it_is_not_a_cold_start(
+    db, settings, version_id, chooser
+):
+    """เจตนาคือ "สำหรับ run ถัดไป" — run นั้นผ่านโอกาส cold start ไปแล้วที่แท่งแรก"""
+    ctx, sym, feed, broker = build(db, settings.model_copy(update={"cold_start": "skip"}), version_id)
+    _intend(db, chooser, "trailing")
+
+    step(db, _with_intents(ctx), sym, feed, COLD_AT - 1)
+    record = step(db, _with_intents(ctx), sym, feed, COLD_AT)
+
+    assert coldstart_intent.read(db, profile=PROFILE, market=PERP, symbol=SYMBOL) is None
+    assert record.side is None and broker.positions() == []
+
+
+def test_replay_does_not_read_or_spend_intents(db, settings, version_id, chooser):
+    ctx, sym, feed, broker = build(db, cold_settings(settings), version_id)
+    _intend(db, chooser, "skip")
+
+    record = step(db, ctx, sym, feed, COLD_AT)  # use_intents = False เหมือน replay
+
+    assert record.cold_start == "trailing" and record.side == "long"
+    assert coldstart_intent.read(db, profile=PROFILE, market=PERP, symbol=SYMBOL).route == "skip"
 
 
 def test_the_stop_follows_slow_trail_even_while_the_kill_switch_is_latched(db, settings, version_id):
