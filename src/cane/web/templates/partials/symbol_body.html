@@ -1,0 +1,33 @@
+{#
+  เนื้อของหน้าเหรียญ · header + แท็บ · ฟัง `cane:mode` แล้วยิงกลับพร้อมแท็บเดิม
+  (เหรียญที่ไม่มีในอีกโปรไฟล์ได้ 404 ซึ่ง htmx ไม่ swap — ดู docstring ของ route)
+#}
+{% set h = sd_header %}
+{% set base_url = "/partials/symbol/" ~ h.pair ~ "?" ~ sd_query %}
+<div id="symbol-body" class="sd"
+     hx-get="{{ base_url }}&tab={{ sd_tab }}" hx-trigger="cane:mode from:body" hx-swap="outerHTML">
+
+  <div class="sd__head">
+    <h1 class="h1">{{ h.pair }}</h1>
+    <span class="sd__zone" style="--z: var(--zone-{{ h.zone | lower }})">{{ h.zone }}</span>
+    <span class="sd__hold sd__hold--{{ h.side }}">{{ h.side_label }}</span>
+  </div>
+  <div class="sd__sub">{{ h.sub }}</div>
+
+  <div class="sd__tabs">
+    {% for key, label in sd_tabs %}
+    <button class="sd__tab{% if key == sd_tab %} sd__tab--on{% endif %}"
+            hx-get="{{ base_url }}&tab={{ key }}" hx-target="#symbol-body" hx-swap="outerHTML">
+      {{ label }}
+      {% if key == "chart" and h.long_signal %}<span class="sd__dot sd__dot--long"></span>{% endif %}
+      {% if key == "chart" and h.short_signal %}<span class="sd__dot sd__dot--short"></span>{% endif %}
+    </button>
+    {% endfor %}
+  </div>
+
+  {% if sd_tab == "decision" %}
+    {% include "partials/symbol_decision.html" %}
+  {% else %}
+  <div class="sd__card sd__card--narrow"><div class="sd__note">แท็บนี้ยังไม่มีเนื้อ</div></div>
+  {% endif %}
+</div>
