@@ -37,6 +37,7 @@ from cane.api.deps import current_mode, get_db, require_cap
 from cane.api.templating import templates
 from cane.db.repo import decisions as decisions_repo
 from cane.db.repo import ledger as ledger_repo
+from cane.db.repo import permissions as perms
 from cane.db.repo import report as report_repo
 from cane.db.repo.ledger import ClosedTrade
 from cane.db.repo.users import User
@@ -364,6 +365,7 @@ def page_context(
     conn: Connection,
     *,
     profile: str,
+    user: User,
     range_mode: str = "all",
     raw_from: str = "",
     raw_to: str = "",
@@ -413,6 +415,8 @@ def page_context(
 
     return {
         "rp_profile": profile,
+        # ปุ่มส่งออกเป็นของ `export_records` · คนที่ไม่มีเห็นปุ่มแต่กดไม่ได้ ดีกว่ากดแล้วเจอ 403
+        "rp_can_export": perms.allowed(conn, role=user.role, cap="export_records"),
         "rp_range": rng,
         "rp_empty": total == 0,
         "rp_span": (
@@ -482,13 +486,14 @@ def body(
     raw_from: str = Query("", alias="from"),
     raw_to: str = Query("", alias="to"),
     db: Engine = Depends(get_db),
-    _: User = Depends(require_cap("view_overview")),
+    user: User = Depends(require_cap("view_overview")),
     mode: str = Depends(current_mode),
 ) -> HTMLResponse:
     """เนื้อของหน้ารายงาน — ตอนสลับโหมดและตอนเปลี่ยนช่วง"""
     with db.connect() as conn:
         ctx = page_context(
-            conn, profile=mode, range_mode=range_mode, raw_from=raw_from, raw_to=raw_to
+            conn, profile=mode, user=user,
+            range_mode=range_mode, raw_from=raw_from, raw_to=raw_to,
         )
     return templates.TemplateResponse(request, "partials/report_body.html", ctx)
 

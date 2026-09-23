@@ -1743,13 +1743,19 @@ def test_the_report_export_of_a_profile_that_does_not_exist_is_not_found() -> No
     assert response.status_code == 404
 
 
-def test_exporting_the_report_needs_export_records() -> None:
+def test_exporting_the_report_needs_export_records(monkeypatch: pytest.MonkeyPatch) -> None:
     """spec/09 ผูก CSV ของรายงานไว้กับ `export_records` เหมือนการส่งออกบันทึก"""
-    client, _ = build(role="VIEWER")
+    monkeypatch.setattr(perms, "allowed", lambda conn, *, role, cap: cap != "export_records")
+    client, _ = build(role="TRADER")
     with client:
         response = client.get("/api/paper/report/export")
+        page = client.get("/report")
 
     assert response.status_code == 403
+    # หน้ายังเปิดได้ แต่ปุ่มกดไม่ได้ — ไม่ใช่ลิงก์ที่พาไปเจอ 403
+    assert page.status_code == 200
+    assert "/report/export" not in page.text
+    assert "rp__export--off" in page.text
 
 
 def test_every_chip_of_the_journal_is_on_the_page_even_with_nothing_to_count() -> None:

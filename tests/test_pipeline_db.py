@@ -34,6 +34,8 @@ from cane.data.ohlcv import Bar  # noqa: E402
 from cane.db.repo import config as config_repo  # noqa: E402
 from cane.db.repo import decisions as decisions_repo  # noqa: E402
 from cane.db.repo import killswitch  # noqa: E402
+from cane.db.repo import ledger as ledger_repo  # noqa: E402
+from cane.db.repo import report as report_repo  # noqa: E402
 from cane.db.schema import decisions, verdict_cache  # noqa: E402
 from cane.engine.lots import StaticLotSource  # noqa: E402
 from cane.engine.pipeline import DayPnl, RunContext, SymbolRuntime, run_bar  # noqa: E402
@@ -248,6 +250,25 @@ def test_a_sell_signal_while_long_closes_first_then_opens_the_short(db, settings
     assert record.flip is not None and record.flip.aborted is False and record.flip.residual_qty == 0.0
     # หลัง flip ถือฝั่งเดียว และเป็นฝั่ง short ไม่ใช่สองฝั่งพร้อมกัน
     assert [p.side for p in broker.positions()] == ["short"]
+
+
+def test_the_long_closed_by_a_flip_finds_the_row_that_opened_it(db, settings, version_id):
+    """หน้ารายงานหาทุนของไม้ผ่านแถวที่เปิดมัน (`repo/report.origins()`)
+
+    เทสต์ของ `origins()` สร้างแถวกับ fill ด้วยมือให้ตรงกันเอง · ข้อนี้ให้ไปป์ไลน์กับ
+    `PaperBroker` เขียนเองทั้งคู่ — ถ้าสองฝั่งประทับแท่งหรือฝั่งไม่ตรงกัน ทุกไม้จะหาเวอร์ชัน
+    ไม่เจอ แล้ว % ทั้งหน้ารายงานจะเป็น — โดยที่ไม่มีเทสต์ไหนดัง
+    """
+    ctx, sym, feed, broker = build(db, settings, version_id)
+    for index in range(QUIET_FROM, SELL_1 + 1):
+        step(db, ctx, sym, feed, index)
+
+    (closed,) = ledger_repo.closed_trades(db, PROFILE)
+    origin = report_repo.origins(db, PROFILE)[closed.trade_id]
+
+    assert closed.side == "long" and closed.exit_reason == "signal"
+    assert origin.config_version_id == version_id
+    assert origin.on_signal is True
 
 
 # ── ขั้น 5 · flip ที่ขาปิดไม่ fill ────────────────────────────────────────────

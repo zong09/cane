@@ -658,6 +658,7 @@ a.btn--block { padding: 12px; }
   color: var(--text); font: 500 13px var(--sans);
 }
 .rp__export:hover { border-color: var(--primary-edge); color: var(--primary-text); }
+.rp__export--off, .rp__export--off:hover { cursor: not-allowed; opacity: .65; border-color: var(--border-strong); color: var(--text); }
 
 .rp__range {
   display: flex; align-items: center; gap: 14px; padding: 13px 20px; margin-top: 16px;
