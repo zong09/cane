@@ -21,8 +21,8 @@
       #}
       {#
         `method` เว้นได้ = `post` · ใบ 26 ลบเหรียญด้วย `DELETE` ตาม URL ที่ spec/10
-        เป็นเจ้าของ · htmx ส่งพารามิเตอร์ของ `delete` ไปทาง **query string** ไม่ใช่ body
-        (`methodsThatUseUrlParams` = `["get","delete"]`) ปลายทางจึงต้องรับรหัสทั้งสองทาง
+        เป็นเจ้าของ · รหัสเดินทางไปใน body เหมือนทุก action เพราะ `base.html` ตัด
+        `delete` ออกจาก `methodsThatUseUrlParams` แล้ว — ดูเหตุผลที่ meta ตัวนั้น
       #}
       <form hx-{{ method | default("post") }}="{{ action }}" hx-target="#modal-slot" hx-swap="innerHTML">
         {# ค่าที่ action นั้นต้องรู้แต่คนไม่ต้องพิมพ์ (ใบ 23: สวิตช์ส่งค่าที่ต้องการ) #}

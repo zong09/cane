@@ -8,7 +8,14 @@
   ไม่ใช่ error ที่ต้องกลืน ถ้าไม่เปิดตรงนี้ กดปุ่มแล้วหน้าจอจะเงียบสนิทไม่มีอะไรบอก
   ลำดับมีความหมาย — ตัวแรกที่ตรงชนะ 403 จึงต้องมาก่อน `[45]..`
 #}
-<meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"403","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
+{#
+  `methodsThatUseUrlParams` ค่าตั้งต้นของ htmx เป็น `["get","delete"]` — ค่าของ
+  `DELETE` จึงเดินทางไปใน **query string** · ใบ 26 ส่งรหัส step-up ไปกับคำขอลบ และ
+  query string ถูกจดไว้ใน access log ของทุกชั้นที่คำขอผ่าน (uvicorn · reverse proxy)
+  ซึ่งเป็นที่ที่ความลับต้องไม่ไปโผล่ (`log.py` ปิดของฝั่งเราไว้แล้ว แต่ปิด log ของ
+  ชั้นอื่นไม่ได้) · ตัดออกให้เหลือ `get` แล้ว DELETE จะส่งค่าทาง body เหมือน POST
+#}
+<meta name="htmx-config" content='{"methodsThatUseUrlParams":["get"],"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"403","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
 {#
   ฟอนต์จาก Google Fonts ตรงกับไฟล์ design · handoff §12.1 บอกว่าโปรดักชันควร
   self-host — เป็นงานตามหลัง ไม่ใช่ของใบ 19
