@@ -1191,3 +1191,171 @@ def test_the_csv_carries_one_row_per_closed_trade_with_its_cost_flag(
     assert len(lines) == 3
     assert lines[1].split(",")[2:5] == ["ETH/USDT", "long", "25"]
     assert lines[1].endswith(",signal,true")
+
+
+# ── หน้าเหรียญ · ใบ 25 ────────────────────────────────────────────────────────
+
+
+def _bar_of(db: Connection, version_id: int, **overrides) -> None:
+    base = dict(
+        profile="paper", market="usdtm_perp", symbol="BTC/USDT", timeframe="1d",
+        bar_close_ts=_REPORT_T0, decided_ts=_REPORT_T0 + 500, config_version_id=version_id,
+        close_px=100.0, zone="BLUE", state="BEARISH", long_signal=False, short_signal=False,
+        dry_run=True, skip_reason="no_signal",
+    )
+    decisions_repo.insert_decision(db, decisions_repo.DecisionRecord(**{**base, **overrides}))
+
+
+@pytest.fixture
+def paper_head(db: Connection, clean_config: None):
+    db.execute(funding_charges.delete())
+    db.execute(fills.delete())
+    db.execute(decisions_table.delete())
+    return seeded(db, "paper")
+
+
+def _long_entry(**overrides):
+    base = dict(
+        zone="GREEN", state="BULLISH", long_signal=True, side="long", skip_reason="dry_run",
+        leverage=1.0, margin_mode="isolated", judge_called=True, llm_fallback=False,
+        factors_present=2, size_rule="confluence", size_pct_formula=50.0, size_pct_final=50.0,
+        capped=False, margin=50.0, notional=50.0, qty=0.5, ref_px=100.0,
+        verdicts=(
+            decisions_repo.Verdict(factor="CHANNEL_BREAKOUT", side="long", present=True,
+                                   cached=True, confidence=0.78, rationale="ทะลุเส้นกด"),
+            decisions_repo.Verdict(factor="RETAIL_CAPITULATION", side="long", present=True,
+                                   cached=False, confidence=0.85),
+            decisions_repo.Verdict(factor="HIGHER_LOW", side="long", present=False,
+                                   cached=False, confidence=0.62),
+        ),
+        risk_checks=(
+            decisions_repo.RiskCheck(seq=1, layer="kill_switch", passed=True),
+            decisions_repo.RiskCheck(seq=2, layer="daily_loss", passed=True, value=0.8, limit_value=3.0),
+            decisions_repo.RiskCheck(seq=3, layer="liq_buffer", passed=True, value=49.5, limit_value=25.0),
+        ),
+        orders=(_accepted_open(client_order_id="cane-BTCUSDT-1-long", sent=False, accepted=False),),
+    )
+    return {**base, **overrides}
+
+
+def test_a_long_entry_shows_where_its_size_came_from(
+    db: Connection, client: TestClient, paper_head
+) -> None:
+    _bar_of(db, paper_head.id, **_long_entry())
+
+    with client:
+        page = client.get("/symbols/BTC/USDT?tab=decision").text
+
+    assert "LONG 0.5 BTC" in page and "50% ของ bucket long" in page
+    assert "โหมดทดลอง · ไม่ส่งคำสั่งจริง" in page
+    assert "cane-BTCUSDT-1-long" in page
+    # ที่มาของขนาดไม้: base_pct ของเวอร์ชันที่ตัดสิน (paper = 10) + 20 ต่อปัจจัยที่ผ่าน
+    assert "ไม้พื้นฐาน</span><span>10</span>" in page
+    assert page.count("<span>+20</span>") == 2 and "<span>+0</span>" in page
+    assert "สูตรให้ 50%" in page and "ไม่ถูกตัด" in page
+    assert "ครบ 3 → 100" not in page
+    assert "เบรคเส้นแนวโน้มกด" in page and "ทะลุเส้นกด" in page
+    assert "จาก cache 1 / 3" in page
+    assert "kill switch — clear" in page and "daily loss 0.8 / 3.0%" in page
+    # 100 × (1 − 0.495) = 50.50
+    assert "50.50 · ห่าง 49.5% (คำนวณจาก ref_px)" in page
+
+
+def test_a_flip_shows_both_legs_and_the_result_of_the_closed_long(
+    db: Connection, client: TestClient, paper_head
+) -> None:
+    open_bar = _REPORT_T0 - _DAY_MS
+    trade = trade_id_of("usdtm_perp", "BTC/USDT", "long", open_bar)
+    common = dict(profile="paper", market="usdtm_perp", symbol="BTC/USDT", trade_id=trade,
+                  order_type="market", qty=0.5, fee_quote=Decimal("0"), fee_ccy="USDT",
+                  leverage=1.0)
+    ledger.record_fill(db, Fill(**common, leg="open", fill_ts=open_bar, px=110.0, ref_px=110.0,
+                                reduce_only=False, client_order_id="fo", position_qty_after=0.5,
+                                bar_close_ts=open_bar, dedupe_key=dedupe_key_of("fo")))
+    ledger.record_fill(db, Fill(**common, leg="close", fill_ts=_REPORT_T0, px=100.0, ref_px=100.0,
+                                reduce_only=True, client_order_id="fc", position_qty_after=0.0,
+                                bar_close_ts=_REPORT_T0, dedupe_key=dedupe_key_of("fc"),
+                                exit_reason="signal"))
+    _bar_of(db, paper_head.id, **_long_entry(
+        zone="RED", state="BEARISH", long_signal=False, short_signal=True, side="short",
+        verdicts=(), factors_present=0, size_rule="confluence", size_pct_formula=10.0,
+        size_pct_final=10.0,
+        orders=(
+            _accepted_open(leg="close", order_side="buy", reduce_only=True,
+                           client_order_id="close-leg", qty=0.5, sent=False, accepted=False),
+            _accepted_open(order_side="sell", client_order_id="open-leg",
+                           sent=False, accepted=False),
+        ),
+        flip=decisions_repo.Flip(close_qty_intended=0.5, close_qty_filled=0.5,
+                                 residual_qty=0.0, aborted=False),
+    ))
+
+    with client:
+        page = client.get("/symbols/BTC/USDT?tab=decision").text
+
+    assert "แผนกลับข้าง — สองขาในแท่งเดียว" in page
+    assert "ขา 1 · ปิด long" in page and "ขา 2 · เปิด short" in page
+    assert "110.00" in page  # ราคาเข้าเดิมของไม้ long ที่ปิด
+    assert "-9.1% · -5.00 USDT" in page
+    assert "flip_aborted" in page  # แถบเตือน
+
+
+def test_a_short_signal_with_short_disabled_says_it_closed_but_did_not_open(
+    db: Connection, client: TestClient, paper_head
+) -> None:
+    _bar_of(db, paper_head.id, zone="RED", short_signal=True, skip_reason="short_disabled",
+            orders=(_accepted_open(leg="close", order_side="sell", reduce_only=True, qty=0.45),))
+
+    with client:
+        page = client.get("/symbols/BTC/USDT?tab=decision").text
+
+    assert "ปิด long 0.45 · ไม่เปิด short" in page
+    assert "เปิด short — allow_short = false" in page
+
+
+def test_a_rejected_signal_names_the_layer_that_refused_it(
+    db: Connection, client: TestClient, paper_head
+) -> None:
+    """เหตุผลของ risk รายชั้น — หน้าบันทึกฝากมาไว้ที่นี่ (api/log.py)"""
+    _bar_of(db, paper_head.id, zone="GREEN", long_signal=True, side="long",
+            skip_reason="risk_rejected",
+            risk_checks=(
+                decisions_repo.RiskCheck(seq=1, layer="kill_switch", passed=True),
+                decisions_repo.RiskCheck(seq=2, layer="daily_loss", passed=False,
+                                         value=4.2, limit_value=3.0),
+            ))
+
+    with client:
+        page = client.get("/symbols/BTC/USDT?tab=decision").text
+
+    assert "risk ปฏิเสธ — ไม่เกิดไม้" in page
+    assert "ชั้นที่ปฏิเสธ: daily_loss (4.20 เทียบเพดาน 3)" in page
+    assert "sd__gate sd__gate--fail" in page
+
+
+def test_a_bar_with_no_signal_says_it_did_nothing(
+    db: Connection, client: TestClient, paper_head
+) -> None:
+    _bar_of(db, paper_head.id)
+
+    with client:
+        page = client.get("/symbols/BTC/USDT?tab=decision").text
+
+    assert "ไม่ทำอะไร" in page and "ทำไมไม่ลงไม้" in page
+    assert "ปฏิเสธทั้งสองฝั่ง — ไม่ใช่แท่งสัญญาณ" in page
+
+
+def test_a_pair_that_is_not_in_the_profile_is_not_found(
+    client: TestClient, paper_head
+) -> None:
+    with client:
+        response = client.get("/symbols/DOGE/USDT")
+
+    assert response.status_code == 404
+
+
+def test_the_rail_links_each_pair_to_its_own_page(client: TestClient, paper_head) -> None:
+    with client:
+        page = client.get("/overview").text
+
+    assert 'href="/symbols/BTC/USDT"' in page and 'href="/symbols/ETH/USDT"' in page

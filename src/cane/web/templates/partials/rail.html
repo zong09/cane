@@ -48,7 +48,7 @@
     <input class="symbols__query" type="search" placeholder="ค้นหาคู่เหรียญ" disabled>
     <div class="symbols__list">
       {% for row in symbols %}
-      <a class="sym" href="/symbols">
+      <a class="sym" href="/symbols/{{ row.pair }}">
         {# สีมาจาก token `--zone-*` ใน console.css ที่เดียว · Python ถือแค่ชื่อโซน #}
       <span class="sym__dot" style="background:var(--zone-{{ row.zone | lower }})"></span>
         <span class="sym__pair">{{ row.pair }}</span>

@@ -1,0 +1,6 @@
+<div class="sd__card">
+  <div class="sd__blocktitle">DecisionRecord</div>
+  <pre class="sd__pre">{{ sd_decision.record_short }}</pre>
+  <details class="sd__details"><summary>ดูทั้งหมด</summary><pre class="sd__pre">{{ sd_decision.record_full }}</pre></details>
+  <div class="sd__foot">เขียนทุกแท่งทุก symbol รวมกรณีที่ผลลัพธ์คือไม่ทำอะไร{% if sd_decision.flip %} · ขาปิดและขาเปิดอยู่ในเรคคอร์ดเดียวกัน เพื่อให้ตรวจย้อนหลังได้ว่ากลับข้างครบทั้งสองขาหรือไม่{% endif %}</div>
+</div>

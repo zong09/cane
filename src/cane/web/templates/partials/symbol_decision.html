@@ -1,0 +1,156 @@
+{# แท็บ การตัดสินใจ · handoff §9.2b สี่กรณี + กรณีที่มีสัญญาณแต่ไม่เกิดไม้ #}
+{% set d = sd_decision %}
+{% if d is none %}
+<div class="sd__card sd__card--narrow">
+  <div class="sd__note">ยังไม่มีบันทึกการตัดสินใจของคู่นี้ — engine ยังไม่เคยเดินแท่งไหนของมัน</div>
+</div>
+{% elif d.case == "entry" %}
+<div class="sd__grid">
+  <div class="sd__card sd__card--flush">
+    <div class="sd__hero sd__hero--{{ d.side }}">
+      <div class="sd__herohead">
+        <span class="sd__label">ผลการตัดสินใจ</span>
+        {% if d.dry_run %}<span class="sd__chip sd__chip--warn">โหมดทดลอง · ไม่ส่งคำสั่งจริง</span>
+        {% else %}<span class="sd__chip sd__chip--live">ส่งออเดอร์จริง</span>{% endif %}
+      </div>
+      <div class="sd__heroline">
+        <span class="sd__herobig sd__herobig--{{ d.side }}">{{ d.hero }}</span>
+        <span class="sd__heropct">{{ d.size_pct }} ของ bucket {{ d.side }}</span>
+      </div>
+      <div class="sd__herosub sd__herosub--{{ d.side }}">{{ d.hero_sub }}</div>
+    </div>
+
+    <div class="sd__meta">
+      <div><div class="sd__label">สัญญาณ</div><div class="sd__metaval">{{ d.signal }}</div></div>
+      <div><div class="sd__label">ราคาอ้างอิง</div><div class="sd__metaval">{{ d.ref_px }}</div></div>
+      <div><div class="sd__label">รหัสออเดอร์ · กันสั่งซ้ำ</div><div class="sd__metaval sd__metaval--code">{{ d.client_order_id }}</div></div>
+    </div>
+
+    {% if d.flip %}
+    <div class="sd__block">
+      <div class="sd__blockhead"><span class="sd__blocktitle">แผนกลับข้าง — สองขาในแท่งเดียว</span><span class="sd__chip">one-way mode</span></div>
+      <div class="sd__legs">
+        <div class="sd__leg sd__leg--close">
+          <div class="sd__legtitle">ขา 1 · ปิด {{ d.flip.close_side }}</div>
+          <div class="sd__kv"><span>ปริมาณ</span><span>{{ d.flip.close_qty }} · reduceOnly</span></div>
+          <div class="sd__kv"><span>ราคาเข้าเดิม</span><span>{{ d.flip.entry_px }}</span></div>
+          <div class="sd__kv"><span>ผลของไม้</span><span>{{ d.flip.result }}</span></div>
+        </div>
+        <div class="sd__legarrow">→</div>
+        <div class="sd__leg sd__leg--open">
+          <div class="sd__legtitle">ขา 2 · เปิด {{ d.side }}</div>
+          <div class="sd__kv"><span>margin</span><span>{{ d.flip.open_margin }} USDT</span></div>
+          <div class="sd__kv"><span>notional</span><span>{{ d.flip.open_notional }} USDT</span></div>
+          <div class="sd__kv"><span>ปริมาณ</span><span>{{ d.flip.open_qty }}</span></div>
+          <div class="sd__kv"><span>liquidation</span><span>{{ d.flip.liq }}</span></div>
+        </div>
+      </div>
+      <div class="sd__warnbar"><span class="sd__bang">!</span>ถ้าขา 1 ไม่ fill ครบ ระบบยกเลิกขา 2 ทั้งหมด ไม่เปิด {{ d.side }} ทับสถานะ {{ d.flip.close_side }} ที่ยังค้าง และเขียน DecisionRecord ว่า flip_aborted เพื่อให้รอบถัดไปตัดสินใจใหม่จากสถานะจริงที่ exchange</div>
+    </div>
+    {% endif %}
+
+    <div class="sd__block">
+      <div class="sd__blockhead">
+        <span class="sd__blocktitle">ปัจจัยสนับสนุน{% if d.side == "short" %}ฝั่ง short{% endif %}</span>
+        {% if d.judge_called %}<span class="sd__chip">จาก cache {{ d.cached }} / 3</span>{% endif %}
+        {% if d.llm_fallback %}<span class="sd__chip sd__chip--warn">LLM ตอบไม่ได้ · ไม้พื้นฐาน</span>{% endif %}
+        <span class="sd__grow"></span><span class="sd__count">{{ d.factors_present }} / 3</span>
+      </div>
+      <div class="sd__factors">
+        {% for f in d.factors %}
+        <div class="sd__factor{% if f.present %} sd__factor--on sd__factor--{{ d.side }}{% endif %}">
+          <div class="sd__factorhead"><span class="sd__tick"></span><span class="sd__factorname">{{ f.name }}</span><span class="sd__grow"></span><span class="sd__conf">{{ f.confidence }}</span></div>
+          {% if f.rationale %}<div class="sd__factortext">{{ f.rationale }}</div>{% endif %}
+          {% if f.evidence %}<div class="sd__factorbars">{{ f.evidence }}</div>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <div class="sd__foot">ความมั่นใจไม่เข้าสูตรขนาดไม้ — เก็บไว้ให้คนตรวจย้อนหลังเท่านั้น</div>
+    </div>
+
+    <div class="sd__block">
+      <div class="sd__blocktitle">ด่านที่ผ่านมาแล้ว</div>
+      <div class="sd__gates">
+        {% for g in d.gates %}<div class="sd__gate{% if not g.passed %} sd__gate--fail{% endif %}"><span class="sd__tick"></span>{{ g.label }}</div>{% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="sd__col">
+    <div class="sd__card">
+      <div class="sd__blocktitle">ที่มาของ {{ d.size_pct }}</div>
+      <div class="sd__ledger">
+        {% for line in d.ledger %}
+        <div class="sd__ledgerline{% if line.faint %} sd__ledgerline--faint{% endif %}{% if line.total %} sd__ledgerline--total{% endif %}"><span>{{ line.label }}</span><span>{{ line.value }}</span></div>
+        {% endfor %}
+      </div>
+      {% if d.used %}
+      <div class="sd__used sd__used--{{ d.side }}">
+        <div class="sd__label">ใช้จริง</div>
+        <div class="sd__usedbig">{{ d.used[0] }}</div>
+        <div class="sd__usednote">{{ d.used[1] }}</div>
+        <div class="sd__kv sd__kv--rule"><span>ราคา liquidation</span><span>{{ d.used[2] }}</span></div>
+      </div>
+      {% endif %}
+    </div>
+    {% include "partials/symbol_record.html" %}
+  </div>
+</div>
+
+{% elif d.case == "close_only" %}
+<div class="sd__card sd__card--flush sd__card--narrow">
+  <div class="sd__hero sd__hero--warn">
+    <div class="sd__herohead"><span class="sd__label">ผลการตัดสินใจ</span></div>
+    <div class="sd__herobig sd__herobig--warn">{{ d.hero }}</div>
+    <div class="sd__herosub">{{ d.hero_sub }}</div>
+  </div>
+  <div class="sd__block">
+    <div class="sd__kv"><span>ขาที่ยิง</span><span>{{ d.close_leg }}</span></div>
+    <div class="sd__kv"><span>ผลของไม้</span><span>{{ d.close_result }}</span></div>
+    <div class="sd__kv sd__kv--warn"><span>ขาที่ข้าม</span><span>{{ d.skipped_leg }}</span></div>
+  </div>
+  <div class="sd__footbar">ปิดฝั่ง short ไว้ทำให้ระบบกลับไปเป็นลอง-ออนลี่แบบเดิม โดยยังใช้สัญญาณชุดเดียวกัน · เปิดฝั่ง short ได้ที่หน้าความเสี่ยง</div>
+</div>
+
+{% elif d.case == "rejected" %}
+<div class="sd__grid">
+  <div class="sd__card sd__card--flush">
+    <div class="sd__hero sd__hero--bad">
+      <div class="sd__herohead"><span class="sd__label">ผลการตัดสินใจ</span></div>
+      <div class="sd__herobig sd__herobig--short">{{ d.hero }}</div>
+      <div class="sd__herosub">{{ d.hero_sub }}</div>
+    </div>
+    <div class="sd__meta">
+      <div><div class="sd__label">สัญญาณ</div><div class="sd__metaval">{{ d.signal }}</div></div>
+      <div><div class="sd__label">ราคาอ้างอิง</div><div class="sd__metaval">{{ d.ref_px }}</div></div>
+      <div><div class="sd__label">รหัสออเดอร์ · กันสั่งซ้ำ</div><div class="sd__metaval sd__metaval--code">{{ d.client_order_id }}</div></div>
+    </div>
+    <div class="sd__block">
+      <div class="sd__blocktitle">ด่านทีละชั้น</div>
+      <div class="sd__gates">
+        {% for g in d.gates %}<div class="sd__gate{% if not g.passed %} sd__gate--fail{% endif %}"><span class="sd__tick"></span>{{ g.label }}</div>{% endfor %}
+      </div>
+    </div>
+  </div>
+  <div class="sd__col">{% include "partials/symbol_record.html" %}</div>
+</div>
+
+{% else %}
+<div class="sd__card sd__card--flush sd__card--narrow">
+  <div class="sd__hero">
+    <div class="sd__herohead"><span class="sd__label">ผลการตัดสินใจ</span></div>
+    <div class="sd__herobig">{{ d.hero }}</div>
+    <div class="sd__herosub">{{ d.hero_sub }}</div>
+  </div>
+  <div class="sd__meta">
+    <div><div class="sd__label">สัญญาณ</div><div class="sd__metaval">{{ d.signal }}</div></div>
+    <div><div class="sd__label">ราคาปิด</div><div class="sd__metaval">{{ d.ref_px }}</div></div>
+    <div><div class="sd__label">ขนาดไม้</div><div class="sd__metaval">ไม่คำนวณ</div></div>
+  </div>
+  <div class="sd__block">
+    <div class="sd__blocktitle">ทำไมไม่ลงไม้</div>
+    {% for k, v in d.why_not %}<div class="sd__kv{% if loop.last %} sd__kv--bad{% endif %}"><span>{{ k }}</span><span>{{ v }}</span></div>{% endfor %}
+  </div>
+  <div class="sd__footbar">กฎไม้เรียวปฏิเสธการเข้าที่ไม่ใช่แท่งสัญญาณ ทั้งฝั่ง long และ short · ระบบยังเขียน DecisionRecord ของแท่งนี้ตามปกติ <a class="sd__link" href="/log">ดูบันทึก</a></div>
+</div>
+{% endif %}
