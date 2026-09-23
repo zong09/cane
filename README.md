@@ -41,8 +41,9 @@ the same pipeline over past bars in a scratch database ([ADR 29](docs/decisions.
 `cane serve` brings the console up. The shell is in place — layout, the profile/engine cards,
 and the live↔paper mode switch — and it now sits behind two-step authentication: password,
 then a TOTP code, with a fresh code required again for anything that controls the engine or
-switches to `live`. Four screens have their bodies — overview, risk, log and config; symbols,
-report and users are still the shell's placeholder.
+switches to `live`. Every screen except users has its body — overview, symbols, risk, log,
+report, config, and the per-pair page (`/symbols/{pair}`: chart, the latest decision, and a
+read-only cold start preview).
 
 First run, after `alembic upgrade head`:
 
@@ -69,8 +70,8 @@ account stays unusable until you do — there is no path into the console that s
 | Per-bar-close runner that fills the decision record in — one pipeline, shared by live and replay | ✅ |
 | Console shell — layout, sidebar, profile/engine cards, mode switch, `cane serve` | ✅ |
 | `auth/` — two-step login, TOTP, backup codes, account lockout, sessions, RBAC, audit log | ✅ |
-| Console screens — overview, risk, log, config, symbols | ✅ |
-| Console screens — report, users | ⬜ |
+| Console screens — overview, risk, log, config, symbols, report, per-pair page | ✅ |
+| Console screens — users | ⬜ |
 | Notifications — LINE and Telegram, the event emitter and the per-mode switches | ⬜ |
 
 The Action Zone acceptance gate is closed: `tests/fixtures/action_zone/` holds the TradingView
@@ -87,13 +88,13 @@ Requires Python 3.11+ (for stdlib `tomllib`) and [uv](https://docs.astral.sh/uv/
 
 ```bash
 uv sync --extra dev                          # install dependencies + pytest
-uv run --extra dev pytest -q -m "not db"     # 541 passing, no services needed
+uv run --extra dev pytest -q -m "not db"     # 567 passing, no services needed
 ```
 
 `pytest` is an optional dependency — skipping `uv sync --extra dev` and running a bare
 `uv run pytest` will fail.
 
-The full suite (972 tests) needs PostgreSQL; see [Database](#database) below. Tests that touch
+The full suite (1055 tests) needs PostgreSQL; see [Database](#database) below. Tests that touch
 persistence carry the `db` marker so the rest still runs anywhere.
 
 The test suite never touches the network: the exchange client is injected everywhere, never
@@ -109,7 +110,7 @@ there is no ORM.
 docker compose up -d db                                   # postgres:16-alpine on host port 5436
 cp .env.example .env                                      # CANE_DB_DSN lives here
 uv run --env-file .env alembic upgrade head
-uv run --env-file .env --extra dev pytest -q              # 972 tests
+uv run --env-file .env --extra dev pytest -q              # 1055 tests
 ```
 
 Host port **5436**, not 5432 — the dev machine already has other Postgres containers on 5432 and
