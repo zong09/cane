@@ -21,6 +21,7 @@
       {{ label }}
       {% if key == "chart" and h.long_signal %}<span class="sd__dot sd__dot--long"></span>{% endif %}
       {% if key == "chart" and h.short_signal %}<span class="sd__dot sd__dot--short"></span>{% endif %}
+      {% if key == "coldstart" and cs_eligible %}<span class="sd__dot sd__dot--long"></span>{% endif %}
     </button>
     {% endfor %}
   </div>
@@ -30,6 +31,6 @@
   {% elif sd_tab == "chart" %}
     {% include "partials/symbol_chart.html" %}
   {% else %}
-  <div class="sd__card sd__card--narrow"><div class="sd__note">แท็บนี้ยังไม่มีเนื้อ</div></div>
+    {% include "partials/symbol_coldstart.html" %}
   {% endif %}
 </div>

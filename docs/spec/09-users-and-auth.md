@@ -140,12 +140,13 @@ login ไม่ใช่ที่หน้าจอ ถ้า `totp_enrolled_ts 
 | `POST /api/{profile}/config/allow_short` — เหมือนกัน คนละฟิลด์ | `edit_profile` | **ต้อง** |
 | `POST /api/{profile}/symbols` · `DELETE …` | `edit_symbols` | **ต้อง** |
 | `POST /api/{profile}/positions/{symbol}/close` | `close_position_manual` | **ต้อง** |
-| `POST /api/{profile}/coldstart/{symbol}` | `choose_cold_start_route` | – |
+| `POST /api/{profile}/coldstart/{symbol}` — ยังไม่สร้าง ดู [10](10-engine-and-console.md) | `choose_cold_start_route` | – |
 | `POST /api/users` · `/users/{id}/role` · `/suspend` · `/unlock` · `/permissions` · `DELETE /api/sessions/{id}` | `manage_users` | **ต้อง** |
 | `POST /api/users/{id}/reset-2fa` | `reset_other_2fa` | **ต้อง** |
 | `GET /api/{profile}/records/export` | `export_records` | – |
 | `GET /api/{profile}/report` | `view_overview` | – |
 | `GET /api/{profile}/report/export` | `export_records` | – |
+| `GET /api/{profile}/symbols/{symbol}` | `read_decisions` | – |
 | `POST /api/session/mode` | — (ทุก role) | **ต้อง เมื่อเป้าหมายเป็น `live`** |
 
 > **step-up ของการแก้ config ย้ายไปอยู่ที่การเปิดใช้** (2026-09-16) · เดิม
