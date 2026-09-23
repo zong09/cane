@@ -390,3 +390,38 @@ def closed_trades(conn: Connection, profile: str) -> list[ClosedTrade]:
         )
         for row in conn.execute(stmt)
     ]
+
+
+@dataclass(frozen=True, slots=True)
+class Mark:
+    """จุดเข้า/ออกบนกราฟ · `side` เป็นฝั่งของไม้ ไม่ใช่ฝั่งของออเดอร์"""
+
+    bar_close_ts: int
+    leg: str
+    side: str
+    px: float
+
+
+def marks_since(
+    conn: Connection, profile: str, market: str, symbol: str, since_ts: int
+) -> list[Mark]:
+    """fill ของเหรียญหนึ่งตั้งแต่แท่ง `since_ts` — ให้หน้าเหรียญวาดจุดเปิด/ปิดของทั้งสองฝั่ง"""
+    stmt = (
+        select(fills_t.c.bar_close_ts, fills_t.c.leg, fills_t.c.trade_id, fills_t.c.px)
+        .where(
+            fills_t.c.profile == profile,
+            fills_t.c.market == market,
+            fills_t.c.symbol == store_symbol(symbol),
+            fills_t.c.bar_close_ts >= since_ts,
+        )
+        .order_by(fills_t.c.fill_ts, fills_t.c.id)
+    )
+    return [
+        Mark(
+            bar_close_ts=row.bar_close_ts,
+            leg=row.leg,
+            side=row.trade_id.split(":")[2],
+            px=price_from_db(row.px),
+        )
+        for row in conn.execute(stmt)
+    ]

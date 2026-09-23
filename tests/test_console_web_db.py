@@ -10,9 +10,11 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -26,6 +28,7 @@ from cane.auth import totp
 from cane.auth.matrix import DEFAULT_MATRIX
 from cane.config import load_profile
 from cane.db.repo import config as config_repo
+from cane.db.repo.bars import insert_bars
 from cane.db.repo import decisions as decisions_repo
 from cane.db.repo import killswitch as killswitch_repo
 from cane.db.repo import ledger
@@ -41,9 +44,13 @@ from cane.db.schema import (
     funding_charges,
     user_audit_log,
 )
+from cane.db.schema import bars as bars_table
 from cane.db.schema import decisions as decisions_table
 from cane.db.types import now_ms
 from cane.engine.state import PROFILES, STOPPED
+
+sys.path.insert(0, str(Path(__file__).parent))
+from golden import GOLDEN_DIR, load  # noqa: E402
 
 pytestmark = pytest.mark.db
 
@@ -1359,3 +1366,73 @@ def test_the_rail_links_each_pair_to_its_own_page(client: TestClient, paper_head
         page = client.get("/overview").text
 
     assert 'href="/symbols/BTC/USDT"' in page and 'href="/symbols/ETH/USDT"' in page
+
+
+def _golden_bars():
+    return [row.bar for row in load(GOLDEN_DIR / "BINANCE_BTCUSDT.P, 1D.csv")]
+
+
+#: แท่งที่เป็น long signal ตัวแรกของ fixture (ตัวเดียวกับ `BUY_1` ของ test_pipeline_db)
+_BUY_1 = 213
+
+
+@pytest.fixture
+def chart_bars(db: Connection, paper_head):
+    db.execute(bars_table.delete())
+    history = _golden_bars()[: _BUY_1 + 1]
+    insert_bars(db, "usdtm_perp", "BTC/USDT", "1d", history)
+    return history
+
+
+def test_the_chart_tab_draws_the_last_85_bars_with_their_zones(
+    db: Connection, client: TestClient, paper_head, chart_bars
+) -> None:
+    last = chart_bars[-1]
+    _bar_of(db, paper_head.id, bar_close_ts=last.close_ts, close_px=last.close,
+            zone="GREEN", state="BULLISH", long_signal=True, side="long",
+            skip_reason="risk_rejected")
+
+    with client:
+        page = client.get("/symbols/BTC/USDT").text
+
+    assert page.count('class="ch__body ') == 85
+    assert page.count("fill: var(--zone-") == 85
+    assert 'class="ch__fast"' in page and 'class="ch__slow"' in page
+    assert "แท่งนี้เป็นจุดสัญญาณฝั่ง long — เปิดไม้ที่แท่งถัดไป" in page
+    assert "ไม่ตรงกับที่บันทึกตอนตัดสิน" not in page
+    assert f"{last.close:,.2f}" in page
+
+
+def test_a_zone_that_disagrees_with_the_record_is_called_out(
+    db: Connection, client: TestClient, paper_head, chart_bars
+) -> None:
+    last = chart_bars[-1]
+    _bar_of(db, paper_head.id, bar_close_ts=last.close_ts, zone="RED")
+
+    with client:
+        page = client.get("/symbols/BTC/USDT?tab=chart").text
+
+    assert "ไม่ตรงกับที่บันทึกตอนตัดสิน (RED)" in page
+    # กล่องผลอ่านสัญญาณจากแถว ไม่ใช่จากที่คำนวณใหม่
+    assert "แท่งล่าสุดไม่ใช่จุดสัญญาณทั้งสองฝั่ง" in page
+
+
+def test_the_chart_marks_where_trades_opened(
+    db: Connection, client: TestClient, paper_head, chart_bars
+) -> None:
+    bar = chart_bars[-10]
+    trade = trade_id_of("usdtm_perp", "BTC/USDT", "long", bar.close_ts)
+    ledger.record_fill(db, Fill(
+        profile="paper", market="usdtm_perp", symbol="BTC/USDT", trade_id=trade, leg="open",
+        fill_ts=bar.close_ts, px=bar.close, qty=0.01, client_order_id="mk",
+        order_type="market", reduce_only=False, position_qty_after=0.01,
+        bar_close_ts=bar.close_ts, dedupe_key=dedupe_key_of("mk"), ref_px=bar.close,
+        fee_quote=Decimal("0"), fee_ccy="USDT", leverage=1.0,
+    ))
+
+    with client:
+        page = client.get("/symbols/BTC/USDT").text
+
+    assert 'class="ch__mark ch__mark--open-long"' in page
+    # ไม้ที่ยังถือทำให้ header ไม่ใช่ FLAT
+    assert "LONG 0.01" in page

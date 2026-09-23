@@ -27,6 +27,8 @@
 
   {% if sd_tab == "decision" %}
     {% include "partials/symbol_decision.html" %}
+  {% elif sd_tab == "chart" %}
+    {% include "partials/symbol_chart.html" %}
   {% else %}
   <div class="sd__card sd__card--narrow"><div class="sd__note">แท็บนี้ยังไม่มีเนื้อ</div></div>
   {% endif %}
