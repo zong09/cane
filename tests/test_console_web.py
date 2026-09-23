@@ -14,6 +14,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from cane.api import symbols as sym_routes
 from cane.api.app import create_app
 from cane.api.deps import get_sup, signed_in
 from cane.auth import service as auth_service
@@ -335,9 +336,9 @@ def test_the_rail_renders_both_groups_and_every_menu_item() -> None:
     assert "OWNER" in page and "นพ" in page  # ตัวย่อของ "นภัส พ."
 
 
-#: `config` (21) `overview` (22) `risk` (23) `log` (24) มีเนื้อของตัวเองแล้ว
-#: ที่เหลือยังเป็นโครง
-@pytest.mark.parametrize("slug", ["symbols", "report", "users"])
+#: `config` (21) `overview` (22) `risk` (23) `log` (24) `symbols` (26) มีเนื้อของ
+#: ตัวเองแล้ว ที่เหลือยังเป็นโครง
+@pytest.mark.parametrize("slug", ["report", "users"])
 def test_every_menu_item_opens_even_though_its_body_belongs_to_a_later_ticket(
     slug: str
 ) -> None:
@@ -1727,3 +1728,76 @@ def test_every_chip_of_the_journal_is_on_the_page_even_with_nothing_to_count() -
     ):
         assert label in page
     assert "ยังไม่มีบันทึกในโปรไฟล์นี้" in page
+
+
+# ── คู่เหรียญ · ใบ 26 — ส่วนที่คิดได้โดยไม่ต้องมีฐาน ────────────────────────
+
+
+def test_the_form_refuses_a_boolean_it_does_not_recognise() -> None:
+    """`allow_short = "on"` ของ checkbox ต้องดัง ไม่ใช่เงียบแล้วกลายเป็น false
+
+    ค่าที่กลายเป็น `False` เงียบๆ กับช่องนี้แปลว่า "ไม่เปิดฝั่ง short" ซึ่งเป็นคำตอบ
+    ที่คนกรอกไม่ได้สั่ง
+    """
+    block, problems = sym_routes._block(
+        {"symbol": "SOL/USDT", "market": "usdtm_perp", "bucket_quote_long": "50",
+         "leverage": "2", "allow_short": "on", "enabled": "true"}
+    )
+
+    assert [p.field_path for p in problems] == ["allow_short"]
+    assert "allow_short" not in block
+
+
+def test_the_numbers_reach_the_validator_as_numbers_not_strings() -> None:
+    """`cross_checks()` ใช้ `_is_number()` ซึ่งคืน False ให้สตริง — กฎ leverage จะเงียบ"""
+    block, problems = sym_routes._block(
+        {"symbol": "SOL/USDT", "market": "usdtm_perp", "bucket_quote_long": "50.5",
+         "bucket_quote_short": "", "leverage": "2", "allow_short": "false", "enabled": "true"}
+    )
+
+    assert problems == []
+    assert block["bucket_quote_long"] == 50.5
+    assert block["leverage"] == 2.0
+    assert block["allow_short"] is False
+    # ช่องที่เว้นว่างได้และถูกเว้น = `None` ไม่ใช่หายไปจาก dict
+    assert block["bucket_quote_short"] is None
+
+
+def test_a_missing_required_field_is_dropped_so_pydantic_reports_it_as_missing() -> None:
+    """ช่องว่างของค่าที่บังคับต้องกลายเป็น "ขาด" ไม่ใช่ "ไม่ใช่ตัวเลข" (ใบ 21 §_coerce)"""
+    block, problems = sym_routes._block(
+        {"symbol": "", "market": "usdtm_perp", "bucket_quote_long": "",
+         "leverage": "2", "allow_short": "false", "enabled": "true"}
+    )
+
+    assert problems == []
+    assert "symbol" not in block and "bucket_quote_long" not in block
+
+
+def test_editing_replaces_the_row_and_adding_appends_one() -> None:
+    rows = [{"symbol": "BTC/USDT"}, {"symbol": "ETH/USDT"}]
+
+    edited, index = sym_routes._upserted(rows, {"symbol": "BTC/USDT", "leverage": 2.0}, original="BTC/USDT")
+    assert index == 0
+    assert [r["symbol"] for r in edited] == ["BTC/USDT", "ETH/USDT"]
+
+    renamed, index = sym_routes._upserted(rows, {"symbol": "XRP/USDT"}, original="ETH/USDT")
+    assert index == 1
+    assert [r["symbol"] for r in renamed] == ["BTC/USDT", "XRP/USDT"]
+
+    added, index = sym_routes._upserted(rows, {"symbol": "SOL/USDT"}, original="")
+    assert index == 2
+    assert [r["symbol"] for r in added] == ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+
+
+def test_only_the_row_being_edited_gets_its_problems_placed_on_the_form() -> None:
+    """ฟอร์มนี้มีช่องของเหรียญเดียว · ปัญหาของแถวอื่นไม่มีช่องให้แขวน"""
+    mine = Problem(("symbols", 1, "leverage"), "เกิน max_leverage", "")
+    someone_else = Problem(("symbols", 0, "leverage"), "เกิน max_leverage", "")
+    plain = Problem(("market",), "ค่าที่ช่องนี้ไม่รับ", "")
+
+    placed, unplaced = sym_routes._placed([mine, someone_else, plain], index=1)
+
+    assert set(placed) == {"leverage", "market"}
+    assert placed["leverage"] is mine
+    assert unplaced == (someone_else,)

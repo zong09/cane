@@ -31,14 +31,18 @@ Full specs live in [docs/README.md](docs/README.md); the reasoning behind each c
 Specs and ADRs are complete. The code is being built out in the order laid out by the
 [runtime pipeline](docs/spec/08-runtime-pipeline.md).
 
-The bot has an entry point now: `cane engine run --profile {live|paper}` is the per-profile
-loop, normally started by the console's supervisor rather than by hand. The trading pipeline
-inside that loop is still being built.
+The bot runs end to end now: `cane engine run --profile {live|paper}` is the per-profile loop,
+normally started by the console's supervisor rather than by hand. Every closed bar goes through
+the fourteen steps of the runtime pipeline — Action Zone, the Judge, sizing, the risk gates, the
+order — and lands as one decision row. `paper` runs that path against a simulated venue; `live`
+sends the orders through ccxt, and both profiles still ship with `dry_run = true`. Replay runs
+the same pipeline over past bars in a scratch database ([ADR 29](docs/decisions.md)).
 
 `cane serve` brings the console up. The shell is in place — layout, the profile/engine cards,
 and the live↔paper mode switch — and it now sits behind two-step authentication: password,
 then a TOTP code, with a fresh code required again for anything that controls the engine or
-switches to `live`. Each screen's body is still to come.
+switches to `live`. Four screens have their bodies — overview, risk, log and config; symbols,
+report and users are still the shell's placeholder.
 
 First run, after `alembic upgrade head`:
 
@@ -59,17 +63,19 @@ account stays unusable until you do — there is no path into the console that s
 | `db/repo/decisions.py` — the per-bar decision record and its six child tables | ✅ |
 | Action Zone computation → `zone`, `state`, `long_signal`, `short_signal` — verified bar-by-bar against a TradingView export | ✅ |
 | `engine/` — per-profile subprocess, heartbeat, and the console-side supervisor (start/stop/status) | ✅ |
-| Confluence Judge (LLM weighing the supporting factors) | ⬜ |
-| Position sizing + the discipline rules + cold start | ⬜ |
-| Risk limits, kill switch, broker, reconciliation | ⬜ |
-| Per-bar-close runner that fills the decision record in | ⬜ |
+| Confluence Judge — the LLM weighing the supporting factors, its verdict cache, and the two adapters | ✅ |
+| Position sizing + the discipline rules + cold start + late entry | ✅ |
+| Risk limits, kill switch, broker (paper and ccxt), reconciliation | ✅ |
+| Per-bar-close runner that fills the decision record in — one pipeline, shared by live and replay | ✅ |
 | Console shell — layout, sidebar, profile/engine cards, mode switch, `cane serve` | ✅ |
 | `auth/` — two-step login, TOTP, backup codes, account lockout, sessions, RBAC, audit log | ✅ |
-| Console screens and notifications | ⬜ |
+| Console screens — overview, risk, log, config, symbols | ✅ |
+| Console screens — report, users | ⬜ |
+| Notifications — LINE and Telegram, the event emitter and the per-mode switches | ⬜ |
 
-🟡 Action Zone is ported and unit-tested, but its acceptance gate has not run: closing it
-requires a bar-by-bar match against a TradingView export of the same symbol, and nobody has
-that file yet. Until it passes, the module must not be relied on downstream.
+The Action Zone acceptance gate is closed: `tests/fixtures/action_zone/` holds the TradingView
+export and `tests/test_action_zone.py` matches it bar by bar — both EMAs, all six zones, and the
+two signals — with `tests/test_trailing.py` doing the same for the trailing stop.
 
 The data layer **never reads an API key**. Both OHLCV and funding rate are public endpoints, so the
 rule "the paper profile never touches credentials" holds structurally rather than by the author's
@@ -81,13 +87,13 @@ Requires Python 3.11+ (for stdlib `tomllib`) and [uv](https://docs.astral.sh/uv/
 
 ```bash
 uv sync --extra dev                          # install dependencies + pytest
-uv run --extra dev pytest -q -m "not db"     # 349 passing, no services needed
+uv run --extra dev pytest -q -m "not db"     # 541 passing, no services needed
 ```
 
 `pytest` is an optional dependency — skipping `uv sync --extra dev` and running a bare
 `uv run pytest` will fail.
 
-The full suite (601 tests) needs PostgreSQL; see [Database](#database) below. Tests that touch
+The full suite (972 tests) needs PostgreSQL; see [Database](#database) below. Tests that touch
 persistence carry the `db` marker so the rest still runs anywhere.
 
 The test suite never touches the network: the exchange client is injected everywhere, never
@@ -103,7 +109,7 @@ there is no ORM.
 docker compose up -d db                                   # postgres:16-alpine on host port 5436
 cp .env.example .env                                      # CANE_DB_DSN lives here
 uv run --env-file .env alembic upgrade head
-uv run --env-file .env --extra dev pytest -q              # 601 passing
+uv run --env-file .env --extra dev pytest -q              # 972 tests
 ```
 
 Host port **5436**, not 5432 — the dev machine already has other Postgres containers on 5432 and
@@ -189,7 +195,14 @@ src/cane/
   data/         OHLCV, funding rate, ccxt client per market (writes to `bars` / `funding_observations`)
   db/           engine (role per connection), schema, type boundary
     repo/       one module per domain; returns the project's frozen dataclasses
-  engine/       per-profile subprocess, heartbeat, and the console-side supervisor
+  indicators/   Action Zone, the trailing stop, and the features fed to the Judge
+  confluence/   the Judge — contract, prompts, verdict cache, one client per gateway
+  sizing/       the size matrix: signal strength and confluence → percent of the bucket
+  rules/        the discipline rules, the flip protocol, and late entry
+  risk/         the three risk gates and the kill switch
+  execution/    the broker contract, the paper venue, the ccxt broker, reconciliation
+  engine/       per-profile subprocess, heartbeat, the console-side supervisor,
+                and the per-bar pipeline that live and replay share
   api/          the console's FastAPI app, routes, and the auth dependencies
   auth/         password and TOTP primitives, and the login/step-up decisions
   web/          Jinja2 templates and static assets for the console

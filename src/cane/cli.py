@@ -2,6 +2,7 @@
 
 `cane db seed` พาไฟล์ TOML เดิมเข้า DB ครั้งแรก · `cane engine run` เป็นลูปต่อ profile
 ที่ supervisor เรียก **ไม่ใช่คำสั่งที่คนพิมพ์เอง** · `cane serve` ยกคอนโซลขึ้น
+`cane data import-bars` นำไฟล์ export รายวันของ TradingView เข้าตาราง `bars` · `cane replay run` เดินไปป์ไลน์ย้อนหลัง
 ไฟล์นี้ตั้งใจเล็กและไม่มีตรรกะของระบบอยู่ข้างใน — ตรรกะอยู่ใน repository กับ validator
 
 seed ใช้ role **console** ไม่ใช่ engine เพราะการเขียน config เป็นสิทธิ์ของคน
@@ -16,12 +17,16 @@ import logging
 import signal
 import sys
 from collections.abc import Sequence
+from datetime import datetime, timezone
+from pathlib import Path
 
 from cane import log
 from cane.config.validate import ConfigError, load_profile
+from cane.data.csv_import import read_tradingview_csv
 from cane.db.engine import make_engine
 from cane.db.repo import config as config_repo
-from cane.engine import loop
+from cane.db.repo.bars import insert_bars
+from cane.engine import live, loop, replay
 
 #: config ไม่ผ่าน — แยกจาก 1 (ล้มเพราะอย่างอื่น) เพื่อให้สคริปต์ที่เรียกแยกได้ว่า
 #: "ค่าผิด" กับ "ต่อ DB ไม่ได้" ไม่ใช่เรื่องเดียวกัน
@@ -75,6 +80,88 @@ def _seed(args: argparse.Namespace) -> int:
     return 0
 
 
+def _import_bars(args: argparse.Namespace) -> int:
+    """นำไฟล์ export รายวันของ TradingView เข้าตาราง `bars`
+
+    ใช้ role **engine** เพราะแท่งราคาเป็นข้อมูลที่บอทเขียน (ดู GRANT ของ 0001) ไม่ใช่ของ console ·
+    นำเข้าซ้ำได้ — แท่งที่มีอยู่แล้วถูกข้าม ไม่ถูกเขียนทับ (`insert_bars` เป็น `ON CONFLICT DO NOTHING`)
+    """
+    try:
+        bars = read_tradingview_csv(Path(args.csv), args.timeframe)
+    except (ValueError, FileNotFoundError) as exc:
+        print(exc, file=sys.stderr)
+        return 1
+
+    db = make_engine(role="engine")
+    try:
+        with db.begin() as conn:
+            inserted = insert_bars(
+                conn, args.market, args.symbol, args.timeframe, bars
+            )
+    finally:
+        db.dispose()
+
+    print(
+        f"นำเข้า {inserted} จากทั้งหมด {len(bars)} แท่ง "
+        f"({args.market} {args.symbol} {args.timeframe})"
+    )
+    return 0
+
+
+def _utc_ms(text: str) -> int:
+    """`YYYY-MM-DD` → epoch ms ของ 00:00 UTC วันนั้น"""
+    return int(datetime.strptime(text, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp() * 1000)
+
+
+def _judge_client(kind: str):
+    """(client, model_id) ของตัวตัดสินที่เลือก — ตัวจริงขาดค่าใน `.env` แล้วล้มดังตรงนี้ ไม่ใช่กลางรัน"""
+    if kind == "none":
+        judge = replay.NoJudge()
+        return judge, judge.model_id
+    if kind == "typesafe":
+        from cane.confluence.typesafe_client import TypesafeJudgeClient
+
+        judge = TypesafeJudgeClient.from_env()
+    else:
+        from cane.confluence.openai_client import OpenAICompatJudgeClient
+
+        judge = OpenAICompatJudgeClient.from_env()
+    return judge, judge.model_id
+
+
+def _replay_run(args: argparse.Namespace) -> int:
+    """เดินไปป์ไลน์ย้อนหลังบน scratch database — ดู `engine/replay.py` ว่าทำไมต้องเป็น scratch
+
+    สวม role `engine` เหมือนตัวจริง · `--from`/`--to` เป็นวันที่ (UTC) ของ **เวลาปิดแท่ง** รวมทั้งสองปลาย
+    """
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s · %(message)s")
+    try:
+        judge, model_id = _judge_client(args.judge)
+        db = make_engine(role="engine")
+    except (RuntimeError, ValueError) as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    try:
+        summary = replay.run_replay(
+            db=db,
+            profile=args.profile,
+            from_close_ts=_utc_ms(args.date_from),
+            to_close_ts=_utc_ms(args.date_to),
+            judge=judge,
+            model_id=model_id,
+        )
+    except replay.ReplayError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    finally:
+        db.dispose()
+    print(
+        f"replay เสร็จ: {summary.bars} แท่ง · บันทึกการตัดสินใจ {summary.decisions} แถว "
+        f"({', '.join(f'{m} {s}: {n}' for (m, s), n in sorted(summary.per_symbol.items()))})"
+    )
+    return 0
+
+
 def _engine_run(args: argparse.Namespace) -> int:
     """ลูปของ engine หนึ่ง profile — **ไม่ใช่คำสั่งที่คนพิมพ์เอง** supervisor เรียก
 
@@ -98,7 +185,17 @@ def _engine_run(args: argparse.Namespace) -> int:
 
     db = make_engine(role="engine")
     try:
-        return loop.run(args.profile, db=db, stopping=stopping)
+        return loop.run(
+            args.profile,
+            db=db,
+            stopping=stopping,
+            # ตัวตัดสินถูกสร้างที่แท่งแรก ไม่ใช่ตรงนี้ — ค่าที่ขาดใน `.env` ต้องกลายเป็น
+            # `blocked_reason` ที่คอนโซลอ่านได้ ไม่ใช่ process ที่ตายแล้วขึ้น `crashed`
+            # ซึ่งชี้ไปผิดที่ (spec/10 §4. รอบชีวิตของ engine)
+            on_bar=live.LiveRunner(
+                profile=args.profile, judge_factory=lambda: _judge_client(args.judge)
+            ),
+        )
     finally:
         db.dispose()
 
@@ -259,6 +356,12 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     engine_run.add_argument("--profile", required=True, choices=["live", "paper"])
+    engine_run.add_argument(
+        "--judge",
+        default="openai",
+        choices=["none", "typesafe", "openai"],
+        help="ตัวตัดสิน confluence · none = ทุกไม้ตกไป fallback ที่ base_pct (ADR 6)",
+    )
     engine_run.set_defaults(run=_engine_run)
 
     # คำสั่งชั้นเดียวตัวแรกของไฟล์นี้ (ที่เหลือเป็น group→command) · `serve console`
@@ -305,6 +408,52 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
     serve.set_defaults(run=_serve)
+
+    data_cmds = commands.add_parser(
+        "data", help="งานข้อมูลราคา"
+    ).add_subparsers(dest="command", required=True)
+
+    import_bars = data_cmds.add_parser(
+        "import-bars",
+        help="นำไฟล์ export รายวันของ TradingView เข้าตาราง `bars`",
+        description=(
+            "อ่านไฟล์ export รายวัน (คอลัมน์เวลามีแค่วัน) เป็นแท่งแล้วเขียนลงตาราง `bars` · "
+            "นำเข้าซ้ำได้ แท่งที่มีอยู่แล้วถูกข้าม · ใช้ role engine"
+        ),
+    )
+    import_bars.add_argument(
+        "--csv", required=True, metavar="PATH", help="ไฟล์ CSV ที่ export จาก TradingView"
+    )
+    import_bars.add_argument(
+        "--market", required=True, choices=["usdtm_perp", "spot"]
+    )
+    import_bars.add_argument(
+        "--symbol", required=True, help="รูปสั้น เช่น BTC/USDT"
+    )
+    import_bars.add_argument("--timeframe", default="1d")
+    import_bars.set_defaults(run=_import_bars)
+
+    replay_cmds = commands.add_parser("replay", help="เดินไปป์ไลน์ย้อนหลัง").add_subparsers(
+        dest="command", required=True
+    )
+    replay_run = replay_cmds.add_parser(
+        "run",
+        help="replay ช่วงเวลาหนึ่งผ่าน PaperBroker บน scratch database",
+        description=(
+            "ต้องตั้ง CANE_DB_DSN ไป database ที่ชื่อมีคำว่า replay (สร้าง migrate seed config นำเข้าแท่งก่อน) · "
+            "เขียนการตัดสินใจทุกแท่งลงตาราง decisions ของ database นั้น · รันซ้ำใน database เดิมไม่ได้"
+        ),
+    )
+    replay_run.add_argument("--profile", default="paper", choices=["paper"])
+    replay_run.add_argument("--from", dest="date_from", required=True, metavar="YYYY-MM-DD")
+    replay_run.add_argument("--to", dest="date_to", required=True, metavar="YYYY-MM-DD")
+    replay_run.add_argument(
+        "--judge",
+        default="none",
+        choices=["none", "typesafe", "openai"],
+        help="none = ไม่มี LLM ทุกไม้ตกไป fallback ที่ base_pct · typesafe/openai อ่านค่าจาก .env",
+    )
+    replay_run.set_defaults(run=_replay_run)
 
     return parser
 

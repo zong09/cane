@@ -16,6 +16,13 @@ Slow Trail ทันทีที่เปิดไม้ (spec/03) ถ้า bro
 **ทำไมมี `open_orders`** — reconcile ต้องเห็น stop ที่ค้างอยู่ ไม่ใช่ดูแค่ position
 ไม้ที่มี stop กับไม้ที่ stop หลุดไปแล้วมี position เหมือนกันทุกประการ (spec/06)
 
+**ทำไมมี `maintenance_margin`** — ขั้น 12 ตรวจ `min_liq_buffer_pct` กับไม้ที่ **ยังไม่เปิด**
+จึงถามราคา liquidation จาก `positions()` ไม่ได้ ต้องคำนวณเอง และสูตรต้องการอัตรา
+maintenance margin · ค่านั้นเป็น**ของปลายทาง** ไม่ใช่ของ config: `cross_checks()` ปฏิเสธ
+`maintenance_margin_pct` ใน profile ที่ `broker.kind = "ccxt"` ตรงๆ ด้วยเหตุผลว่า "ราคา
+liquidation มาจาก exchange" · ถ้าไม่มีเมธอดนี้ ไปป์ไลน์บน live จะได้ `None` ทุกครั้งแล้ว
+ด่าน fail-closed จะปฏิเสธไม้ perp ทุกไม้ตลอดไป
+
 **หนึ่ง broker ต่อหนึ่งตลาด** — ท่าเดียวกับ `make_client(exchange, market)` ของชั้น
 ข้อมูล เหตุผลตรงกัน: กระเป๋าเงินของ futures กับของ spot เป็นคนละใบ `balance()` จึง
 เป็นค่าต่อตลาดอยู่แล้ว · และมันทำให้ `Order` ไม่ต้องพก `market` ไปทุกใบเพียงเพื่อให้
@@ -225,3 +232,5 @@ class Broker(Protocol):
     def set_leverage(self, symbol: str, leverage: float) -> None: ...
 
     def set_margin_mode(self, symbol: str, mode: str, position_mode: str) -> None: ...
+
+    def maintenance_margin(self, symbol: str, notional: float) -> float | None: ...

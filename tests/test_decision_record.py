@@ -312,6 +312,30 @@ def test_a_dry_run_bar_that_sent_an_entry_is_refused():
         )
 
 
+def test_a_paper_bar_marked_dry_run_may_still_enter_because_paper_only_simulates():
+    """ADR 31 — `dry_run` ของ paper บังคับเป็น `true` แต่ไม่กั้น `PaperBroker` (ไม่มีทางส่งจริงอยู่แล้ว)
+
+    ถ้าแท่งแบบนี้ถูกปฏิเสธ replay บน paper จะเปิดไม้ไม่ได้เลย และไม่มีอะไรทดสอบ flip กับ stop
+    """
+    validate_record(
+        record(
+            profile="paper",
+            dry_run=True,
+            skip_reason=None,
+            side="long",
+            orders=(entry_order(),),
+        )
+    )
+
+
+def test_a_live_bar_marked_dry_run_is_still_refused_when_an_entry_was_sent():
+    """ข้อยกเว้นของ paper ต้องไม่รั่วไปถึง live — นี่คือสิ่งที่ตัวตรวจนี้มีไว้จับ (ADR 31)"""
+    with pytest.raises(ValueError, match="ห้ามส่งคำสั่งจริง"):
+        validate_record(
+            record(profile="live", dry_run=True, skip_reason=None, orders=(entry_order(),))
+        )
+
+
 # ── ทศนิยม: ปฏิเสธ ไม่ปัด ────────────────────────────────────────────────────
 
 

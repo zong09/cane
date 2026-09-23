@@ -19,7 +19,12 @@
         มาแทน modal ซึ่งคือการปิด modal · ล้มเหลวได้ modal ใบเดิมพร้อมกล่องเตือน
         ทั้งสองทางเป็นการ swap เป้าเดียว ไม่ต้องมี JS มาช่วยปิดหน้าต่าง
       #}
-      <form hx-post="{{ action }}" hx-target="#modal-slot" hx-swap="innerHTML">
+      {#
+        `method` เว้นได้ = `post` · ใบ 26 ลบเหรียญด้วย `DELETE` ตาม URL ที่ spec/10
+        เป็นเจ้าของ · รหัสเดินทางไปใน body เหมือนทุก action เพราะ `base.html` ตัด
+        `delete` ออกจาก `methodsThatUseUrlParams` แล้ว — ดูเหตุผลที่ meta ตัวนั้น
+      #}
+      <form hx-{{ method | default("post") }}="{{ action }}" hx-target="#modal-slot" hx-swap="innerHTML">
         {# ค่าที่ action นั้นต้องรู้แต่คนไม่ต้องพิมพ์ (ใบ 23: สวิตช์ส่งค่าที่ต้องการ) #}
         {% for name, value in hidden | default(()) %}
         <input type="hidden" name="{{ name }}" value="{{ value }}">

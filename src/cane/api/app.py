@@ -26,6 +26,7 @@ from cane.api import overview as overview_routes
 from cane.api import pages
 from cane.api import risk as risk_routes
 from cane.api import session
+from cane.api import symbols as symbols_routes
 from cane.api.deps import LOGIN_PATH, StepUpFailed
 from cane.api.templating import templates
 from cane.api.templating import STATIC
@@ -65,6 +66,7 @@ def create_app(
     app.include_router(overview_routes.router)
     app.include_router(log_routes.router)
     app.include_router(risk_routes.router)
+    app.include_router(symbols_routes.router)
     app.include_router(session.router)
 
     # `StepUpFailed` สืบทอดจาก `HTTPException` และ Starlette เลือก handler โดยไล่ตาม

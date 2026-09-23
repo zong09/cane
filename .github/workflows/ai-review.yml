@@ -1,0 +1,86 @@
+# AI review บน PR — เรียก reusable workflow จาก zong09/ai-pr-review
+#
+# checklist ด้านล่างเรียงตาม "ความเสี่ยงจริงใน repo นี้" ไม่ใช่เรียงตามทฤษฎี
+# สำรวจโค้ดเมื่อ 2026-09-21 พบว่า:
+#   - text() ถูกใช้ 47 จุด  -> raw SQL เยอะ ข้อ SQL จึงมาก่อน
+#   - Decimal ปรากฏ 24 บรรทัดใน 135 ไฟล์ -> ยังใช้ไม่ทั่ว float ปนเงินเป็นความเสี่ยงจริง
+#   - async def มีแค่ 2 ไฟล์ -> missing await น้ำหนักน้อย จึงอยู่ท้ายสุด
+#   - exchange = binance ผ่าน ccxt -> idempotency ของออร์เดอร์สำคัญ
+#   - มีโมดูล sizing/ risk/ execution แยกชัด -> หารศูนย์ในสูตรคำนวณขนาดโพสิชันเป็นจุดเสี่ยง
+#
+# ⚠️ diff ของทุก PR ถูกส่งออกไปที่ QwenCloud (Alibaba) — เป็นการแลกที่ตั้งใจแล้ว
+
+name: AI Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  ai-review:
+    uses: zong09/agent-pr-review/.github/workflows/pr-review.yml@v1
+    secrets:
+      DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+    with:
+      # diff ของ repo นี้ใหญ่กว่า 40000 (ค่า default) — PR #31 ถูกข้ามไป 10 ไฟล์
+      # รวมถึง execution/broker.py กับ engine/live.py ซึ่งเป็นหัวใจของ PR นั้นพอดี
+      # และมันข้ามแบบเงียบ ๆ สังเกตได้จากบรรทัด "skipped due to token budget" ในรีวิวเท่านั้น
+      # flash รับ input ได้ถึงราว 991k จึงเหลือที่เยอะ แต่ยิ่งใหญ่ยิ่งช้าและกิน credit มากขึ้น
+      # diff ของ PR นี้วัดได้ 43,599 tokens จึงตั้ง 64000 ให้พอและเผื่อ
+      # ⚠️ ต้องตั้งคู่กันเสมอ — max_model_tokens (default 32000) ครอบทับตัวล่าง
+      #    ตั้งตัวล่างอย่างเดียวไม่มีผล เพราะ get_max_tokens() ทำ min(บน, ล่าง)
+      custom_model_max_tokens: 64000
+      max_model_tokens: 64000
+
+      # วัดจริง 2026-09-22 · diff 167KB (~44k tokens) · 3 รอบต่อ model
+      #   qwen3.8-flash  median 569s · SECURITY_STATUS 2/3  <- Gate ตายเงียบ 1 ใน 3
+      #   qwen3.8-max    median 739s · SECURITY_STATUS 3/3
+      # flash ทำตามรูปแบบได้ 5/5 ตอน diff เล็ก แต่เสื่อมลงเมื่อ prompt ใหญ่
+      # ราคาต่างกัน ~13 เท่า คิดเป็น ~$0.11 ต่อรีวิว เทียบกับ ~$0.007
+      # ⚠️ n=3 เท่านั้น ตัวเลข compliance ยังหยาบ ไม่พอจะล้มข้อกำหนดด้านล่าง
+      # ═══ ข้อกำหนด: ใช้ qwen3.8-flash เท่านั้น ห้ามเปลี่ยน ═══
+      # เจ้าของ repo กำหนดไว้ชัดเจน (2026-09-23) แม้ผลวัดจะเคยชี้ว่า max
+      # ทำตามรูปแบบ SECURITY_STATUS ได้ดีกว่า (3/3 เทียบกับ 2/3) ก็ไม่ใช่เหตุผลให้เปลี่ยน
+      # ถ้ารีวิวมีปัญหา ให้ไปแก้ที่ตัวแปรอื่น เช่น ai_timeout, token budget หรือขนาด PR
+      model: dashscope/qwen3.8-flash
+
+      # ตั้งจากค่าที่วัดได้ (max ช้าสุด 741.6s) ไม่ได้ใช้สูตร ×2.5 ของสคริปต์
+      # เพราะสูตรนั้นออกแบบมาเผื่อกรณีแกว่งมาก ซึ่งที่ขนาดนี้แกว่งแค่ 1.07 เท่า
+      ai_timeout: 1200
+      review_timeout_minutes: 30
+      job_timeout_minutes: 50
+      # zong09 เป็นเจ้าของ repo จึงได้ OWNER อัตโนมัติ
+      # ส่วน pchayphiphitthaphan เป็นบัญชีอีกใบของคนเดียวกัน ที่ไม่ได้เป็น collaborator
+      # จึงได้ author_association = CONTRIBUTOR แล้วถูกตัวกรองตัดทิ้ง
+      # ถ้าเลิกคอมเมนต์ด้วยบัญชีนี้แล้ว ลบบรรทัดล่างทิ้งได้เลย
+      trusted_comment_authors: "pchayphiphitthaphan"
+      extra_instructions: |
+        โปรเจกต์นี้เป็น trading bot ภาษา Python ที่ส่งคำสั่งซื้อขายด้วยเงินจริง
+        บน Binance ผ่าน ccxt ใช้ SQLAlchemy Core และมี raw SQL ผ่าน text() จำนวนมาก
+        ตรวจตามรายการนี้ทีละข้อ รายงานเฉพาะข้อที่พบจริง พร้อมชื่อฟังก์ชันและบรรทัด
+        เรียงตามความสำคัญ ข้อต้น ๆ สำคัญที่สุด:
+        (1) SQL ที่ประกอบด้วย f-string หรือการต่อ string แทนการ bind parameter
+            รวมถึงการส่งค่าจากภายนอกเข้า text() โดยตรง
+        (2) ใช้ float กับราคา จำนวนเงิน ขนาดโพสิชัน หรือค่าธรรมเนียม แทน Decimal
+            รวมถึงการแปลง Decimal เป็น float ก่อนคำนวณ ซึ่งทำให้เสียความแม่นยำเงียบ ๆ
+        (3) หารด้วยค่าที่อาจเป็นศูนย์ เช่น ระยะ stop ราคา หรือ len() ของลิสต์ว่าง
+            โดยเฉพาะในโมดูล sizing และ risk
+        (4) except ที่ว่างเปล่าหรือกลืน exception โดยไม่ log และไม่ rethrow
+            โดยเฉพาะรอบการส่งออร์เดอร์และการบันทึกสถานะโพสิชัน
+        (5) ส่งออร์เดอร์โดยไม่มี clientOrderId หรือกลไก idempotency อื่น
+            ทำให้ retry หรือ reconnect แล้วยิงออร์เดอร์ซ้ำได้
+        (6) ตัดสินใจเทรดจากแท่งเทียนที่ยังไม่ปิด แทนที่จะใช้แท่งที่ปิดแล้ว
+        (7) อ่านแล้วเขียนสถานะโพสิชันโดยไม่มี transaction หรือ lock ทำให้เกิด race
+        (8) ค่า secret เช่น API key ของ exchange ที่ hardcode ในโค้ดหรือใน config ที่ commit
+        (9) เรียก coroutine โดยไม่ใส่ await ก่อนนำผลไปเปรียบเทียบหรือคำนวณ
+
+        ความเสี่ยงที่ประเมินและยอมรับแล้วสำหรับโปรเจกต์นี้ ไม่ต้องรายงาน:
+        การเรียก reusable workflow จาก repo ของเจ้าของคนเดียวกัน ที่ปักหมุดด้วย tag หรือ commit SHA
+        และการส่ง secret ให้ workflow นั้น ถือว่ายอมรับได้
+        แต่ยังต้องรายงานถ้าพบ: เรียก workflow หรือ action ของเจ้าของรายอื่น
+        หรืออ้างอิงด้วย ref ที่เปลี่ยนได้อย่าง @main หรือชื่อ branch
+        หรือส่ง secret ให้ปลายทางที่ไม่จำเป็นต้องใช้

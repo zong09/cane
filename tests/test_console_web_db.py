@@ -824,3 +824,267 @@ def test_the_journal_opens_even_when_the_profile_has_no_active_config(
     assert response.status_code == 200
     assert "var(--zone-green)" in response.text
     assert "ยังไม่มีบันทึก" not in response.text
+
+
+# ── คู่เหรียญ · ใบ 26 ─────────────────────────────────────────────────────────
+
+
+def a_pair(**over: str) -> dict[str, str]:
+    """ฟอร์มของบล็อก `[[symbols]]` หนึ่งบล็อก ที่ผ่านทุกกฎ — เทสต์แต่ละใบทับทีละช่อง"""
+    data = {
+        "original": "",
+        "symbol": "SOL/USDT",
+        "market": "usdtm_perp",
+        "bucket_quote_long": "50.0",
+        "bucket_quote_short": "",
+        "leverage": "2.0",
+        "allow_short": "false",
+        "enabled": "true",
+    }
+    return data | over
+
+
+def latest(db: Connection, profile: str = "paper"):
+    """เวอร์ชันล่าสุดของโปรไฟล์ · `versions()` เรียงใหม่ก่อนเก่า"""
+    return config_repo.versions(db, profile)[0]
+
+
+def test_the_symbols_page_lists_the_pairs_of_the_active_version(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    """เกณฑ์ข้อแรกของใบ 26 — หน้านี้ต้องมีเนื้อ ไม่ใช่ placeholder ของใบ 19"""
+    seeded(db, "paper")
+
+    with client:
+        response = client.get("/symbols")
+
+    assert response.status_code == 200
+    assert "เนื้อหน้านี้เป็นของใบ" not in response.text
+    assert "BTC/USDT" in response.text
+    assert "ETH/USDT" in response.text
+
+
+def test_adding_a_pair_writes_a_draft_that_carries_it_and_leaves_the_pointer_alone(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    """spec/10 §เขียน ให้แถวนี้ "เวอร์ชันใหม่" เฉยๆ — ประโยคเลื่อนตัวชี้มีเฉพาะสองแถวสวิตช์"""
+    active = seeded(db, "paper")
+
+    with client:
+        response = client.post("/api/paper/symbols", data=a_pair() | right_now_code())
+
+    assert response.status_code == 200
+    draft = latest(db)
+    assert draft.id != active.id
+    assert draft.is_active is False
+    assert config_repo.active_version(db, "paper").id == active.id
+    names = [s.symbol for s in config_repo.settings_of(db, draft.id).symbols]
+    assert names == ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+
+
+def test_a_leverage_over_the_ceiling_is_refused_before_the_code_is_spent(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    """กฎเดียวที่ฐานเขียนเป็น CHECK ไม่ได้ (spec/07) — และเป็นกฎที่เงียบถ้าไม่แปลงค่าก่อน
+
+    รหัสที่ส่งมาผิด แต่คำตอบต้องพูดถึง `leverage` ไม่ใช่พูดถึงรหัส — ด่านที่ไม่ต้องใช้
+    รหัสอยู่ก่อนด่านรหัสเสมอ
+    """
+    seeded(db, "paper")
+    before = len(config_repo.versions(db, "paper"))
+
+    with client:
+        page = client.post(
+            "/api/paper/symbols",
+            data=a_pair(leverage="9.0") | {"step_up_code": "000000"},
+        ).text
+
+    assert "เกิน max_leverage" in page
+    assert "รหัสยังไม่ถูกใช้" in page
+    assert len(config_repo.versions(db, "paper")) == before
+
+
+def test_a_spot_pair_cannot_carry_the_short_side(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    """สามข้อของ spot เป็น CHECK ที่ฐานอยู่แล้ว — ฟอร์มต้องปฏิเสธก่อนถึง INSERT
+
+    ที่ต้องมีเทสต์เพราะคำตอบของ Postgres บอกแค่ชื่อ constraint คนกรอกฟอร์มจะไม่รู้ว่า
+    ช่องไหนผิด และคำขอนั้นจะกลายเป็น 500 แทนที่จะเป็นรายการที่ต้องแก้
+    """
+    seeded(db, "paper")
+    before = len(config_repo.versions(db, "paper"))
+
+    with client:
+        page = client.post(
+            "/api/paper/symbols",
+            data=a_pair(market="spot", allow_short="true", bucket_quote_short="10.0", leverage="1.0")
+            | right_now_code(),
+        ).text
+
+    assert "เปิด allow_short ไม่ได้" in page
+    assert len(config_repo.versions(db, "paper")) == before
+
+
+def test_editing_a_pair_replaces_its_row_instead_of_adding_a_second_one(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    seeded(db, "paper")
+
+    with client:
+        client.post(
+            "/api/paper/symbols",
+            data=a_pair(original="BTC/USDT", symbol="BTC/USDT", bucket_quote_long="500.0",
+                        bucket_quote_short="60.0", allow_short="true", leverage="2.0")
+            | right_now_code(),
+        )
+
+    symbols = config_repo.settings_of(db, latest(db).id).symbols
+    assert [s.symbol for s in symbols] == ["BTC/USDT", "ETH/USDT"]
+    assert float(symbols[0].bucket_quote_long) == 500.0
+
+
+def test_renaming_a_pair_replaces_the_row_it_came_from(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    """ชื่อใหม่ต้องทับแถวเดิม ไม่ใช่เพิ่มแถวที่สองแล้วทิ้งของเก่าไว้เดินต่อ"""
+    seeded(db, "paper")
+
+    with client:
+        client.post(
+            "/api/paper/symbols",
+            data=a_pair(original="ETH/USDT", symbol="XRP/USDT", market="spot",
+                        bucket_quote_long="80.0", leverage="1.0")
+            | right_now_code(),
+        )
+
+    names = [s.symbol for s in config_repo.settings_of(db, latest(db).id).symbols]
+    assert names == ["BTC/USDT", "XRP/USDT"]
+
+
+def test_typing_a_name_that_already_exists_replaces_that_row_and_says_so(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    """ชื่อเหรียญเป็นกุญแจของ `config_symbols` — แถวที่สองของชื่อเดิมมีไม่ได้อยู่แล้ว
+
+    ที่ต้องตรึงคือ**คำที่ตอบกลับ**: การทับค่าเดิมทั้งแถวต้องไม่ถูกเรียกว่า "เพิ่ม"
+    """
+    seeded(db, "paper")
+
+    with client:
+        page = client.post(
+            "/api/paper/symbols",
+            data=a_pair(symbol="BTC/USDT", bucket_quote_long="999.0", leverage="1.0")
+            | right_now_code(),
+        ).text
+
+    assert "ทับ BTC/USDT แล้ว" in page
+    symbols = config_repo.settings_of(db, latest(db).id).symbols
+    assert [s.symbol for s in symbols] == ["BTC/USDT", "ETH/USDT"]
+    assert float(symbols[0].bucket_quote_long) == 999.0
+
+
+def test_deleting_a_pair_writes_a_draft_without_it(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    active = seeded(db, "paper")
+
+    with client:
+        response = client.request(
+            "DELETE", "/api/paper/symbols/ETH/USDT", data=right_now_code()
+        )
+
+    assert response.status_code == 200
+    names = [s.symbol for s in config_repo.settings_of(db, latest(db).id).symbols]
+    assert names == ["BTC/USDT"]
+    assert config_repo.active_version(db, "paper").id == active.id
+
+
+def test_a_code_that_arrives_in_the_query_string_is_not_accepted(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    """ความลับใน query string ไปนอนอยู่ใน access log ของทุกชั้นที่คำขอผ่าน
+
+    ค่าตั้งต้นของ htmx ส่งค่าของ `DELETE` ไปทาง URL · ทางแก้อยู่ที่ `base.html`
+    (`methodsThatUseUrlParams` เหลือแค่ `get`) และปลายทาง **ต้องไม่รับทางนั้นด้วย**
+    ไม่งั้นการตั้งค่าที่ต้นทางจะเป็นแค่ข้อตกลงที่ใครก็ข้ามได้
+    """
+    seeded(db, "paper")
+    before = len(config_repo.versions(db, "paper"))
+
+    with client:
+        response = client.request(
+            "DELETE", "/api/paper/symbols/ETH/USDT", params=right_now_code()
+        )
+
+    assert "รหัส 6 หลักไม่ถูกต้อง" in response.text
+    assert len(config_repo.versions(db, "paper")) == before
+
+
+def test_the_console_tells_htmx_to_keep_delete_parameters_out_of_the_url(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    """ถ้าบรรทัดนี้หาย ปุ่มลบจะกลับไปส่งรหัสทาง query string เงียบๆ"""
+    seeded(db, "paper")
+
+    with client:
+        page = client.get("/symbols").text
+
+    assert '"methodsThatUseUrlParams":["get"]' in page
+
+
+def test_the_last_pair_cannot_be_deleted(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    """"ไม่มี symbol เลย" เป็นข้อหนึ่งของ spec/07 §กฎการตรวจ config
+
+    ตัวที่ปฏิเสธคือ `Settings.symbols` (`min_length=1`) ไม่ใช่ด่านที่หน้านี้ตั้งเอง —
+    เทสต์นี้ตรึงว่าเส้นทางของหน้านี้เดินผ่านตัวนั้นจริง
+    """
+    only_one = load_profile("config/paper.toml")
+    only_one = only_one.model_copy(update={"symbols": only_one.symbols[:1]})
+    config_repo.activate(db, config_repo.insert_version(db, only_one, source="toml_seed").id)
+    before = len(config_repo.versions(db, "paper"))
+
+    with client:
+        page = client.request(
+            "DELETE", "/api/paper/symbols/BTC/USDT", data=right_now_code()
+        ).text
+
+    assert "ไม่มี symbol ให้เทรดเลย" in page
+    assert len(config_repo.versions(db, "paper")) == before
+
+
+def test_a_wrong_code_writes_no_version_and_leaves_a_refused_row(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    """spec/09 §step-up TOTP — ด่านที่ไม่ผ่านต้องมีร่องรอย ไม่ใช่เงียบ"""
+    seeded(db, "paper")
+    before = len(config_repo.versions(db, "paper"))
+
+    with client:
+        page = client.post(
+            "/api/paper/symbols", data=a_pair() | {"step_up_code": "000000"}
+        ).text
+
+    assert "รหัส 6 หลักไม่ถูกต้อง" in page
+    assert len(config_repo.versions(db, "paper")) == before
+    row = db.execute(
+        select(user_audit_log).where(user_audit_log.c.action == "config.symbols_refused")
+    ).one()
+    assert row.step_up_verified is False
+
+
+def test_a_saved_pair_leaves_an_audit_row_marked_step_up_verified(
+    db: Connection, client: TestClient, clean_config: None
+) -> None:
+    seeded(db, "paper")
+
+    with client:
+        client.post("/api/paper/symbols", data=a_pair() | right_now_code())
+
+    row = db.execute(
+        select(user_audit_log).where(user_audit_log.c.action == "config.symbols")
+    ).one()
+    assert row.step_up_verified is True
+    assert "SOL/USDT" in row.target

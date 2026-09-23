@@ -27,7 +27,7 @@ perp มีค่า funding ทุก 8 ชั่วโมง ซึ่งเ�
 
 สอง profile โครงเดียวกัน โค้ดเส้นทางเดียวกัน ต่างกันแค่ค่า — **คนละชุดแถว ไม่ใช่คนละไฟล์**:
 
-- profile `paper` — `broker.kind = "paper"`, `dry_run` บังคับ `true`
+- profile `paper` — `broker.kind = "paper"`, `dry_run` บังคับ `true` (ธงนี้ไม่ได้กั้น `PaperBroker` — ดู [ADR 31](../adr/0031-dry-run-gates-only-a-real-broker.md))
 - profile `live` — `broker.kind = "ccxt"` และ `dry_run = true` เป็นค่าตั้งต้น
 
 **ทุกการแก้สร้างเวอร์ชันใหม่ ไม่ทับของเก่า** และเวอร์ชันเก่าอ่านได้ตลอดไป · เวอร์ชันที่ระบบใช้อยู่
