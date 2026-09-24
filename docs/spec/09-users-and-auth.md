@@ -45,11 +45,14 @@ design handoff อยู่นอก repo (`.gitignore`) หน้านี้�
 login ไม่ใช่ที่หน้าจอ ถ้า `totp_enrolled_ts IS NULL` การ login จบที่ขั้นที่ 2 ไม่ผ่าน
 ไม่ว่ารหัสผ่านจะถูกก็ตาม
 
-**สองข้อบังคับที่ต้องอยู่ในโค้ด ไม่ใช่ในวินัยของคนกด**
+**ข้อบังคับที่ต้องอยู่ในโค้ด ไม่ใช่ในวินัยของคนกด**
 
 - **ห้ามเหลือศูนย์ OWNER** — ระงับหรือย้าย role ของ OWNER คนสุดท้ายต้องถูกปฏิเสธ
   ระบบที่ไม่มี OWNER แก้ profile และสลับ `dry_run` ไม่ได้อีกเลย และไม่มีทางกู้จากในคอนโซล
 - **ระงับตัวเองไม่ได้** และ **ตัด session ของตัวเองจากหน้า session ไม่ได้** (ออกจากระบบใช้ปุ่ม logout)
+- **เฉพาะ OWNER แตะบัญชี OWNER หรือให้ role OWNER ได้** (เจ้าของตัดสิน 2026-09-24) — เชิญเป็น OWNER
+  ย้ายเข้าหรือออกจาก OWNER ระงับ หรือ reset 2FA ของ OWNER · `manage_users` ของ ADMIN ไม่พอ
+  ไม่งั้น ADMIN เชิญอีเมลอีกอันของตัวเองเป็น OWNER แล้วได้ `toggle_dry_run` ที่ตารางข้อ 3 ไม่ให้
 
 **OWNER คนแรกไม่ได้มาจากคำเชิญ** — ยังไม่มีใคร login ได้ตอนตั้งเครื่อง จึงสร้างผ่าน CLI
 ที่มีอยู่แล้ว (`cane` — ที่เดียวกับ `cane db seed`) คำสั่งนี้รับอีเมลกับรหัสผ่านตั้งต้น
@@ -141,7 +144,7 @@ login ไม่ใช่ที่หน้าจอ ถ้า `totp_enrolled_ts 
 | `POST /api/{profile}/symbols` · `DELETE …` | `edit_symbols` | **ต้อง** |
 | `POST /api/{profile}/positions/{symbol}/close` | `close_position_manual` | **ต้อง** |
 | `POST /api/{profile}/coldstart/{symbol}` | `choose_cold_start_route` | – |
-| `POST /api/users` · `/users/{id}/role` · `/suspend` · `/unlock` · `/permissions` · `DELETE /api/sessions/{id}` | `manage_users` | **ต้อง** |
+| `POST /api/users` · `/users/{id}/role` · `/suspend` · `/unsuspend` · `/unlock` · `/permissions` · `DELETE /api/sessions/{id}` | `manage_users` | **ต้อง** |
 | `POST /api/users/{id}/reset-2fa` | `reset_other_2fa` | **ต้อง** |
 | `GET /api/{profile}/records/export` | `export_records` | – |
 | `GET /api/{profile}/report` | `view_overview` | – |

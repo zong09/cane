@@ -1,8 +1,14 @@
 {#
   เนื้อของหน้าผู้ใช้ · KPI + แท็บ · ไม่ฟัง `cane:mode` เพราะหน้านี้ไม่ผูกกับโหมด
-  PR นี้อ่านอย่างเดียว — ปุ่มที่เปลี่ยนอะไรมากับ PR ถัดไป (ดู docstring ของ `api/users.py`)
+  **top-level element เดียว** — คำตอบของ modal ที่สำเร็จติดธง `hx-swap-oob` (ดู `api/user_actions.py`)
 #}
-<div id="users-body" class="us">
+<div id="users-body"{% if us_oob %} hx-swap-oob="true"{% endif %} class="us">
+  {% if us_notice %}
+  <div class="us__notice">
+    <div>{{ us_notice.text }}</div>
+    {% if us_notice.link %}<code class="us__link">{{ us_notice.link }}</code>{% endif %}
+  </div>
+  {% endif %}
   <div class="us__kpis">
     <div class="us__kpi">
       <div class="us__kpiname">ใช้งานอยู่</div>
@@ -30,9 +36,41 @@
   </div>
 
   {% if us_tab == "people" %}
+  {% if us_invite %}
+  {% set inv = us_invite %}
+  <form class="us__invite" id="invite-form" hx-get="/partials/users/stepup/invite" hx-target="#modal-slot" hx-swap="innerHTML">
+    <div class="us__invitehead">
+      <div class="us__invitetitle">เชิญผู้ใช้ใหม่</div>
+      <button type="button" class="us__linkbtn" hx-get="/partials/users?tab=people" hx-target="#users-body" hx-swap="outerHTML">ยกเลิก</button>
+    </div>
+    <div class="us__invitegrid">
+      <label class="us__field">
+        <span class="us__fieldname">อีเมล</span>
+        <input class="us__input" name="email" value="{{ inv.email }}" placeholder="name@company.co.th" required autocomplete="off">
+      </label>
+      <div class="us__field">
+        <span class="us__fieldname">role</span>
+        <input type="hidden" name="role" value="{{ inv.role }}">
+        {# เมนู role แบบของ design ไม่ใช่ native select · เลือกแล้ววาดแผงใหม่พร้อมอีเมลที่พิมพ์ไว้ #}
+        <details class="us__pick">
+          <summary class="us__pickbtn"><span>{{ inv.role }}</span><span class="us__caret">▼</span></summary>
+          <div class="us__menu">
+            {% for r in us_invite_roles %}
+            <button type="button" class="us__opt{% if r == inv.role %} us__opt--on{% endif %}"
+                    hx-get="/partials/users?tab=people&invite=1&role={{ r }}" hx-include="#invite-form [name=email]"
+                    hx-target="#users-body" hx-swap="outerHTML"><span class="us__optbar"></span>{{ r }}</button>
+            {% endfor %}
+          </div>
+        </details>
+      </div>
+      <button class="us__send" type="submit">ส่งคำเชิญ</button>
+    </div>
+    <div class="us__hint">ผู้ถูกเชิญต้องตั้งรหัสผ่านและผูก 2FA ให้เสร็จก่อนจึงเข้าคอนโซลได้</div>
+  </form>
+  {% endif %}
   <div class="us__card">
     <div class="us__row us__row--people us__row--head">
-      <div class="us__sans">ผู้ใช้</div><div>ROLE</div><div class="us__sans">2FA</div><div class="us__sans">เข้าใช้ล่าสุด</div><div class="us__sans">สถานะ</div>
+      <div class="us__sans">ผู้ใช้</div><div>ROLE</div><div class="us__sans">2FA</div><div class="us__sans">เข้าใช้ล่าสุด</div><div class="us__sans">สถานะ</div><div></div>
     </div>
     {% for u in us_people %}
     <div class="us__row us__row--people">
@@ -47,6 +85,15 @@
       <div>{% if u.has_2fa %}<span class="us__2fa us__2fa--on">TOTP · ผูกแล้ว</span>{% else %}<span class="us__2fa us__2fa--off">ยังไม่ผูก</span>{% endif %}</div>
       <div class="us__mono">{{ u.last }}</div>
       <div><span class="us__status us__status--{{ u.status }}"><span class="us__dot"></span>{{ u.status_text }}</span></div>
+      <div class="us__acts">
+        {% if u.can_unlock %}<button class="us__act" hx-get="/partials/users/stepup/unlock?user_id={{ u.id }}" hx-target="#modal-slot" hx-swap="innerHTML">ปลดล็อก</button>{% endif %}
+        {% if u.can_role %}<button class="us__act" hx-get="/partials/users/stepup/role?user_id={{ u.id }}" hx-target="#modal-slot" hx-swap="innerHTML">เปลี่ยน role</button>{% endif %}
+        {% if u.can_reset %}<button class="us__act" hx-get="/partials/users/stepup/reset-2fa?user_id={{ u.id }}" hx-target="#modal-slot" hx-swap="innerHTML">reset 2FA</button>{% endif %}
+        {% if u.can_suspend %}
+        {% set sus = "unsuspend" if u.status == "suspended" else "suspend" %}
+        <button class="us__act us__act--danger" hx-get="/partials/users/stepup/{{ sus }}?user_id={{ u.id }}" hx-target="#modal-slot" hx-swap="innerHTML">{{ "ปลดระงับ" if u.status == "suspended" else "ระงับ" }}</button>
+        {% endif %}
+      </div>
     </div>
     {% endfor %}
     <div class="us__foot">การระงับมีผลทันทีกับ session ที่เปิดอยู่ — ไม่ต้องรอหมดอายุ token · ผู้ใช้ที่ยังไม่ผูก 2FA เข้าคอนโซลไม่ได้เลย ไม่ใช่แค่เตือน</div>

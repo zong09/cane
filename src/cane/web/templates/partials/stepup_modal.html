@@ -14,6 +14,29 @@
       <div class="modal__text">{{ detail }}</div>
       {% if error %}<div class="modal__warn">{{ error }}</div>{% endif %}
       {#
+        `blocked` = ด่านที่ไม่ต้องใช้รหัสปฏิเสธไปแล้ว (ใบ 20: อีเมลซ้ำ ระงับตัวเอง OWNER คนสุดท้าย)
+        · ไม่มีช่องรหัสให้พิมพ์ เพราะไม่มีอะไรให้ยืนยัน · มีแค่ปุ่มปิด
+      #}
+      {% if blocked %}
+      <div class="modal__actions">
+        <button class="btn btn--ghost btn--grow" type="button"
+                hx-get="/partials/mode-modal/close" hx-target="#modal-slot" hx-swap="innerHTML">ปิด</button>
+      </div>
+      {% else %}
+      {#
+        ตัวเลือกของ modal เปลี่ยน role (ใบ 20 · handoff §9.8e) · แต่ละปุ่มยิงกลับไปวาด modal ใหม่
+        พร้อม role ที่เลือก ค่าที่ส่งจริงคือ hidden `role` ในฟอร์มข้างล่าง
+      #}
+      {% if choices %}
+      <div class="modal__choices">
+        {% for role, on, url in choices %}
+        <button type="button" class="modal__choice{% if on %} modal__choice--on{% endif %}"
+                hx-get="{{ url }}" hx-target="#modal-slot" hx-swap="innerHTML">{{ role }}</button>
+        {% endfor %}
+      </div>
+      {% if hint %}<div class="modal__hint">{{ hint }}</div>{% endif %}
+      {% endif %}
+      {#
         ยิงไปที่ช่องของ modal เอง · คำตอบที่สำเร็จเป็นการ์ด engine ที่ติดธง
         `hx-swap-oob` — htmx เอาการ์ดไปวางที่ `#engine-card` แล้วเหลือความว่าง
         มาแทน modal ซึ่งคือการปิด modal · ล้มเหลวได้ modal ใบเดิมพร้อมกล่องเตือน
@@ -46,9 +69,10 @@
         <div class="modal__actions">
           <button class="btn btn--ghost" type="button"
                   hx-get="/partials/mode-modal/close" hx-target="#modal-slot" hx-swap="innerHTML">ยกเลิก</button>
-          <button class="btn btn--primary btn--grow" type="submit">ยืนยัน</button>
+          <button class="btn btn--primary btn--grow" type="submit"{% if confirm_disabled %} disabled{% endif %}>ยืนยัน</button>
         </div>
       </form>
+      {% endif %}
     </div>
   </div>
 </div>

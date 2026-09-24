@@ -1,12 +1,13 @@
-"""หน้า ผู้ใช้ — 4 แท็บ อ่านอย่างเดียว (ใบ 20 · PR แรกของสาม)
+"""หน้า ผู้ใช้ — 4 แท็บ (ใบ 20)
 
 ทุกแท็บอ่านจากตารางที่ spec/09 บอกว่าเป็นความจริง ไม่มีค่าที่หน้าจอคิดเอง:
 บัญชีจาก `users` · ตารางสิทธิ์จาก**เวอร์ชันที่ active** ของ `role_permissions` (ไม่ใช่
 `DEFAULT_MATRIX` — นั่นคือค่าตั้งต้นที่ใส่ครั้งเดียว) · session จาก `sessions` ที่ยังไม่ถูกตัด
 และยังไม่หมดอายุ · บันทึกจาก `user_audit_log` ที่ redact มาแล้วตั้งแต่ตอนเขียน
 
-ปุ่มที่เปลี่ยนอะไร (เชิญ เปลี่ยน role ระงับ ปลดล็อก reset 2FA ตัด session แก้สิทธิ์)
-มากับ PR ถัดไปพร้อม step-up · PR นี้ไม่วาดปุ่มที่ยังกดไม่ได้
+ปุ่มของแถวผู้ใช้กับแผงเชิญยิงไปที่ `api/user_actions.py` · ไฟล์นี้ตัดสินแค่ว่า**ปุ่มไหนขึ้น**
+ด่านจริงอยู่ที่ endpoint (ปุ่มที่ซ่อนเป็นความสุภาพ ไม่ใช่ข้อบังคับ — spec/09 §3. ตารางสิทธิ์ — 13 สิทธิ์ × 5 role)
+· ตัด session กับแก้ตารางสิทธิ์ยังเป็นของ PR ถัดไป
 
 ## ที่ต่างจากไฟล์ design
 
@@ -33,7 +34,7 @@ from cane.api.context import _initials
 from cane.api.deps import current_session, get_db, require_cap
 from cane.api.templating import templates
 from cane.auth.matrix import ROLES
-from cane.db.repo import audit
+from cane.db.repo import audit, login_attempts
 from cane.db.repo import permissions as perms
 from cane.db.repo import sessions as sessions_repo
 from cane.db.repo import users as users_repo
@@ -99,6 +100,12 @@ ACTION_TEXT = {
     "config.symbols": "บันทึกคู่เหรียญ",
     "config.symbols_removed": "ลบคู่เหรียญ",
     "coldstart.choose": "เลือกเส้นทาง cold start",
+    "user.invite": "เชิญผู้ใช้",
+    "user.role": "เปลี่ยน role",
+    "user.suspend": "ระงับผู้ใช้",
+    "user.unsuspend": "ปลดระงับผู้ใช้",
+    "user.unlock": "ปลดล็อกบัญชี",
+    "user.reset_2fa": "reset 2FA",
 }
 
 #: ย้อมแดงเมื่อเป็นการถูกปฏิเสธหรือล้มเหลว — สิ่งที่คนอ่านบันทึกต้องเห็นก่อน
@@ -115,6 +122,7 @@ def _utc(ts: int | None, fmt: str = "%Y-%m-%d %H:%M") -> str:
 
 @dataclass(frozen=True, slots=True)
 class PersonRow:
+    id: int
     initials: str
     name: str
     email: str
@@ -123,6 +131,11 @@ class PersonRow:
     last: str
     status: str
     status_text: str
+    #: ปุ่มที่ขึ้นในแถว · คิดจากกฎเดียวกับที่ endpoint ใช้ปฏิเสธ (`user_actions.refusal`)
+    can_role: bool = False
+    can_reset: bool = False
+    can_suspend: bool = False
+    can_unlock: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,20 +166,40 @@ class LogRow:
     danger: bool
 
 
-def _people(everyone: list[User]) -> tuple[PersonRow, ...]:
-    return tuple(
-        PersonRow(
-            initials=_initials(u.name),
-            name=u.name,
-            email=u.email,
-            role=u.role,
-            has_2fa=u.totp_enrolled_ts is not None,
-            last=_utc(u.last_login_ts),
-            status=u.status,
-            status_text=STATUS_TEXT[u.status],
+def owner_only(actor: User, target_role: str) -> bool:
+    """เฉพาะ OWNER แตะบัญชี OWNER หรือให้ role OWNER ได้ — กันเส้นทางที่ ADMIN เชิญ
+    อีเมลอีกอันของตัวเองเป็น OWNER แล้วได้สิทธิ์ยิงจริง (เจ้าของตัดสิน 2026-09-24)"""
+    return target_role == "OWNER" and actor.role != "OWNER"
+
+
+def is_locked(conn: Connection, email: str, now: int) -> bool:
+    until = login_attempts.lock_state(conn, email).locked_until
+    return until is not None and until > now
+
+
+def _people(conn: Connection, everyone: list[User], actor: User, now: int) -> tuple[PersonRow, ...]:
+    may_reset = perms.allowed(conn, role=actor.role, cap="reset_other_2fa")
+    rows = []
+    for u in everyone:
+        touchable = not owner_only(actor, u.role)
+        rows.append(
+            PersonRow(
+                id=u.id,
+                initials=_initials(u.name),
+                name=u.name,
+                email=u.email,
+                role=u.role,
+                has_2fa=u.totp_enrolled_ts is not None,
+                last=_utc(u.last_login_ts),
+                status=u.status,
+                status_text=STATUS_TEXT[u.status],
+                can_role=touchable,
+                can_reset=touchable and may_reset and u.id != actor.id,
+                can_suspend=touchable and u.id != actor.id,
+                can_unlock=touchable and is_locked(conn, u.email, now),
+            )
         )
-        for u in everyone
-    )
+    return tuple(rows)
 
 
 def _perm_rows(conn: Connection) -> tuple[PermRow, ...]:
@@ -228,7 +261,25 @@ def _log_rows(conn: Connection, names: dict[int, str]) -> tuple[LogRow, ...]:
     )
 
 
-def page_context(conn: Connection, *, session: Session, tab: str) -> dict[str, object]:
+#: role ที่เลือกได้ในแผงเชิญและใน modal เปลี่ยน role · ค่าตั้งต้นของแผงเชิญคือสิทธิ์น้อยสุด
+def roles_for(actor: User) -> tuple[str, ...]:
+    return tuple(r for r in ROLES if not owner_only(actor, r))
+
+
+INVITE_DEFAULT_ROLE = "VIEWER"
+
+
+def page_context(
+    conn: Connection,
+    *,
+    session: Session,
+    actor: User,
+    tab: str,
+    invite: dict[str, str] | None = None,
+    notice: dict[str, str] | None = None,
+) -> dict[str, object]:
+    """`invite` = แผงเชิญที่เปิดอยู่ `{"email", "role"}` · `notice` = ผลของ action ล่าสุด
+    `{"text", "link"}` — ลิงก์แสดงครั้งเดียวในคำตอบนี้ ไม่ได้เก็บไว้ที่ไหน (spec/09 §7. คำเชิญ · reset 2FA · รหัสผ่านที่ลืม)"""
     tab = tab if tab in dict(TABS) else TABS[0][0]
     everyone = users_repo.everyone(conn)
     names = {u.id: u.name for u in everyone}
@@ -244,9 +295,12 @@ def page_context(conn: Connection, *, session: Session, tab: str) -> dict[str, o
             "pending": sum(u.status == "pending" for u in everyone),
             "no2fa": sum(u.totp_enrolled_ts is None for u in everyone),
         },
+        "us_notice": notice,
+        "us_invite": invite,
+        "us_invite_roles": roles_for(actor),
     }
     if tab == "people":
-        ctx["us_people"] = _people(everyone)
+        ctx["us_people"] = _people(conn, everyone, actor, now)
     elif tab == "perms":
         ctx["us_roles"] = ROLES
         ctx["us_perms"] = _perm_rows(conn)
@@ -261,11 +315,15 @@ def page_context(conn: Connection, *, session: Session, tab: str) -> dict[str, o
 def body(
     request: Request,
     tab: str = Query("people"),
+    invite: bool = Query(False),
+    email: str = Query(""),
+    role: str = Query(INVITE_DEFAULT_ROLE),
     db: Engine = Depends(get_db),
-    _: User = Depends(require_cap("manage_users")),
+    actor: User = Depends(require_cap("manage_users")),
     session: Session = Depends(current_session),
 ) -> HTMLResponse:
-    """เนื้อของหน้าผู้ใช้ตอนสลับแท็บ · ไม่ฟัง `cane:mode` — หน้านี้ไม่ผูกกับโหมด"""
+    """เนื้อของหน้าผู้ใช้ตอนสลับแท็บและตอนเปิด/เลือก role ในแผงเชิญ · ไม่ฟัง `cane:mode`"""
+    panel = {"email": email, "role": role if role in roles_for(actor) else INVITE_DEFAULT_ROLE} if invite else None
     with db.connect() as conn:
-        ctx = page_context(conn, session=session, tab=tab)
+        ctx = page_context(conn, session=session, actor=actor, tab=tab, invite=panel)
     return templates.TemplateResponse(request, "partials/users_body.html", ctx)
