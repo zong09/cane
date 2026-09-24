@@ -132,20 +132,19 @@ class LiveRunner:
                     symbols=tuple(s.symbol for s in symbols if s.market == cfg.market),
                 )
             key = (cfg.market, cfg.symbol)
-            run_bar(
-                conn,
-                ctx,
-                SymbolRuntime(
-                    cfg=cfg,
-                    bars=sources[cfg.market],
-                    broker=brokers[cfg.market],
-                    day=self._day.setdefault(cfg.market, DayPnl()),
-                    cold_start_pending=self._cold_pending.get(key, True),
-                ),
+            runtime = SymbolRuntime(
+                cfg=cfg,
+                bars=sources[cfg.market],
+                broker=brokers[cfg.market],
+                day=self._day.setdefault(cfg.market, DayPnl()),
+                cold_start_pending=self._cold_pending.get(key, True),
             )
+            run_bar(conn, ctx, runtime)
             # `run_bar` ปิดธงใน `SymbolRuntime` ที่ตัวเองถือ ซึ่งเป็นของชั่วคราวของแท่งนี้ —
-            # ตัวที่ข้ามแท่งคือ dict นี้ ถ้าไม่ย้ายค่ากลับมา cold start จะถูกประเมินใหม่ทุกแท่ง
-            self._cold_pending[key] = False
+            # ตัวที่ข้ามแท่งคือ dict นี้ ถ้าไม่ย้ายค่ากลับมา cold start จะถูกประเมินใหม่ทุกแท่ง ·
+            # ย้าย**ค่าของมัน** ไม่ใช่ `False` ตรงๆ: แท่งที่ถูกข้ามเพราะแท่งไม่ถึง `MIN_CLOSED_BARS`
+            # ยังไม่ได้ประเมิน cold start และธงต้องค้างไว้ให้แท่งถัดไป
+            self._cold_pending[key] = runtime.cold_start_pending
 
     def _ensure_market(self, settings: Settings, market: str) -> None:
         if market in self._trading:
