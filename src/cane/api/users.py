@@ -67,7 +67,7 @@ CAP_TEXT = {
     "toggle_dry_run": "สลับ dry_run เป็นยิงจริง",
     "edit_profile": "แก้โปรไฟล์ risk limit allow_short และการตั้งค่าแจ้งเตือน",
     "edit_symbols": "เพิ่ม–ลบคู่เหรียญ",
-    "manage_users": "เชิญ ย้าย role ระงับ ปลดล็อกบัญชี ตัด session แก้ตารางสิทธิ์",
+    "manage_users": "เชิญ ย้าย role ระงับ ปลดล็อกบัญชี ตัด session",
     "reset_other_2fa": "reset 2FA ของคนอื่น",
     "export_records": "ส่งออกบันทึกทั้งหมด",
 }
