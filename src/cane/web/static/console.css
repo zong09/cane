@@ -105,10 +105,6 @@ button { font-family: inherit; }
 
 .screen { padding: 28px 34px 40px; border-top: 2px solid var(--top-rule); }
 .h1 { font: 600 25px/1.25 var(--sans); letter-spacing: -.01em; margin: 0; }
-.placeholder {
-  margin-top: 18px; padding: 13px 15px; background: var(--surface-raised);
-  border: 1px solid var(--divider-soft); font: 400 12px/1.7 var(--sans); color: #546e7d;
-}
 
 .footer {
   display: flex; align-items: center; justify-content: space-between; gap: 24px;

@@ -19,7 +19,7 @@
     <span class="navgroup__scope">{{ nav_scope_label }}</span>
   </div>
   <nav class="nav">
-    {% for slug, label, ticket in nav %}
+    {% for slug, label in nav %}
     <a class="nav__item{% if slug == active %} nav__item--on{% endif %}" href="/{{ slug }}">
       <span class="nav__bar"></span><span class="nav__num">{{ "%02d" % loop.index }}</span>{{ label }}
     </a>
@@ -31,7 +31,7 @@
     <span class="navgroup__scope">ไม่ผูกกับโหมด</span>
   </div>
   <nav class="nav">
-    {% for slug, label, ticket in global_nav %}
+    {% for slug, label in global_nav %}
     <a class="nav__item{% if slug == active %} nav__item--on{% endif %}" href="/{{ slug }}">
       <span class="nav__bar"></span><span class="nav__dot">·</span>{{ label }}
     </a>

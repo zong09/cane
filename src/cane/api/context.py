@@ -21,18 +21,17 @@ from cane.engine.state import PROFILES
 from cane.engine.supervisor import EngineView, Supervisor
 
 #: เมนูกลุ่ม MODE · หมายเลข 01–06 กับป้ายตรงตามไฟล์ design
-#: ใบที่จะมาเติมเนื้อของแต่ละหน้าอยู่ในช่องที่สาม — placeholder ของใบ 19 อ่านจากตรงนี้
-NAV: tuple[tuple[str, str, int], ...] = (
-    ("overview", "ภาพรวม", 22),
-    ("symbols", "คู่เหรียญ", 26),
-    ("risk", "ความเสี่ยง", 23),
-    ("log", "บันทึก", 24),
-    ("report", "รายงาน", 25),
-    ("config", "ตั้งค่า", 21),
+NAV: tuple[tuple[str, str], ...] = (
+    ("overview", "ภาพรวม"),
+    ("symbols", "คู่เหรียญ"),
+    ("risk", "ความเสี่ยง"),
+    ("log", "บันทึก"),
+    ("report", "รายงาน"),
+    ("config", "ตั้งค่า"),
 )
 
 #: กลุ่ม "ทั้งระบบ" — ไม่ผูกกับโหมด จึงไม่มีเลข ใช้จุดเป็น marker แทน
-GLOBAL_NAV: tuple[tuple[str, str, int], ...] = (("users", "ผู้ใช้", 20),)
+GLOBAL_NAV: tuple[tuple[str, str], ...] = (("users", "ผู้ใช้"),)
 
 #: โซนของเหรียญที่ยังไม่มีบันทึกการตัดสินใจ · `BLACK` แปลว่า "ไม่เข้าเงื่อนไขสีใดเลย"
 #: อยู่แล้วตาม spec/02 §นิยามโซนทั้ง 6 สี จึงไม่ต้องคิดค่าพิเศษขึ้นมาใหม่

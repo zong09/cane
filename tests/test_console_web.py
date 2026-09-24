@@ -528,7 +528,6 @@ def test_the_config_page_has_a_body_of_its_own_now(monkeypatch: pytest.MonkeyPat
     with client:
         page = client.get("/config").text
 
-    assert "ใบ 19 ทำแค่โครง" not in page
     assert "ประวัติเวอร์ชัน" in page
     assert 'name="base_pct"' in page
 
@@ -1005,7 +1004,6 @@ def test_the_overview_page_has_a_body_of_its_own_now(
     with client:
         page = client.get("/overview").text
 
-    assert "ใบ 19 ทำแค่โครง" not in page
     assert "สัญญาณรอดำเนินการ" in page
     assert "Kill switch" in page
 
@@ -1161,7 +1159,6 @@ def test_the_risk_page_has_a_body_of_its_own_now(monkeypatch: pytest.MonkeyPatch
     with client:
         page = client.get("/risk").text
 
-    assert "ใบ 19 ทำแค่โครง" not in page
     assert "เพดานความเสี่ยง" in page
     assert "Kill switch" in page
 
@@ -1712,7 +1709,6 @@ def test_the_report_page_has_a_body_of_its_own_now() -> None:
     with client:
         page = client.get("/report").text
 
-    assert "ใบ 19 ทำแค่โครง" not in page
     assert "ตั้งแต่เริ่มรัน" in page and "กำหนดช่วงเอง" in page
     assert "บอททำตามกฎหรือไม่" in page
     assert "ยังไม่มีไม้ที่ปิดแล้วในช่วงนี้" in page

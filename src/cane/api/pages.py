@@ -4,8 +4,8 @@
 ที่ทำอย่างนี้เพราะเกณฑ์เสร็จของใบคือ "เปิดคู่กับไฟล์ design แล้ว layout ตรงกัน"
 ซึ่งตรวจได้ก็ต่อเมื่อกดดูได้ทุกเมนู ไม่ใช่แค่หน้าเดียว
 
-ใบ 21 เติมเนื้อของ `ตั้งค่า` เป็นหน้าแรก · หน้าที่มีเนื้อแล้วอยู่ใน `BODIES`
-ใบ 20 เติม `ผู้ใช้` เป็นหน้าสุดท้าย — ตอนนี้ทุกเมนูมีเนื้อแล้ว
+ใบ 21–26 และใบ 20 เติมเนื้อทีละหน้า · ตอนนี้ทุกเมนูมีเนื้อแล้ว เทมเพลตของแต่ละหน้าอยู่ใน `BODIES`
+และ placeholder ของใบ 19 ถูกลบไปแล้ว
 """
 
 from __future__ import annotations
@@ -31,10 +31,8 @@ from cane.engine.supervisor import Supervisor
 
 router = APIRouter()
 
-#: slug → (ป้าย, เลขใบที่จะมาเติมเนื้อหน้านี้)
-PAGES: dict[str, tuple[str, int]] = {
-    slug: (label, ticket) for slug, label, ticket in context.NAV + context.GLOBAL_NAV
-}
+#: slug → ป้าย
+PAGES: dict[str, str] = dict(context.NAV + context.GLOBAL_NAV)
 
 #: สิทธิ์ขั้นต่ำที่ต้องมีเพื่อ "เปิดหน้า" · spec/09 ผูกสิทธิ์ให้ endpoint ที่คืนข้อมูล
 #: ส่วนหน้า HTML เป็นเปลือก — คนที่เปิดหน้าภาพรวมได้ต้องมี `view_overview` เป็นอย่างน้อย
@@ -45,7 +43,7 @@ PAGE_CAP["users"] = "manage_users"
 #: จึงต้องขอสิทธิ์เดียวกับ partial ที่มันจะยิงต่อ ไม่งั้นหน้าเปิดได้แล้วเนื้อ 403
 PAGE_CAP["log"] = "read_decisions"
 
-#: slug → เทมเพลตของหน้า · ครบทุกเมนูแล้ว (fallback ไป placeholder ของใบ 19 ไม่ถูกใช้อีก)
+#: slug → เทมเพลตของหน้า · ต้องมีครบทุก slug ใน `PAGES`
 BODIES = {
     "config": "pages/config.html",
     "log": "pages/log.html",
@@ -75,7 +73,7 @@ def page(
     if slug not in PAGES:
         raise HTTPException(status_code=404, detail=f"ไม่มีหน้า {slug!r}")
 
-    label, ticket = PAGES[slug]
+    label = PAGES[slug]
     with db.connect() as conn:
         if not perms.allowed(conn, role=user.role, cap=PAGE_CAP[slug]):
             raise HTTPException(status_code=403, detail=f"ต้องมีสิทธิ์ {PAGE_CAP[slug]}")
@@ -99,5 +97,5 @@ def page(
             ctx |= users_routes.page_context(
                 conn, session=session, actor=user, tab=request.query_params.get("tab", "")
             )
-    ctx |= {"page_label": label, "page_ticket": ticket}
-    return templates.TemplateResponse(request, BODIES.get(slug, "pages/placeholder.html"), ctx)
+    ctx |= {"page_label": label}
+    return templates.TemplateResponse(request, BODIES[slug], ctx)

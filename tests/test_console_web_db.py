@@ -881,7 +881,6 @@ def test_the_symbols_page_lists_the_pairs_of_the_active_version(
         response = client.get("/symbols")
 
     assert response.status_code == 200
-    assert "เนื้อหน้านี้เป็นของใบ" not in response.text
     assert "BTC/USDT" in response.text
     assert "ETH/USDT" in response.text
 

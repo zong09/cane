@@ -59,7 +59,6 @@ def test_the_users_page_has_a_body_with_every_account_and_the_four_counts(
         response = client.get("/users")
 
     assert response.status_code == 200
-    assert "เนื้อหน้านี้เป็นของใบ" not in response.text
     for email in ("owner@example.com", "admin@example.com", "invited@example.com", "gone@example.com"):
         assert email in response.text
     assert "4 บัญชี" in response.text
