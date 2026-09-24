@@ -1,4 +1,4 @@
-"""action ของหน้าผู้ใช้ — เชิญ · เปลี่ยน role · ระงับ · ปลดระงับ · ปลดล็อก · reset 2FA (ใบ 20)
+"""action ของหน้าผู้ใช้ — เชิญ · เปลี่ยน role · ระงับ · ปลดระงับ · ปลดล็อก · reset 2FA · ตัด session · บันทึกตารางสิทธิ์ (ใบ 20)
 
 ทุก action เดินลำดับเดียวกัน และ**ลำดับมีผลจริง**:
 
@@ -24,9 +24,11 @@ trigger `users_owner_floor` ที่ฐานเป็นด่านจริ�
 | ปลดระงับใช้ `/suspend` ตัวเดียว | `POST /api/users/{id}/unsuspend` แยก | สองทิศแยก endpoint เหมือน latch/unlatch — กดซ้ำไม่พลิกกลับ |
 | แผงเชิญมีแค่อีเมลกับ role | ชื่อของบัญชีใหม่ = ส่วนหน้า `@` ของอีเมล | `users.name` ห้ามว่าง · ไม่เพิ่มช่องในแผง |
 | ADMIN จัดการได้ทุกบัญชี | เฉพาะ OWNER แตะบัญชี OWNER หรือให้ role OWNER ได้ | กัน ADMIN เชิญอีเมลอีกอันของตัวเองเป็น OWNER |
+| `ตัดออก` ทุกแถวที่ไม่ใช่เครื่องนี้ (§9.8c) | ไม่ขึ้นที่แถวของ OWNER เมื่อคนดูเป็น ADMIN | การตัด session ของ OWNER นับเป็นการแตะบัญชี OWNER |
+| `แก้ไขสิทธิ์` สำหรับทุกคนที่มี `manage_users` (§9.8b) | OWNER เท่านั้น — ADMIN เห็นตารางแต่ไม่มีปุ่ม | ADMIN ที่แก้ตารางได้ให้ `toggle_dry_run` กับ role ของตัวเองได้ |
 | hint `รูปแบบอีเมลไม่ถูกต้อง` / `อีเมลนี้มีบัญชีอยู่แล้ว` ใต้แผงเชิญ | ข้อความเดียวกันใน modal ปฏิเสธ | ด่านเดียวกับ `refusal` ที่ endpoint ใช้ — ไม่มีตรรกะชุดที่สองฝั่งหน้าจอ |
 
-เจ้าของยืนยันห้าแถวแรกแล้ว (handoff §15 ข้อ 9 · 2026-09-24) · แถวสุดท้ายย้ายแค่ตำแหน่ง ข้อความเดิมตาม design
+เจ้าของยืนยันทุกแถวแล้ว (handoff §15 ข้อ 9 · 2026-09-24) ยกเว้นแถวสุดท้าย ซึ่งย้ายแค่ตำแหน่ง ข้อความเดิมตาม design
 """
 
 from __future__ import annotations
@@ -39,7 +41,7 @@ from sqlalchemy import Connection, Engine
 
 from cane.api.deps import client_ip, current_session, get_db, require_cap
 from cane.api.templating import templates
-from cane.api.users import is_locked, owner_only, page_context, roles_for
+from cane.api.users import is_locked, owner_only, page_context, parse_flips, roles_for
 from cane.auth import service
 from cane.auth.matrix import ROLES
 from cane.auth.secrets import new_token
@@ -70,6 +72,7 @@ OWNER_ONLY = "เฉพาะ OWNER แตะบัญชี OWNER หรือ�
 
 
 #: cap ของแต่ละ action · ตรงกับ `require_cap` ของ route — ใช้ตรวจซ้ำตอนเขียน
+#: (`session` กับ `permissions` ใช้ `manage_users` ตามค่าตั้งต้น — spec/09 §4. endpoint → สิทธิ์ที่ต้องมี)
 _CAP = {"reset-2fa": "reset_other_2fa"}
 
 
@@ -243,6 +246,17 @@ def _perform(
     }
 
 
+def _verify(request: Request, db: Engine, actor: User, audit_action: str, target: str, code: str, now: int) -> bool:
+    """step-up ของคำขอนี้ · รหัสผิดลง `<action>_refused` ในทรานแซกชันของมันเอง (ไม่ถูก rollback ไปกับอะไร)"""
+    with db.begin() as conn:
+        ok = service.verify_step_up(conn, actor, code.strip(), now=now)
+        if not ok:
+            audit.record(
+                conn, action=f"{audit_action}_refused", ts=now, actor_user_id=actor.id, target=target, ip=client_ip(request)
+            )
+    return ok
+
+
 def _run(
     request: Request,
     db: Engine,
@@ -264,18 +278,7 @@ def _run(
         return _modal(request, actor, action, target, email=email, role=role, error=refused, blocked=True)
 
     now = now_ms()
-    with db.begin() as conn:
-        ok = service.verify_step_up(conn, actor, code.strip(), now=now)
-        if not ok:
-            audit.record(
-                conn,
-                action=f"{audit_action}_refused",
-                ts=now,
-                actor_user_id=actor.id,
-                target=target.email if target else users_repo.normalise_email(email),
-                ip=client_ip(request),
-            )
-    if not ok:
+    if not _verify(request, db, actor, audit_action, target.email if target else users_repo.normalise_email(email), code, now):
         return _modal(
             request, actor, action, target, email=email, role=role, error="รหัส 6 หลักไม่ถูกต้อง", status_code=403
         )
@@ -335,14 +338,28 @@ def step_up_modal(
     user_id: int | None = Query(None),
     email: str = Query(""),
     role: str = Query(""),
+    session_id: int | None = Query(None),
+    base: str = Query(""),
+    flip: list[str] = Query([]),
     db: Engine = Depends(get_db),
     actor: User = Depends(require_cap("manage_users")),
+    current: Session = Depends(current_session),
 ) -> HTMLResponse:
     """modal ของทุก action ในหน้านี้ · **ด่านจริงอยู่ที่ POST** — ที่นี่แค่บอกเหตุล่วงหน้า
 
     modal เปลี่ยน role ยิงกลับมาที่นี่ทุกครั้งที่เลือก role เพื่ออัปเดตบรรทัด `จาก A เป็น B`
     และเปิดปุ่มยืนยันเมื่อ role ต่างจากเดิม — ไม่ต้องมี JS ของตัวเอง
     """
+    if action == "session":
+        with db.connect() as conn:
+            live, owner_of = _session_of(conn, session_id)
+            refused = session_refusal(actor, current, live, owner_of)
+        return _session_modal(request, live, owner_of, error=refused or "", blocked=bool(refused))
+    if action == "permissions":
+        flips = parse_flips(flip)
+        with db.connect() as conn:
+            refused = permissions_refusal(conn, actor, base, flips)
+        return _permissions_modal(request, base, flips, error=refused or "", blocked=bool(refused))
     if action not in ACTIONS:
         raise HTTPException(status_code=404, detail=f"ไม่มี action {action!r}")
     with db.connect() as conn:
@@ -428,3 +445,191 @@ def reset_2fa(
     session: Session = Depends(current_session),
 ) -> HTMLResponse:
     return _run(request, db, actor, session, "reset-2fa", user_id=user_id, code=step_up_code)
+
+
+# ── ตัด session · `DELETE /api/sessions/{id}` ─────────────────────────────────
+
+
+def _session_of(conn: Connection, session_id: int | None, *, lock: bool = False) -> tuple[Session | None, User | None]:
+    live = sessions_repo.by_id(conn, session_id, lock=lock) if session_id is not None else None
+    return live, users_repo.by_id(conn, live.user_id) if live else None
+
+
+def session_refusal(actor: User, current: Session, live: Session | None, owner_of: User | None) -> str | None:
+    if live is None or owner_of is None or live.revoked_ts is not None or live.expires_ts <= now_ms():
+        return "session นี้ไม่ได้เปิดอยู่แล้ว"
+    if live.id == current.id:
+        return "ตัด session ของตัวเองจากที่นี่ไม่ได้ — ออกจากระบบใช้ปุ่ม ออก"
+    # ADMIN ตัด session ของ OWNER ไม่ได้ — นับเป็นการแตะบัญชี OWNER (เจ้าของตัดสิน 2026-09-24)
+    if owner_only(actor, owner_of.role):
+        return OWNER_ONLY
+    return None
+
+
+def _session_modal(
+    request: Request, live: Session | None, owner_of: User | None, *, error: str = "", blocked: bool = False, status_code: int = 200
+) -> HTMLResponse:
+    name = owner_of.name if owner_of else "—"
+    where = " · ".join(x for x in ((live.user_agent if live else None) or "—", (live.ip if live else None) or "—"))
+    return templates.TemplateResponse(
+        request,
+        "partials/stepup_modal.html",
+        {
+            "title": f"ตัด session ของ {name}",
+            "detail": f"{where} · จะเด้งออกที่ request ถัดไป",
+            "action": f"/api/sessions/{live.id if live else 0}",
+            "method": "delete",
+            "error": error,
+            "blocked": blocked,
+        },
+        status_code=status_code,
+    )
+
+
+@router.delete("/api/sessions/{session_id}", response_class=HTMLResponse)
+def revoke_session(
+    session_id: int,
+    request: Request,
+    step_up_code: str = Form(""),
+    db: Engine = Depends(get_db),
+    actor: User = Depends(require_cap("manage_users")),
+    current: Session = Depends(current_session),
+) -> HTMLResponse:
+    """spec/09 §10. เกณฑ์ยืนยันความถูกต้อง ข้อ 4 — มีผลที่ request ถัดไปเพราะ `lookup()` อ่าน `revoked_ts` ทุกครั้ง"""
+    with db.connect() as conn:
+        live, owner_of = _session_of(conn, session_id)
+        refused = session_refusal(actor, current, live, owner_of)
+    if refused:
+        return _session_modal(request, live, owner_of, error=refused, blocked=True)
+
+    now = now_ms()
+    if not _verify(request, db, actor, "session.revoke", owner_of.email, step_up_code, now):
+        return _session_modal(request, live, owner_of, error="รหัส 6 หลักไม่ถูกต้อง", status_code=403)
+
+    with db.begin() as conn:
+        # ตรวจซ้ำบนแถวที่ล็อก แบบเดียวกับ `_run` (รีวิว PR #38)
+        locked = users_repo.lock_by_ids(conn, actor.id, owner_of.id)
+        actor, owner_of = locked[actor.id], locked[owner_of.id]
+        live = sessions_repo.by_id(conn, session_id, lock=True)
+        late = _lost_the_right(conn, actor, "session") or session_refusal(actor, current, live, owner_of)
+        audit.record(
+            conn,
+            action="session.revoke" if late is None else "session.revoke_refused",
+            ts=now,
+            actor_user_id=actor.id,
+            target=owner_of.email,
+            detail={"session": session_id} if late is None else {"session": session_id, "reason": late},
+            ip=client_ip(request),
+            step_up_verified=True,
+        )
+        if late is None:
+            sessions_repo.revoke(conn, session_id, now)
+    if late is not None:
+        return _session_modal(request, live, owner_of, error=late, blocked=True)
+
+    with db.connect() as conn:
+        ctx = page_context(
+            conn, session=current, actor=actor, tab="sessions",
+            notice={"text": f"ตัด session ของ {owner_of.name} แล้ว · เด้งออกที่ request ถัดไป"},
+        )
+    ctx["us_oob"] = True
+    return templates.TemplateResponse(request, "partials/users_body.html", ctx)
+
+
+# ── ตารางสิทธิ์ · `POST /api/users/permissions` ───────────────────────────────
+
+
+def permissions_refusal(conn: Connection, actor: User, base: str, flips: frozenset[tuple[str, str]]) -> str | None:
+    """ด่านของการบันทึกตาราง · **คอลัมน์ OWNER ถูกปฏิเสธที่นี่** ไม่ใช่แค่ที่ปุ่ม (spec/09 §10. เกณฑ์ยืนยันความถูกต้อง ข้อ 8)"""
+    # OWNER เท่านั้นแก้ตารางได้ (เจ้าของตัดสิน 2026-09-24) — ดู `users.page_context`
+    if actor.role != "OWNER":
+        return "OWNER เท่านั้นแก้ตารางสิทธิ์ได้"
+    if any(role == "OWNER" for role, _ in flips):
+        return "คอลัมน์ OWNER ล็อก — Owner มีสิทธิ์ทุกข้อเสมอ แก้ไม่ได้"
+    caps = set(perms.all_caps(conn))
+    unknown = sorted(f"{role}:{cap}" for role, cap in flips if role not in ROLES or cap not in caps)
+    if unknown:
+        return f"ไม่มีช่อง {', '.join(unknown)} ในตาราง"
+    if not flips:
+        return "ยังไม่มีการเปลี่ยน — สลับอย่างน้อยหนึ่งช่องก่อนบันทึก"
+    active = perms.active_version(conn)
+    if active is None or str(active.id) != base.strip():
+        return "ตารางถูกแก้ไปแล้วโดยคนอื่นระหว่างที่คุณร่าง — เปิดแท็บใหม่แล้วร่างอีกครั้ง"
+    return None
+
+
+def _permissions_modal(
+    request: Request, base: str, flips: frozenset[tuple[str, str]], *, error: str = "", blocked: bool = False, status_code: int = 200
+) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "partials/stepup_modal.html",
+        {
+            "title": "บันทึกตารางสิทธิ์",
+            "detail": f"เปลี่ยน {len(flips)} ช่อง · มีผลกับทุกคนใน role ที่แก้ รวม session ที่เปิดอยู่",
+            "action": "/api/users/permissions",
+            "hidden": (("base", base), *(("flip", f"{role}:{cap}") for role, cap in sorted(flips))),
+            "error": error,
+            "blocked": blocked,
+        },
+        status_code=status_code,
+    )
+
+
+@router.post("/api/users/permissions", response_class=HTMLResponse)
+def save_permissions(
+    request: Request,
+    base: str = Form(""),
+    flip: list[str] = Form([]),
+    step_up_code: str = Form(""),
+    db: Engine = Depends(get_db),
+    actor: User = Depends(require_cap("manage_users")),
+    current: Session = Depends(current_session),
+) -> HTMLResponse:
+    """สร้างเวอร์ชันใหม่แล้วเลื่อนตัวชี้ ไม่ `UPDATE` ทับของเดิม (decisions.md ข้อ 18) · `base` คือเวอร์ชัน
+    ที่ร่างถูกสร้างบน — ร่างเก็บแค่ช่องที่พลิก ถ้าฐานเปลี่ยนไปแล้ว การพลิกช่องเดิมบนฐานใหม่คือคนละความหมาย"""
+    flips = parse_flips(flip)
+    with db.connect() as conn:
+        refused = permissions_refusal(conn, actor, base, flips)
+    if refused:
+        return _permissions_modal(request, base, flips, error=refused, blocked=True)
+
+    now = now_ms()
+    if not _verify(request, db, actor, "permissions.save", f"v{base}", step_up_code, now):
+        return _permissions_modal(request, base, flips, error="รหัส 6 หลักไม่ถูกต้อง", status_code=403)
+
+    with db.begin() as conn:
+        # ล็อกเวอร์ชันที่ active ก่อนตรวจซ้ำ — สองคนบันทึกพร้อมกันต้องต่อคิว ตัวหลังเจอ `base` ไม่ตรง
+        actor = users_repo.lock_by_ids(conn, actor.id)[actor.id]
+        active = perms.lock_active(conn)
+        late = _lost_the_right(conn, actor, "permissions") or permissions_refusal(conn, actor, base, flips)
+        changes: list[str] = []
+        new_id = None
+        if late is None:
+            matrix = perms.matrix_of(conn, active.id)
+            for role, cap in sorted(flips):
+                value = not matrix.get(role, {}).get(cap, False)
+                matrix.setdefault(role, {})[cap] = value
+                changes.append(f"{role}:{cap}:{'on' if value else 'off'}")
+            new_id = perms.insert_version(conn, matrix, created_ts=now, created_by_user_id=actor.id)
+            perms.activate(conn, new_id)
+        audit.record(
+            conn,
+            action="permissions.save" if late is None else "permissions.save_refused",
+            ts=now,
+            actor_user_id=actor.id,
+            target=f"v{new_id}" if new_id else f"v{base}",
+            detail={"base": base, "changes": changes} if late is None else {"base": base, "reason": late},
+            ip=client_ip(request),
+            step_up_verified=True,
+        )
+    if late is not None:
+        return _permissions_modal(request, base, flips, error=late, blocked=True)
+
+    with db.connect() as conn:
+        ctx = page_context(
+            conn, session=current, actor=actor, tab="perms",
+            notice={"text": f"บันทึกตารางสิทธิ์แล้ว · เปลี่ยน {len(changes)} ช่อง · มีผลกับทุก session ที่ request ถัดไป"},
+        )
+    ctx["us_oob"] = True
+    return templates.TemplateResponse(request, "partials/users_body.html", ctx)

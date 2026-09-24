@@ -100,7 +100,21 @@
   </div>
 
   {% elif us_tab == "perms" %}
-  <div class="us__lead">ตารางของเวอร์ชันที่เปิดใช้อยู่ · คอลัมน์ OWNER มีสิทธิ์ทุกข้อเสมอ</div>
+  {% set perm_url = "/partials/users?tab=perms&edit=1" %}
+  <div class="us__permbar">
+    <div class="us__lead">
+      {% if us_perm_editing %}กดที่ช่องเพื่อเปิด–ปิดสิทธิ์ · คอลัมน์ OWNER แก้ไม่ได้ Owner มีสิทธิ์ทุกข้อเสมอ
+      {% else %}ตารางนี้เป็นค่าตั้งต้นของทั้งระบบ ผูกกับ role ไม่ผูกกับคน{% endif %}
+    </div>
+    {% if us_perm_editing %}
+    <span class="us__diff">{% if us_perm_diff %}เปลี่ยน {{ us_perm_diff }} ช่อง{% else %}ยังไม่มีการเปลี่ยน{% endif %}</span>
+    <button class="us__ghost" hx-get="/partials/users?tab=perms" hx-target="#users-body" hx-swap="outerHTML">ยกเลิก</button>
+    <button class="us__send"{% if not us_perm_diff %} disabled{% endif %}
+            hx-get="/partials/users/stepup/permissions?base={{ us_perm_base }}{{ us_perm_flips }}" hx-target="#modal-slot" hx-swap="innerHTML">บันทึกและยืนยัน 2FA</button>
+    {% elif us_perm_can_edit %}
+    <button class="us__ghost us__ghost--strong" hx-get="{{ perm_url }}" hx-target="#users-body" hx-swap="outerHTML">แก้ไขสิทธิ์</button>
+    {% endif %}
+  </div>
   <div class="us__card">
     <div class="us__row us__row--perms us__row--head">
       <div class="us__sans">ทำอะไรได้</div>
@@ -112,20 +126,28 @@
         <div class="us__captext">{{ r.text }}</div>
         {% if r.step_up %}<div class="us__capnote">ยืนยันด้วย 2FA ทุกครั้ง</div>{% endif %}
       </div>
-      {% for role, allowed in r.cells %}
-      <div class="us__cell" data-allowed="{{ 'true' if allowed else 'false' }}"{% if role == 'OWNER' %} title="Owner มีสิทธิ์ทุกข้อเสมอ"{% endif %}>
-        {% if role == 'OWNER' %}<span class="us__mark us__mark--locked">✓</span>{% elif allowed %}<span class="us__mark us__mark--yes">✓</span>{% else %}<span class="us__mark us__mark--no">–</span>{% endif %}
+      {% for role, allowed, changed, toggle in r.cells %}
+      <div class="us__cell" data-allowed="{{ 'true' if allowed else 'false' }}" data-changed="{{ 'true' if changed else 'false' }}"{% if role == 'OWNER' %} title="Owner มีสิทธิ์ทุกข้อเสมอ"{% endif %}>
+        {% if role == 'OWNER' %}<span class="us__mark us__mark--locked">✓</span>
+        {% elif us_perm_editing %}
+        <button class="us__toggle{% if changed %} us__toggle--changed{% elif allowed %} us__toggle--on{% endif %}"
+                hx-get="{{ perm_url }}{{ toggle }}" hx-target="#users-body" hx-swap="outerHTML">{{ "✓" if allowed else "–" }}</button>
+        {% elif allowed %}<span class="us__mark us__mark--yes">✓</span>
+        {% else %}<span class="us__mark us__mark--no">–</span>{% endif %}
       </div>
       {% endfor %}
     </div>
     {% endfor %}
-    <div class="us__foot">การแก้ตารางสร้างเวอร์ชันใหม่แล้วเลื่อนตัวชี้ ไม่เขียนทับของเดิม · มีผลกับ session ที่เปิดอยู่ทันที</div>
+    <div class="us__foot">
+      {% if us_perm_editing %}ช่องสีเหลืองคือช่องที่เปลี่ยนแล้วแต่ยังไม่บันทึก · การบันทึกมีผลกับ session ที่เปิดอยู่ทันที และเขียนลงบันทึกผู้ใช้
+      {% else %}ถ้าต้องการสิทธิ์ต่างจากตารางนี้ ให้ย้าย role ของผู้ใช้ ไม่ใช่แก้สิทธิ์รายคน{% endif %}
+    </div>
   </div>
 
   {% elif us_tab == "sessions" %}
   <div class="us__card">
     <div class="us__row us__row--sessions us__row--head">
-      <div>ผู้ใช้</div><div>อุปกรณ์</div><div>ที่มา (IP)</div><div>เริ่ม session</div>
+      <div>ผู้ใช้</div><div>อุปกรณ์</div><div>ที่มา (IP)</div><div>เริ่ม session</div><div></div>
     </div>
     {% for s in us_sessions %}
     <div class="us__row us__row--sessions" data-session="{{ s.id }}">
@@ -136,6 +158,9 @@
       <div class="us__device">{{ s.device }}</div>
       <div class="us__mono us__mono--muted">{{ s.origin }}</div>
       <div class="us__mono">{{ s.since }}</div>
+      <div class="us__acts">
+        {% if s.can_revoke %}<button class="us__act us__act--danger" hx-get="/partials/users/stepup/session?session_id={{ s.id }}" hx-target="#modal-slot" hx-swap="innerHTML">ตัดออก</button>{% endif %}
+      </div>
     </div>
     {% endfor %}
     <div class="us__foot">session หมดอายุเองใน 12 ชั่วโมง · การตัดออกมีผลทันทีที่ request ถัดไป</div>

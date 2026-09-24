@@ -7,7 +7,7 @@
 
 ปุ่มของแถวผู้ใช้กับแผงเชิญยิงไปที่ `api/user_actions.py` · ไฟล์นี้ตัดสินแค่ว่า**ปุ่มไหนขึ้น**
 ด่านจริงอยู่ที่ endpoint (ปุ่มที่ซ่อนเป็นความสุภาพ ไม่ใช่ข้อบังคับ — spec/09 §3. ตารางสิทธิ์ — 13 สิทธิ์ × 5 role)
-· ตัด session กับแก้ตารางสิทธิ์ยังเป็นของ PR ถัดไป
+· ร่างของตารางสิทธิ์อยู่ใน URL (`flip=ROLE:cap` ซ้ำได้) ไม่ใช่ใน session หรือ JS — สลับช่องหนึ่งครั้งคือวาดแท็บใหม่หนึ่งครั้ง
 
 ## ที่ต่างจากไฟล์ design
 
@@ -106,6 +106,8 @@ ACTION_TEXT = {
     "user.unsuspend": "ปลดระงับผู้ใช้",
     "user.unlock": "ปลดล็อกบัญชี",
     "user.reset_2fa": "reset 2FA",
+    "session.revoke": "ตัด session",
+    "permissions.save": "บันทึกตารางสิทธิ์",
 }
 
 #: ย้อมแดงเมื่อเป็นการถูกปฏิเสธหรือล้มเหลว — สิ่งที่คนอ่านบันทึกต้องเห็นก่อน
@@ -143,8 +145,10 @@ class PermRow:
     cap: str
     text: str
     step_up: bool
-    #: `(role, allowed)` ตามลำดับ `ROLES`
-    cells: tuple[tuple[str, bool], ...]
+    #: `(role, allowed, changed, toggle)` ตามลำดับ `ROLES` · `allowed` คือค่า**หลัง**ร่าง ·
+    #: `changed` = ช่องที่ร่างพลิกจากเวอร์ชันที่ active (ย้อมเหลืองในโหมดแก้) ·
+    #: `toggle` = query ของร่างที่พลิกช่องนี้อีกครั้ง (กดซ้ำ = ย้อนกลับ)
+    cells: tuple[tuple[str, bool, bool, str], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,6 +159,7 @@ class SessionRow:
     device: str
     origin: str
     since: str
+    can_revoke: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,38 +207,62 @@ def _people(conn: Connection, everyone: list[User], actor: User, now: int) -> tu
     return tuple(rows)
 
 
-def _perm_rows(conn: Connection) -> tuple[PermRow, ...]:
+def parse_flips(raw: list[str] | tuple[str, ...]) -> frozenset[tuple[str, str]]:
+    """`ROLE:cap` จากฟอร์ม/URL → ชุดช่องที่ร่างพลิก · ค่าซ้ำตัดทิ้ง ค่าที่แยกไม่ออกก็ตัดทิ้ง
+    — การตรวจว่า role/cap มีจริงและไม่แตะคอลัมน์ OWNER อยู่ที่ endpoint (`user_actions`)"""
+    out = set()
+    for item in raw:
+        role, sep, cap = item.partition(":")
+        if sep and role and cap:
+            out.add((role, cap))
+    return frozenset(out)
+
+
+def flip_query(flips: frozenset[tuple[str, str]]) -> str:
+    return "".join(f"&flip={role}:{cap}" for role, cap in sorted(flips))
+
+
+def _perm_rows(conn: Connection, flips: frozenset[tuple[str, str]] = frozenset()) -> tuple[PermRow, ...]:
     version = perms.active_version(conn)
     matrix = perms.matrix_of(conn, version.id) if version is not None else {}
     caps = perms.all_caps(conn)
     ordered = [cap for cap in CAP_TEXT if cap in caps] + [cap for cap in caps if cap not in CAP_TEXT]
-    return tuple(
-        PermRow(
-            cap=cap,
-            text=CAP_TEXT.get(cap, cap),
-            step_up=cap in STEP_UP_CAPS,
+    rows = []
+    for cap in ordered:
+        cells = []
+        for role in ROLES:
             # OWNER ได้ทุกข้อเสมอ — ตัวตรวจสิทธิ์คืน True ก่อนแตะตาราง หน้าจอจึงต้องบอกตรงกัน
-            # (spec/09 §3. ตารางสิทธิ์ — 13 สิทธิ์ × 5 role)
-            cells=tuple(
-                (role, role == "OWNER" or matrix.get(role, {}).get(cap, False)) for role in ROLES
-            ),
-        )
-        for cap in ordered
-    )
+            # (spec/09 §3. ตารางสิทธิ์ — 13 สิทธิ์ × 5 role) · ร่างที่พลิกคอลัมน์นี้ไม่มีผลบนจอ
+            if role == "OWNER":
+                cells.append((role, True, False, ""))
+                continue
+            changed = (role, cap) in flips
+            now_allowed = matrix.get(role, {}).get(cap, False)
+            cells.append((role, now_allowed != changed, changed, flip_query(flips ^ {(role, cap)})))
+        rows.append(PermRow(cap=cap, text=CAP_TEXT.get(cap, cap), step_up=cap in STEP_UP_CAPS, cells=tuple(cells)))
+    return tuple(rows)
 
 
-def _session_rows(conn: Connection, names: dict[int, str], current: Session, now: int) -> tuple[SessionRow, ...]:
-    return tuple(
-        SessionRow(
-            id=s.id,
-            user=names.get(s.user_id, UNKNOWN),
-            current=s.id == current.id,
-            device=s.user_agent or UNKNOWN,
-            origin=s.ip or UNKNOWN,
-            since=_utc(s.created_ts),
+def _session_rows(
+    conn: Connection, everyone: list[User], actor: User, current: Session, now: int
+) -> tuple[SessionRow, ...]:
+    by_id = {u.id: u for u in everyone}
+    rows = []
+    for s in sessions_repo.live_all(conn, now=now):
+        owner_of = by_id.get(s.user_id)
+        rows.append(
+            SessionRow(
+                id=s.id,
+                user=owner_of.name if owner_of else UNKNOWN,
+                current=s.id == current.id,
+                device=s.user_agent or UNKNOWN,
+                origin=s.ip or UNKNOWN,
+                since=_utc(s.created_ts),
+                # แถวของตัวเองไม่มีปุ่ม (ออกจากระบบใช้ปุ่ม ออก) · ADMIN ตัด session ของ OWNER ไม่ได้
+                can_revoke=s.id != current.id and not (owner_of and owner_only(actor, owner_of.role)),
+            )
         )
-        for s in sessions_repo.live_all(conn, now=now)
-    )
+    return tuple(rows)
 
 
 def _detail(entry: audit.AuditEntry) -> str:
@@ -277,6 +306,8 @@ def page_context(
     tab: str,
     invite: dict[str, str] | None = None,
     notice: dict[str, str] | None = None,
+    edit: bool = False,
+    flips: frozenset[tuple[str, str]] = frozenset(),
 ) -> dict[str, object]:
     """`invite` = แผงเชิญที่เปิดอยู่ `{"email", "role"}` · `notice` = ผลของ action ล่าสุด
     `{"text", "link"}` — ลิงก์แสดงครั้งเดียวในคำตอบนี้ ไม่ได้เก็บไว้ที่ไหน (spec/09 §7. คำเชิญ · reset 2FA · รหัสผ่านที่ลืม)"""
@@ -302,10 +333,21 @@ def page_context(
     if tab == "people":
         ctx["us_people"] = _people(conn, everyone, actor, now)
     elif tab == "perms":
+        # OWNER เท่านั้นแก้ตารางได้ (เจ้าของตัดสิน 2026-09-24) — ADMIN ได้ `manage_users` ก็จริง
+        # แต่ถ้าแก้ได้ ก็ให้ `toggle_dry_run` กับ role ของตัวเองได้ ซึ่งคือสิทธิ์ระดับ OWNER
+        can_edit = actor.role == "OWNER"
+        editing = edit and can_edit
+        shown = flips if editing else frozenset()
+        version = perms.active_version(conn)
         ctx["us_roles"] = ROLES
-        ctx["us_perms"] = _perm_rows(conn)
+        ctx["us_perms"] = _perm_rows(conn, shown)
+        ctx["us_perm_can_edit"] = can_edit
+        ctx["us_perm_editing"] = editing
+        ctx["us_perm_base"] = version.id if version else ""
+        ctx["us_perm_flips"] = flip_query(shown)
+        ctx["us_perm_diff"] = sum(1 for role, _ in shown if role != "OWNER")
     elif tab == "sessions":
-        ctx["us_sessions"] = _session_rows(conn, names, session, now)
+        ctx["us_sessions"] = _session_rows(conn, everyone, actor, session, now)
     else:
         ctx["us_log"] = _log_rows(conn, names)
     return ctx
@@ -318,6 +360,8 @@ def body(
     invite: bool = Query(False),
     email: str = Query(""),
     role: str = Query(INVITE_DEFAULT_ROLE),
+    edit: bool = Query(False),
+    flip: list[str] = Query([]),
     db: Engine = Depends(get_db),
     actor: User = Depends(require_cap("manage_users")),
     session: Session = Depends(current_session),
@@ -325,5 +369,7 @@ def body(
     """เนื้อของหน้าผู้ใช้ตอนสลับแท็บและตอนเปิด/เลือก role ในแผงเชิญ · ไม่ฟัง `cane:mode`"""
     panel = {"email": email, "role": role if role in roles_for(actor) else INVITE_DEFAULT_ROLE} if invite else None
     with db.connect() as conn:
-        ctx = page_context(conn, session=session, actor=actor, tab=tab, invite=panel)
+        ctx = page_context(
+            conn, session=session, actor=actor, tab=tab, invite=panel, edit=edit, flips=parse_flips(flip)
+        )
     return templates.TemplateResponse(request, "partials/users_body.html", ctx)

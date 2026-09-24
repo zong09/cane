@@ -42,6 +42,22 @@ def active_version(conn: Connection) -> PermissionVersion | None:
     return None if row is None else PermissionVersion(**row._mapping)
 
 
+def lock_active(conn: Connection) -> PermissionVersion | None:
+    """เวอร์ชันที่ active พร้อม `FOR UPDATE` — สองคำขอที่บันทึกตารางพร้อมกันต้องต่อคิว
+    ไม่งั้นทั้งคู่เห็นฐานเดียวกันแล้วตัวหลังทับของตัวแรกโดยไม่รู้ตัว"""
+    row = conn.execute(
+        select(
+            permission_versions.c.id,
+            permission_versions.c.created_ts,
+            permission_versions.c.created_by_user_id,
+            permission_versions.c.is_active,
+        )
+        .where(permission_versions.c.is_active.is_(True))
+        .with_for_update()
+    ).one_or_none()
+    return None if row is None else PermissionVersion(**row._mapping)
+
+
 def allowed(conn: Connection, *, role: str, cap: str) -> bool:
     """สิทธิ์ถูกคิดใหม่ทุกครั้งที่ถาม — นั่นคือเหตุผลที่แก้ role แล้วมีผลทันที"""
     if role == OWNER:

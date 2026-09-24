@@ -53,6 +53,10 @@ login ไม่ใช่ที่หน้าจอ ถ้า `totp_enrolled_ts 
 - **เฉพาะ OWNER แตะบัญชี OWNER หรือให้ role OWNER ได้** (เจ้าของตัดสิน 2026-09-24) — เชิญเป็น OWNER
   ย้ายเข้าหรือออกจาก OWNER ระงับ หรือ reset 2FA ของ OWNER · `manage_users` ของ ADMIN ไม่พอ
   ไม่งั้น ADMIN เชิญอีเมลอีกอันของตัวเองเป็น OWNER แล้วได้ `toggle_dry_run` ที่ตารางข้อ 3 ไม่ให้
+  · การตัด session ของ OWNER นับเป็นการแตะบัญชี OWNER ด้วย
+- **OWNER เท่านั้นแก้ตารางสิทธิ์ได้** (เจ้าของตัดสิน 2026-09-24) — ถ้า ADMIN แก้ได้ ก็เปิด
+  `toggle_dry_run` หรือ `edit_profile` ให้ role ของตัวเองได้ ซึ่งคือช่องเดียวกับข้อก่อนหน้า ·
+  ADMIN ยังเห็นตาราง แต่ endpoint ปฏิเสธ
 
 **OWNER คนแรกไม่ได้มาจากคำเชิญ** — ยังไม่มีใคร login ได้ตอนตั้งเครื่อง จึงสร้างผ่าน CLI
 ที่มีอยู่แล้ว (`cane` — ที่เดียวกับ `cane db seed`) คำสั่งนี้รับอีเมลกับรหัสผ่านตั้งต้น
@@ -104,7 +108,7 @@ login ไม่ใช่ที่หน้าจอ ถ้า `totp_enrolled_ts 
 
 ### ตารางนี้เป็น "ข้อมูล" ไม่ใช่ค่าคงที่ในโค้ด
 
-คอนโซลแก้ตารางได้ (`manage_users` + step-up) ตารางข้างบนจึงเป็น **เวอร์ชันตั้งต้น**
+คอนโซลแก้ตารางได้ (OWNER + step-up — ข้อ 2) ตารางข้างบนจึงเป็น **เวอร์ชันตั้งต้น**
 ที่ `cane db seed` ใส่ลง `role_permissions` ไม่ใช่ความจริงตลอดกาล
 
 **คอลัมน์ OWNER ล็อก** — OWNER มีสิทธิ์ทุกข้อเสมอ ข้อบังคับนี้อยู่ **ในโค้ด**
@@ -144,7 +148,7 @@ login ไม่ใช่ที่หน้าจอ ถ้า `totp_enrolled_ts 
 | `POST /api/{profile}/symbols` · `DELETE …` | `edit_symbols` | **ต้อง** |
 | `POST /api/{profile}/positions/{symbol}/close` | `close_position_manual` | **ต้อง** |
 | `POST /api/{profile}/coldstart/{symbol}` | `choose_cold_start_route` | – |
-| `POST /api/users` · `/users/{id}/role` · `/suspend` · `/unsuspend` · `/unlock` · `/permissions` · `DELETE /api/sessions/{id}` | `manage_users` | **ต้อง** |
+| `POST /api/users` · `/users/{id}/role` · `/suspend` · `/unsuspend` · `/unlock` · `POST /api/users/permissions` · `DELETE /api/sessions/{id}` | `manage_users` (ตารางสิทธิ์: OWNER เท่านั้น — ข้อ 2) | **ต้อง** |
 | `POST /api/users/{id}/reset-2fa` | `reset_other_2fa` | **ต้อง** |
 | `GET /api/{profile}/records/export` | `export_records` | – |
 | `GET /api/{profile}/report` | `view_overview` | – |
