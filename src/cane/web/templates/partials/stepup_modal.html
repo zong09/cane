@@ -59,7 +59,7 @@
         {% for name, label, placeholder in fields | default(()) %}
         <label class="modal__field">
           <span class="modal__fieldname">{{ label }}</span>
-          <input class="modal__text" name="{{ name }}" placeholder="{{ placeholder }}" required {% if loop.first %}autofocus{% endif %}>
+          <input class="modal__input" name="{{ name }}" placeholder="{{ placeholder }}" required {% if loop.first %}autofocus{% endif %}>
         </label>
         {% endfor %}
         <label class="modal__field">

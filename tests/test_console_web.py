@@ -1854,3 +1854,16 @@ def test_only_the_row_being_edited_gets_its_problems_placed_on_the_form() -> Non
     assert set(placed) == {"leverage", "market"}
     assert placed["leverage"] is mine
     assert unplaced == (someone_else,)
+
+
+def test_no_modal_class_is_defined_twice_in_the_stylesheet() -> None:
+    """ใบ 23 เคยนิยาม `.modal__text` ซ้ำเป็นช่อง input แล้วทับย่อหน้าคำอธิบายของทุก modal
+    (detail ขึ้นเป็นกล่องขอบตัว mono) · กฎที่มาทีหลังชนะเงียบๆ จึงต้องมีเทสต์ ไม่ใช่ตาคนดู"""
+    import re
+    from collections import Counter
+
+    from cane.api.templating import STATIC
+
+    css = (STATIC / "console.css").read_text()
+    selectors = Counter(re.findall(r"^(\.modal__[\w-]+) \{", css, flags=re.M))
+    assert [s for s, n in selectors.items() if n > 1] == []
