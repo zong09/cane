@@ -83,6 +83,17 @@ def by_id(conn: Connection, user_id: int) -> User | None:
     return None if row is None else from_mapping(row._mapping)
 
 
+def lock_by_ids(conn: Connection, *user_ids: int) -> dict[int, User]:
+    """อ่านใหม่พร้อม `FOR UPDATE` ในทรานแซกชันของผู้เรียก — ด่านที่ต้องตรวจซ้ำตอนเขียน
+
+    ล็อกเรียงตาม `id` เสมอ · สองคำขอที่ล็อกคนละลำดับคือ deadlock
+    """
+    rows = conn.execute(
+        _JOINED.where(users.c.id.in_(user_ids)).order_by(users.c.id).with_for_update(of=users)
+    )
+    return {row.id: from_mapping(row._mapping) for row in rows}
+
+
 def create(
     conn: Connection,
     *,

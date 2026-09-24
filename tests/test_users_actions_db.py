@@ -282,3 +282,55 @@ def test_a_trader_gets_403_on_every_user_action(db: Connection, owner) -> None:
             c.post(f"/api/users/{me.id}/reset-2fa", data=right_now_code()).status_code,
         ]
     assert codes == [403] * 6
+
+
+# ── ด่านต้องถูกตรวจซ้ำในทรานแซกชันที่เขียน (รีวิว PR #38) ─────────────────────
+
+
+def test_a_target_promoted_to_owner_while_the_code_is_checked_is_still_off_limits_to_an_admin(
+    db: Connection, owner, monkeypatch
+) -> None:
+    """ADMIN ผ่าน `refusal` ตอนเป้ายังเป็น TRADER แล้วมีคนเลื่อนเป้าเป็น OWNER ระหว่างทาง ·
+    ถ้าเขียนด้วย `target` ที่อ่านไว้ต้นคำขอ ADMIN จะลด role ของ OWNER ได้"""
+    from cane.api import user_actions
+
+    admin = a_user(db, "admin@example.com", role="ADMIN")
+    trader = a_user(db, "trader@example.com", role="TRADER")
+    real = user_actions.service.verify_step_up
+
+    def verify_then_race(conn, user, code, *, now):
+        ok = real(conn, user, code, now=now)
+        users_repo.set_role(db, trader, "OWNER")  # คำขออีกตัวของ OWNER จบก่อนเรา
+        return ok
+
+    monkeypatch.setattr(user_actions.service, "verify_step_up", verify_then_race)
+    with acting_as(db, admin) as c:
+        response = c.post(f"/api/users/{trader}/role", data={"role": "VIEWER", **right_now_code()})
+
+    assert "เฉพาะ OWNER" in response.text
+    assert users_repo.by_id(db, trader).role == "OWNER"
+    assert audit_rows(db, "user.role") == []
+    [refused] = audit_rows(db, "user.role_refused")
+    assert refused.step_up_verified is True and "เฉพาะ OWNER" in refused.detail["reason"]
+
+
+def test_an_actor_who_lost_the_right_while_the_code_is_checked_changes_nothing(
+    db: Connection, owner, monkeypatch
+) -> None:
+    from cane.api import user_actions
+
+    admin = a_user(db, "admin@example.com", role="ADMIN")
+    trader = a_user(db, "trader@example.com", role="TRADER")
+    real = user_actions.service.verify_step_up
+
+    def verify_then_demote(conn, user, code, *, now):
+        ok = real(conn, user, code, now=now)
+        users_repo.set_role(db, admin, "VIEWER")
+        return ok
+
+    monkeypatch.setattr(user_actions.service, "verify_step_up", verify_then_demote)
+    with acting_as(db, admin) as c:
+        response = c.post(f"/api/users/{trader}/suspend", data=right_now_code())
+
+    assert "สิทธิ์" in response.text
+    assert users_repo.by_id(db, trader).status == "active"
