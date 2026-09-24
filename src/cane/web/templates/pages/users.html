@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block screen %}
+<h1 class="h1">{{ page_label }}</h1>
+<div class="us__sub">{{ us_count }} บัญชี · สิทธิ์ผูกกับ role ไม่ผูกกับคน · ทุกการเปลี่ยนสิทธิ์ต้องยืนยันด้วย 2FA</div>
+{% include "partials/users_body.html" %}
+{% endblock %}

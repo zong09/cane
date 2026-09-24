@@ -159,6 +159,16 @@ def revoke_all_for_user(conn: Connection, user_id: int, now: int) -> int:
     return result.rowcount
 
 
+def live_all(conn: Connection, *, now: int) -> list[Session]:
+    """session ที่ยังใช้ได้ของทุกคน — แท็บ `session ที่เปิดอยู่` ของหน้าผู้ใช้ · ใหม่ก่อนเก่า"""
+    rows = conn.execute(
+        select(*_SESSION_COLUMNS)
+        .where(sessions.c.revoked_ts.is_(None), sessions.c.expires_ts > now)
+        .order_by(sessions.c.created_ts.desc(), sessions.c.id.desc())
+    )
+    return [Session(**row._mapping) for row in rows]
+
+
 def live_for_user(conn: Connection, user_id: int, *, now: int) -> list[Session]:
     rows = conn.execute(
         select(*_SESSION_COLUMNS)

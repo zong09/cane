@@ -346,20 +346,6 @@ def test_the_rail_renders_both_groups_and_every_menu_item() -> None:
     assert "OWNER" in page and "นพ" in page  # ตัวย่อของ "นภัส พ."
 
 
-#: `config` (21) `overview` (22) `risk` (23) `log` (24) `report` (25) `symbols` (26)
-#: มีเนื้อของตัวเองแล้ว ที่เหลือยังเป็นโครง
-@pytest.mark.parametrize("slug", ["users"])
-def test_every_menu_item_opens_even_though_its_body_belongs_to_a_later_ticket(
-    slug: str
-) -> None:
-    client, _ = build()
-    with client:
-        response = client.get(f"/{slug}")
-
-    assert response.status_code == 200
-    assert "ใบ 19 ทำแค่โครง" in response.text
-
-
 def test_a_page_that_does_not_exist_is_not_found() -> None:
     client, _ = build()
     with client:

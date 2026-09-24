@@ -1,0 +1,117 @@
+{#
+  เนื้อของหน้าผู้ใช้ · KPI + แท็บ · ไม่ฟัง `cane:mode` เพราะหน้านี้ไม่ผูกกับโหมด
+  PR นี้อ่านอย่างเดียว — ปุ่มที่เปลี่ยนอะไรมากับ PR ถัดไป (ดู docstring ของ `api/users.py`)
+#}
+<div id="users-body" class="us">
+  <div class="us__kpis">
+    <div class="us__kpi">
+      <div class="us__kpiname">ใช้งานอยู่</div>
+      <div class="us__kpirow"><span class="us__kpival" data-kpi="active">{{ us_kpi.active }}</span></div>
+    </div>
+    <div class="us__kpi">
+      <div class="us__kpiname">ยิงจริงได้ (owner)</div>
+      <div class="us__kpirow"><span class="us__kpival us__kpival--owner" data-kpi="owners">{{ us_kpi.owners }}</span><span class="us__kpinote">จาก {{ us_count }}</span></div>
+    </div>
+    <div class="us__kpi">
+      <div class="us__kpiname">รอรับคำเชิญ</div>
+      <div class="us__kpirow"><span class="us__kpival us__kpival--pending" data-kpi="pending">{{ us_kpi.pending }}</span></div>
+    </div>
+    <div class="us__kpi">
+      <div class="us__kpiname">ยังไม่ตั้ง 2FA</div>
+      <div class="us__kpirow"><span class="us__kpival us__kpival--no2fa" data-kpi="no2fa">{{ us_kpi.no2fa }}</span><span class="us__kpinote">เข้าใช้ไม่ได้</span></div>
+    </div>
+  </div>
+
+  <div class="sd__tabs us__tabs">
+    {% for key, label in us_tabs %}
+    <button class="sd__tab{% if key == us_tab %} sd__tab--on{% endif %}"
+            hx-get="/partials/users?tab={{ key }}" hx-target="#users-body" hx-swap="outerHTML">{{ label }}</button>
+    {% endfor %}
+  </div>
+
+  {% if us_tab == "people" %}
+  <div class="us__card">
+    <div class="us__row us__row--people us__row--head">
+      <div class="us__sans">ผู้ใช้</div><div>ROLE</div><div class="us__sans">2FA</div><div class="us__sans">เข้าใช้ล่าสุด</div><div class="us__sans">สถานะ</div>
+    </div>
+    {% for u in us_people %}
+    <div class="us__row us__row--people">
+      <div class="us__who">
+        <span class="us__avatar">{{ u.initials }}</span>
+        <div class="us__min">
+          <div class="us__name">{{ u.name }}</div>
+          <div class="us__email">{{ u.email }}</div>
+        </div>
+      </div>
+      <div><span class="us__role{% if u.role == 'OWNER' %} us__role--owner{% endif %}">{{ u.role }}</span></div>
+      <div>{% if u.has_2fa %}<span class="us__2fa us__2fa--on">TOTP · ผูกแล้ว</span>{% else %}<span class="us__2fa us__2fa--off">ยังไม่ผูก</span>{% endif %}</div>
+      <div class="us__mono">{{ u.last }}</div>
+      <div><span class="us__status us__status--{{ u.status }}"><span class="us__dot"></span>{{ u.status_text }}</span></div>
+    </div>
+    {% endfor %}
+    <div class="us__foot">การระงับมีผลทันทีกับ session ที่เปิดอยู่ — ไม่ต้องรอหมดอายุ token · ผู้ใช้ที่ยังไม่ผูก 2FA เข้าคอนโซลไม่ได้เลย ไม่ใช่แค่เตือน</div>
+  </div>
+
+  {% elif us_tab == "perms" %}
+  <div class="us__lead">ตารางของเวอร์ชันที่เปิดใช้อยู่ · คอลัมน์ OWNER มีสิทธิ์ทุกข้อเสมอ</div>
+  <div class="us__card">
+    <div class="us__row us__row--perms us__row--head">
+      <div class="us__sans">ทำอะไรได้</div>
+      {% for role in us_roles %}<div class="us__rolehead{% if role == 'OWNER' %} us__rolehead--owner{% endif %}">{{ role }}</div>{% endfor %}
+    </div>
+    {% for r in us_perms %}
+    <div class="us__row us__row--perms" data-cap="{{ r.cap }}">
+      <div class="us__cap">
+        <div class="us__captext">{{ r.text }}</div>
+        {% if r.step_up %}<div class="us__capnote">ยืนยันด้วย 2FA ทุกครั้ง</div>{% endif %}
+      </div>
+      {% for role, allowed in r.cells %}
+      <div class="us__cell" data-allowed="{{ 'true' if allowed else 'false' }}"{% if role == 'OWNER' %} title="Owner มีสิทธิ์ทุกข้อเสมอ"{% endif %}>
+        {% if role == 'OWNER' %}<span class="us__mark us__mark--locked">✓</span>{% elif allowed %}<span class="us__mark us__mark--yes">✓</span>{% else %}<span class="us__mark us__mark--no">–</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+    <div class="us__foot">การแก้ตารางสร้างเวอร์ชันใหม่แล้วเลื่อนตัวชี้ ไม่เขียนทับของเดิม · มีผลกับ session ที่เปิดอยู่ทันที</div>
+  </div>
+
+  {% elif us_tab == "sessions" %}
+  <div class="us__card">
+    <div class="us__row us__row--sessions us__row--head">
+      <div>ผู้ใช้</div><div>อุปกรณ์</div><div>ที่มา (IP)</div><div>เริ่ม session</div>
+    </div>
+    {% for s in us_sessions %}
+    <div class="us__row us__row--sessions" data-session="{{ s.id }}">
+      <div>
+        <div class="us__sname">{{ s.user }}</div>
+        {% if s.current %}<div class="us__here">เครื่องนี้</div>{% endif %}
+      </div>
+      <div class="us__device">{{ s.device }}</div>
+      <div class="us__mono us__mono--muted">{{ s.origin }}</div>
+      <div class="us__mono">{{ s.since }}</div>
+    </div>
+    {% endfor %}
+    <div class="us__foot">session หมดอายุเองใน 12 ชั่วโมง · การตัดออกมีผลทันทีที่ request ถัดไป</div>
+  </div>
+
+  {% else %}
+  <div class="us__card">
+    <div class="us__row us__row--log us__row--head">
+      <div>เวลา (UTC)</div><div>ใคร</div><div>ทำอะไร</div>
+    </div>
+    {% for l in us_log %}
+    <div class="us__row us__row--log">
+      <div class="us__mono us__mono--muted">{{ l.time }}</div>
+      <div class="us__actor">{{ l.actor }}</div>
+      <div>
+        <div class="us__action{% if l.danger %} us__action--danger{% endif %}">{{ l.action }}</div>
+        <div class="us__detail">{{ l.detail }}</div>
+      </div>
+    </div>
+    {% else %}
+    <div class="us__empty">ยังไม่มีบันทึก</div>
+    {% endfor %}
+    <div class="us__foot">บันทึกนี้เขียนแล้วแก้ไม่ได้ · Auditor อ่านได้แต่ไม่เห็นค่า API key เพราะ log ผ่าน filter เดียวกับระบบเทรด</div>
+  </div>
+  {% endif %}
+</div>

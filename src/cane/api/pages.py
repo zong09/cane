@@ -5,7 +5,7 @@
 ซึ่งตรวจได้ก็ต่อเมื่อกดดูได้ทุกเมนู ไม่ใช่แค่หน้าเดียว
 
 ใบ 21 เติมเนื้อของ `ตั้งค่า` เป็นหน้าแรก · หน้าที่มีเนื้อแล้วอยู่ใน `BODIES`
-ที่เหลือยังไปที่ placeholder ตามเดิม
+ใบ 20 เติม `ผู้ใช้` เป็นหน้าสุดท้าย — ตอนนี้ทุกเมนูมีเนื้อแล้ว
 """
 
 from __future__ import annotations
@@ -21,9 +21,11 @@ from cane.api import overview as overview_routes
 from cane.api import report as report_routes
 from cane.api import risk as risk_routes
 from cane.api import symbols as symbols_routes
-from cane.api.deps import current_mode, current_user, get_db, get_sup
+from cane.api import users as users_routes
+from cane.api.deps import current_mode, current_session, current_user, get_db, get_sup
 from cane.api.templating import templates
 from cane.db.repo import permissions as perms
+from cane.db.repo.sessions import Session
 from cane.db.repo.users import User
 from cane.engine.supervisor import Supervisor
 
@@ -43,7 +45,7 @@ PAGE_CAP["users"] = "manage_users"
 #: จึงต้องขอสิทธิ์เดียวกับ partial ที่มันจะยิงต่อ ไม่งั้นหน้าเปิดได้แล้วเนื้อ 403
 PAGE_CAP["log"] = "read_decisions"
 
-#: slug → เทมเพลตของหน้าที่มีเนื้อแล้ว · ที่ไม่อยู่ในนี้ได้ placeholder ของใบ 19
+#: slug → เทมเพลตของหน้า · ครบทุกเมนูแล้ว (fallback ไป placeholder ของใบ 19 ไม่ถูกใช้อีก)
 BODIES = {
     "config": "pages/config.html",
     "log": "pages/log.html",
@@ -51,6 +53,7 @@ BODIES = {
     "report": "pages/report.html",
     "risk": "pages/risk.html",
     "symbols": "pages/symbols.html",
+    "users": "pages/users.html",
 }
 
 
@@ -67,6 +70,7 @@ def page(
     sup: Supervisor = Depends(get_sup),
     user: User = Depends(current_user),
     mode: str = Depends(current_mode),
+    session: Session = Depends(current_session),
 ) -> HTMLResponse:
     if slug not in PAGES:
         raise HTTPException(status_code=404, detail=f"ไม่มีหน้า {slug!r}")
@@ -91,5 +95,7 @@ def page(
             ctx |= symbols_routes.page_context(conn, profile=mode, user=user)
         elif slug == "report":
             ctx |= report_routes.page_context(conn, profile=mode, user=user)
+        elif slug == "users":
+            ctx |= users_routes.page_context(conn, session=session, tab=request.query_params.get("tab", ""))
     ctx |= {"page_label": label, "page_ticket": ticket}
     return templates.TemplateResponse(request, BODIES.get(slug, "pages/placeholder.html"), ctx)
