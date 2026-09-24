@@ -44,6 +44,7 @@ from cane.auth import service
 from cane.auth.matrix import ROLES
 from cane.auth.secrets import new_token
 from cane.db.repo import audit, auth_tokens, login_attempts
+from cane.db.repo import permissions as perms
 from cane.db.repo import sessions as sessions_repo
 from cane.db.repo import users as users_repo
 from cane.db.repo.sessions import Session
@@ -66,6 +67,18 @@ _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 LAST_OWNER = "OWNER ที่ใช้งานอยู่คนสุดท้าย ระงับ ย้าย role หรือ reset 2FA ไม่ได้ — ระบบจะไม่มีใครแก้โปรไฟล์ได้อีก"
 OWNER_ONLY = "เฉพาะ OWNER แตะบัญชี OWNER หรือให้ role OWNER ได้"
+
+
+#: cap ของแต่ละ action · ตรงกับ `require_cap` ของ route — ใช้ตรวจซ้ำตอนเขียน
+_CAP = {"reset-2fa": "reset_other_2fa"}
+
+
+def _lost_the_right(conn: Connection, actor: User, action: str) -> str | None:
+    """คนกดยังใช้งานอยู่และยังมีสิทธิ์ของ action นี้ไหม — อ่านจากแถวที่เพิ่งล็อก"""
+    cap = _CAP.get(action, "manage_users")
+    if actor.status != "active" or not perms.allowed(conn, role=actor.role, cap=cap):
+        return f"บัญชีของคุณไม่มีสิทธิ์ {cap} แล้ว — ไม่ได้เปลี่ยนอะไร"
+    return None
 
 
 def _takes_away_an_active_owner(target: User, action: str, role: str) -> bool:
@@ -268,17 +281,41 @@ def _run(
         )
 
     with db.begin() as conn:
-        audit_target, notice = _perform(conn, request, actor, action, target, email=email, role=role)
-        audit.record(
-            conn,
-            action=audit_action,
-            ts=now,
-            actor_user_id=actor.id,
-            target=audit_target,
-            detail={"from": target.role, "to": role} if action == "role" else {"role": role} if action == "invite" else None,
-            ip=client_ip(request),
-            step_up_verified=True,
+        # ด่านทั้งหมดถูกตรวจ**ซ้ำ**บนแถวที่ล็อกไว้ในทรานแซกชันที่เขียน (รีวิว PR #38) — ระหว่างที่
+        # ตรวจรหัส คำขออื่นอาจเลื่อนเป้าเป็น OWNER หรือถอดสิทธิ์ของคนกดไปแล้ว · การตรวจรอบแรก
+        # มีไว้ไม่ให้เสียรหัสฟรี รอบนี้คือด่านจริง · อีเมลซ้ำจากคำเชิญที่แข่งกันชน unique ของ `email`
+        locked = users_repo.lock_by_ids(conn, actor.id, *([target.id] if target else []))
+        actor = locked[actor.id]
+        target = locked.get(target.id) if target else None
+        late = _lost_the_right(conn, actor, action) or refusal(
+            conn, actor, action, target=target, email=email, role=role
         )
+        if late is None:
+            audit_target, notice = _perform(conn, request, actor, action, target, email=email, role=role)
+            audit.record(
+                conn,
+                action=audit_action,
+                ts=now,
+                actor_user_id=actor.id,
+                target=audit_target,
+                detail={"from": target.role, "to": role} if action == "role" else {"role": role} if action == "invite" else None,
+                ip=client_ip(request),
+                step_up_verified=True,
+            )
+        else:
+            # รหัสผ่านแล้วแต่ด่านเปลี่ยนระหว่างทาง — คนอ่านย้อนหลังต้องเห็นว่ารหัสรอบนี้ถูกใช้ไปกับอะไร
+            audit.record(
+                conn,
+                action=f"{audit_action}_refused",
+                ts=now,
+                actor_user_id=actor.id,
+                target=target.email if target else users_repo.normalise_email(email),
+                detail={"reason": late},
+                ip=client_ip(request),
+                step_up_verified=True,
+            )
+    if late is not None:
+        return _modal(request, actor, action, target, email=email, role=role, error=late, blocked=True)
 
     # `actor` อ่านมาต้นคำขอ — ถ้าเพิ่งย้าย role ตัวเอง ปุ่มในคำตอบนี้ยังวาดด้วย role เดิม ·
     # คำขอถัดไปอ่าน role ใหม่จากตาราง (spec/09 §6. session) ด่านจริงอยู่ที่ endpoint อยู่แล้ว
