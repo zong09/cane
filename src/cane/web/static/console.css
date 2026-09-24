@@ -975,3 +975,65 @@ a.btn--block { padding: 12px; }
 .cs__skip:hover { border-color: var(--primary-edge); color: var(--primary-text); }
 .cs__go[disabled], .cs__skip[disabled] { cursor: not-allowed; opacity: .55; }
 .cs__when { font: 400 11.5px/1.6 var(--sans); color: var(--muted); margin-top: 8px; }
+
+/* ── ผู้ใช้ (ใบ 20 · handoff §9.8) ───────────────────────────────────────── */
+.us__sub { font: 400 13px/1.5 var(--sans); color: var(--label); margin-top: 3px; }
+.us__kpis { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--border); background: var(--surface); margin-top: 22px; }
+.us__kpi { padding: 18px 22px; border-right: 1px solid var(--border); }
+.us__kpi:last-child { border-right: 0; }
+.us__kpiname { font: 500 10px/1 var(--mix); letter-spacing: .09em; text-transform: uppercase; color: var(--label); }
+.us__kpirow { display: flex; align-items: baseline; gap: 8px; margin-top: 11px; }
+.us__kpival { font: 600 28px/1 var(--mix); }
+.us__kpival--owner { color: var(--primary-text); }
+.us__kpival--pending { color: #8f6c13; }
+.us__kpival--no2fa { color: var(--live-text); }
+.us__kpinote { font: 400 12px var(--sans); color: var(--label); }
+.us__tabs { margin: 24px 0; }
+.us__card { background: var(--surface); border: 1px solid var(--border); overflow: hidden; }
+.us__row { display: grid; gap: 16px; padding: 17px 24px; align-items: center; border-bottom: 1px solid var(--divider); }
+.us__row--head { padding: 15px 24px; background: var(--surface-raised); border-bottom-color: var(--divider-soft); font: 500 10.5px var(--sans); color: var(--label); }
+.us__row--people { grid-template-columns: minmax(0, 1fr) 104px 128px 132px 106px; }
+.us__row--people.us__row--head { font-family: var(--mix); letter-spacing: .07em; }
+.us__row--perms { grid-template-columns: minmax(0, 1fr) repeat(5, 104px); gap: 0; padding: 15px 24px; }
+.us__row--sessions { grid-template-columns: 200px minmax(0, 1fr) 190px 150px; }
+.us__row--log { grid-template-columns: 170px 160px 1fr; gap: 18px; padding: 16px 24px; align-items: baseline; }
+.us__sans { font-family: var(--sans); letter-spacing: 0; }
+.us__who { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.us__min { min-width: 0; }
+.us__avatar { width: 30px; height: 30px; flex: none; display: grid; place-items: center; background: linear-gradient(150deg, #cfe3f4 0%, #eaf4fd 100%); color: var(--primary-text); font: 600 11.5px var(--mono); }
+.us__name { font: 600 13.5px var(--sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.us__email { font: 400 11.5px var(--mix); color: var(--label); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.us__role { font: 600 10.5px var(--mono); padding: 4px 0 4px 9px; border-left: 2px solid var(--cap-border); color: var(--text-2); letter-spacing: .09em; }
+.us__role--owner { border-left-color: #30afff; color: var(--primary-text); }
+.us__2fa { font: 400 12px var(--mix); }
+.us__2fa--on { color: var(--paper-text); }
+.us__2fa--off { color: var(--live-text); font-family: var(--sans); }
+.us__mono { font: 400 12px var(--mix); color: var(--text-2); }
+.us__mono--muted { color: var(--label); }
+.us__status { display: inline-flex; align-items: center; gap: 7px; font: 400 12.5px var(--sans); }
+.us__dot { width: 8px; height: 8px; }
+.us__status--active .us__dot { background: var(--zone-green); }
+.us__status--pending { color: #8f6c13; }
+.us__status--pending .us__dot { background: var(--zone-yellow); }
+.us__status--suspended { color: var(--live-text); }
+.us__status--suspended .us__dot { background: var(--zone-red); }
+.us__foot { padding: 16px 24px; font: 400 12px/1.7 var(--sans); color: var(--muted); }
+.us__lead { font: 400 12.5px/1.7 var(--sans); color: var(--label); margin-bottom: 14px; }
+.us__rolehead { font: 600 10.5px var(--mono); color: var(--text-2); letter-spacing: .08em; text-align: center; }
+.us__rolehead--owner { color: var(--primary-text); }
+.us__cap { padding-right: 24px; }
+.us__captext { font: 500 13px var(--sans); }
+.us__capnote { font: 400 11.5px/1.6 var(--sans); color: var(--label); margin-top: 2px; }
+.us__cell { display: flex; justify-content: center; }
+.us__mark { font: 500 14px var(--mono); }
+.us__mark--yes { color: var(--paper-text); }
+.us__mark--no { font-weight: 400; color: var(--cap-border); }
+.us__mark--locked { font-size: 13px; color: #b8ccda; }
+.us__sname { font: 500 13px var(--sans); }
+.us__here { font: 500 10.5px var(--mono); color: var(--paper-text); letter-spacing: .07em; margin-top: 2px; }
+.us__device { font: 400 12.5px var(--sans); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.us__actor { font: 500 12.5px var(--sans); }
+.us__action { font: 400 13px var(--sans); }
+.us__action--danger { font-weight: 500; color: var(--live-text); }
+.us__detail { font: 400 11.5px/1.6 var(--mix); color: var(--label); margin-top: 2px; overflow-wrap: anywhere; }
+.us__empty { padding: 22px 24px; font: 400 12.5px var(--sans); color: var(--label); }
