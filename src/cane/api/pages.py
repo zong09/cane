@@ -96,6 +96,8 @@ def page(
         elif slug == "report":
             ctx |= report_routes.page_context(conn, profile=mode, user=user)
         elif slug == "users":
-            ctx |= users_routes.page_context(conn, session=session, tab=request.query_params.get("tab", ""))
+            ctx |= users_routes.page_context(
+                conn, session=session, actor=user, tab=request.query_params.get("tab", "")
+            )
     ctx |= {"page_label": label, "page_ticket": ticket}
     return templates.TemplateResponse(request, BODIES.get(slug, "pages/placeholder.html"), ctx)

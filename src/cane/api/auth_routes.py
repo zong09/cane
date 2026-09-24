@@ -142,11 +142,12 @@ def enrol_form(token: str, request: Request, db: Engine = Depends(get_db)) -> Re
     """
     now = now_ms()
     with db.connect() as conn:
-        user = _user_for_invite(conn, token, now)
-    if user is None:
+        found = _user_for_invite(conn, token, now)
+    if found is None:
         return templates.TemplateResponse(
             request, "pages/enrol_dead.html", {}, status_code=404
         )
+    user, _ = found
 
     secret = totp.new_secret()
     return templates.TemplateResponse(
@@ -175,11 +176,12 @@ def enrol_submit(
     with db.begin() as conn:
         # **ยังไม่ใช้ตั๋วตรงนี้** — รหัสจากแอปที่พิมพ์ผิดไม่ควรเผาลิงก์ทิ้ง · ตั๋วถูกใช้
         # เมื่อผูกสำเร็จเท่านั้น ซึ่งทำให้ "ลองใหม่" เป็นการยิง `POST` เดิมซ้ำได้เฉยๆ
-        user = _user_for_invite(conn, token, now)
-        if user is None:
+        found = _user_for_invite(conn, token, now)
+        if found is None:
             return templates.TemplateResponse(
                 request, "pages/enrol_dead.html", {}, status_code=404
             )
+        user, kind = found
 
         # รหัสผ่านต้องลงก่อน `enrol_totp()` เพราะตัวนั้นเปลี่ยนสถานะเป็น `active`
         # และ `ck_users_active_means_fully_enrolled` ปฏิเสธ active ที่ยังไม่มีรหัสผ่าน
@@ -192,7 +194,7 @@ def enrol_submit(
             conn, user=user, secret=secret, codes=codes, code=code.strip(), now=now
         )
         if ok:
-            auth_tokens.consume(conn, token=token, kind="invite", now=now)
+            auth_tokens.consume(conn, token=token, kind=kind, now=now)
 
     if not ok:
         return templates.TemplateResponse(
@@ -214,20 +216,25 @@ def enrol_submit(
     )
 
 
-def _user_for_invite(conn, token: str, now: int) -> User | None:
-    """อ่านว่าใครถือลิงก์นี้อยู่ โดย **ไม่ใช้** ตั๋ว"""
+#: ลิงก์ที่หน้า `/enrol` รับ · `reset_2fa` มาจาก reset 2FA ของหน้าผู้ใช้ — บัญชีมีรหัสผ่านแล้ว
+#: หน้าจึงถามแค่ TOTP (`needs_password` เป็นเท็จเอง) · ชนิดไหนเข้ามาก็ใช้ชนิดนั้นตอนผูกสำเร็จ
+ENROL_KINDS = ("invite", "reset_2fa")
+
+
+def _user_for_invite(conn, token: str, now: int) -> tuple[User, str] | None:
+    """อ่านว่าใครถือลิงก์นี้อยู่และเป็นลิงก์ชนิดไหน โดย **ไม่ใช้** ตั๋ว"""
     from sqlalchemy import select
 
     from cane.auth.secrets import token_hash
     from cane.db.schema import auth_tokens as table
 
     row = conn.execute(
-        select(table.c.user_id).where(
+        select(table.c.user_id, table.c.kind).where(
             table.c.token_hash == token_hash(token),
-            table.c.kind == "invite",
+            table.c.kind.in_(ENROL_KINDS),
             table.c.used_ts.is_(None),
             table.c.retired_ts.is_(None),
             table.c.expires_ts > now,
         )
     ).one_or_none()
-    return None if row is None else users_repo.by_id(conn, row.user_id)
+    return None if row is None else (users_repo.by_id(conn, row.user_id), row.kind)

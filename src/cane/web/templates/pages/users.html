@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% block screen %}
-<h1 class="h1">{{ page_label }}</h1>
-<div class="us__sub">{{ us_count }} บัญชี · สิทธิ์ผูกกับ role ไม่ผูกกับคน · ทุกการเปลี่ยนสิทธิ์ต้องยืนยันด้วย 2FA</div>
+<div class="us__head">
+  <div>
+    <h1 class="h1">{{ page_label }}</h1>
+    <div class="us__sub">{{ us_count }} บัญชี · สิทธิ์ผูกกับ role ไม่ผูกกับคน · ทุกการเปลี่ยนสิทธิ์ต้องยืนยันด้วย 2FA</div>
+  </div>
+  {# เปิดแผงเชิญที่แท็บบัญชีผู้ใช้ ไม่ว่าตอนนี้อยู่แท็บไหน #}
+  <button class="us__invitebtn" hx-get="/partials/users?tab=people&invite=1" hx-target="#users-body" hx-swap="outerHTML">เชิญผู้ใช้</button>
+</div>
 {% include "partials/users_body.html" %}
 {% endblock %}
