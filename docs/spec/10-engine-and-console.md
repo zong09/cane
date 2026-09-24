@@ -196,7 +196,7 @@ start  →  [ วนรอบ: รอแท่งปิด → อ่าน conf
 | `POST /api/{profile}/symbols` · `DELETE /api/{profile}/symbols/{symbol}` | เวอร์ชันใหม่ที่บล็อก `[[symbols]]` ต่างไป | เวอร์ชันใหม่ที่เนื้อเหมือนกัน |
 | `POST /api/{profile}/positions/{symbol}/close` | ปิดไม้ฉุกเฉิน — **ไม่แตะ engine และไม่แตะ kill switch** | **ไม่ idempotent** — ปิดไม้ที่ปิดแล้วคืน 409 ไม่ใช่ 200 |
 | `POST /api/{profile}/coldstart/{symbol}` | เลือกเส้นทาง cold start ของ **run ถัดไป** ต่อเหรียญ (`trailing` / `skip`) — เจตนาชนะ `cold_start` ของ config และ engine ใช้แล้วลบที่แท่งแรกของ run ([ADR 35](../adr/0035-cold-start-route-as-a-per-run-intent.md)) · `wait_1h` = **422** ตราบที่ engine ยังไม่มีทางนี้ · โปรไฟล์ที่ engine ไม่ตัดสินใจเอง (broker ไม่ใช่ `ccxt`) = **422** เพราะเจตนาจะไม่มีวันถูกใช้ · ไม่ได้ส่งคำสั่งใดๆ ตอนกด | เลือกซ้ำค่าเดิม = no-op 200 (ไม่ขยับเวลา ไม่เขียน audit) · เลือกค่าใหม่ = ทับเจตนาเดิมได้จนกว่า run จะเริ่ม |
-| `POST /api/users` · `/users/{id}/role` · `/suspend` · `/unsuspend` · `/unlock` · `/permissions` · `POST /api/users/{id}/reset-2fa` · `DELETE /api/sessions/{id}` | จัดการผู้ใช้ ([09](09-users-and-auth.md)) | ตามความหมายของแต่ละตัว — ดู [09](09-users-and-auth.md) |
+| `POST /api/users` · `/users/{id}/role` · `/suspend` · `/unsuspend` · `/unlock` · `POST /api/users/permissions` (สร้างเวอร์ชันแล้วเปิดใช้ · ต้องส่ง `base` = เวอร์ชันที่ร่างบน) · `POST /api/users/{id}/reset-2fa` · `DELETE /api/sessions/{id}` | จัดการผู้ใช้ ([09](09-users-and-auth.md)) | ตามความหมายของแต่ละตัว — ดู [09](09-users-and-auth.md) |
 
 **สองแถวสวิตช์เลื่อนตัวชี้ให้เอง ต่างจากทุกแถวที่เหลือ** — `POST .../config` สร้างร่าง
 แล้วรอคนไปกด activate ซึ่งถูกสำหรับการแก้ค่าทีละหลายช่อง · แต่สวิตช์บนหน้าจอที่เลื่อนแล้ว

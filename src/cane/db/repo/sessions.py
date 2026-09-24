@@ -159,6 +159,13 @@ def revoke_all_for_user(conn: Connection, user_id: int, now: int) -> int:
     return result.rowcount
 
 
+def by_id(conn: Connection, session_id: int, *, lock: bool = False) -> Session | None:
+    """`lock` = `FOR UPDATE` · ใช้ตอนตัด session ที่ต้องตรวจด่านซ้ำบนแถวที่ล็อกแล้ว"""
+    query = select(*_SESSION_COLUMNS).where(sessions.c.id == session_id)
+    row = conn.execute(query.with_for_update() if lock else query).one_or_none()
+    return None if row is None else Session(**row._mapping)
+
+
 def live_all(conn: Connection, *, now: int) -> list[Session]:
     """session ที่ยังใช้ได้ของทุกคน — แท็บ `session ที่เปิดอยู่` ของหน้าผู้ใช้ · ใหม่ก่อนเก่า"""
     rows = conn.execute(
