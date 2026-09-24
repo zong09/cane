@@ -94,7 +94,7 @@ uv run --extra dev pytest -q -m "not db"     # 568 passing, no services needed
 `pytest` is an optional dependency — skipping `uv sync --extra dev` and running a bare
 `uv run pytest` will fail.
 
-The full suite (1077 tests) needs PostgreSQL; see [Database](#database) below. Tests that touch
+The full suite (1078 tests) needs PostgreSQL; see [Database](#database) below. Tests that touch
 persistence carry the `db` marker so the rest still runs anywhere.
 
 The test suite never touches the network: the exchange client is injected everywhere, never
@@ -110,7 +110,7 @@ there is no ORM.
 docker compose up -d db                                   # postgres:16-alpine on host port 5436
 cp .env.example .env                                      # CANE_DB_DSN lives here
 uv run --env-file .env alembic upgrade head
-uv run --env-file .env --extra dev pytest -q              # 1077 tests
+uv run --env-file .env --extra dev pytest -q              # 1078 tests
 ```
 
 Host port **5436**, not 5432 — the dev machine already has other Postgres containers on 5432 and
